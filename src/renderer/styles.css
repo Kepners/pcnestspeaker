@@ -1,0 +1,365 @@
+/**
+ * PC Nest Speaker - Warm Neutral Theme
+ *
+ * Colors:
+ * - Dim Grey:      #6B6D76 (secondary text, borders)
+ * - Khaki Beige:   #A69888 (backgrounds, cards)
+ * - Powder Blush:  #FCBFB7 (primary accent, CTAs)
+ * - Charcoal Blue: #334E58 (headers, primary text)
+ * - Dark Coffee:   #33261D (deep backgrounds)
+ */
+
+:root {
+  --color-grey: #6B6D76;
+  --color-beige: #A69888;
+  --color-blush: #FCBFB7;
+  --color-blue: #334E58;
+  --color-coffee: #33261D;
+
+  --color-success: #4CAF50;
+  --color-error: #E57373;
+  --color-warning: #FFB74D;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background: linear-gradient(135deg, var(--color-blue) 0%, var(--color-coffee) 100%);
+  color: var(--color-blush);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* Header */
+.header {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.logo {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--color-blush);
+  margin-bottom: 4px;
+}
+
+.tagline {
+  font-size: 0.9rem;
+  color: var(--color-beige);
+  opacity: 0.8;
+}
+
+/* Main */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Cards */
+.card {
+  background: rgba(166, 152, 136, 0.15);
+  border: 1px solid rgba(166, 152, 136, 0.3);
+  border-radius: 12px;
+  padding: 16px;
+  backdrop-filter: blur(10px);
+}
+
+.card-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-beige);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Status Card */
+.status-card {
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-grey);
+  transition: all 0.3s ease;
+}
+
+.status-indicator.ready .status-dot {
+  background: var(--color-beige);
+}
+
+.status-indicator.streaming .status-dot {
+  background: var(--color-success);
+  box-shadow: 0 0 10px var(--color-success);
+  animation: pulse 2s infinite;
+}
+
+.status-indicator.error .status-dot {
+  background: var(--color-error);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.status-text {
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+/* Speaker List */
+.speaker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 20px;
+  color: var(--color-grey);
+}
+
+.empty-state p {
+  margin-bottom: 12px;
+}
+
+.speaker-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.speaker-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--color-beige);
+}
+
+.speaker-item.selected {
+  background: rgba(252, 191, 183, 0.15);
+  border-color: var(--color-blush);
+}
+
+.speaker-icon {
+  width: 40px;
+  height: 40px;
+  background: var(--color-blue);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.speaker-icon svg {
+  width: 24px;
+  height: 24px;
+  color: var(--color-blush);
+}
+
+.speaker-info {
+  flex: 1;
+}
+
+.speaker-name {
+  font-weight: 500;
+  color: var(--color-blush);
+}
+
+.speaker-model {
+  font-size: 0.8rem;
+  color: var(--color-grey);
+}
+
+.speaker-check {
+  width: 24px;
+  height: 24px;
+  color: var(--color-blush);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.speaker-item.selected .speaker-check {
+  opacity: 1;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--color-blush);
+  color: var(--color-coffee);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #ffd4ce;
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: rgba(166, 152, 136, 0.2);
+  color: var(--color-beige);
+  border: 1px solid var(--color-beige);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(166, 152, 136, 0.3);
+}
+
+.btn-large {
+  width: 100%;
+  padding: 16px;
+  font-size: 1.1rem;
+}
+
+.btn .icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* Controls Card */
+.controls-card {
+  padding: 20px;
+}
+
+/* Info Card */
+.info-card {
+  background: rgba(51, 78, 88, 0.3);
+}
+
+.info-card h3 {
+  font-size: 0.85rem;
+  color: var(--color-beige);
+  margin-bottom: 10px;
+}
+
+.info-card ol {
+  padding-left: 20px;
+  font-size: 0.85rem;
+  color: var(--color-grey);
+}
+
+.info-card li {
+  margin-bottom: 4px;
+}
+
+/* Footer */
+.footer {
+  text-align: center;
+  padding: 16px 0;
+  font-size: 0.8rem;
+  color: var(--color-grey);
+}
+
+.footer a {
+  color: var(--color-beige);
+  text-decoration: none;
+}
+
+.footer a:hover {
+  color: var(--color-blush);
+}
+
+/* Loading Overlay */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(51, 38, 29, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  z-index: 1000;
+}
+
+.loading-overlay[hidden] {
+  display: none;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--color-grey);
+  border-top-color: var(--color-blush);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+#loading-text {
+  color: var(--color-beige);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-coffee);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-grey);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-beige);
+}

@@ -1,0 +1,69 @@
+{
+  "name": "pc-nest-speaker",
+  "version": "1.0.0",
+  "description": "Stream Windows system audio to Google Nest speakers",
+  "main": "src/main/electron-main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac"
+  },
+  "keywords": [
+    "chromecast",
+    "nest",
+    "audio",
+    "streaming",
+    "windows"
+  ],
+  "author": "ChoppedOnions.xyz",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "castv2-client": "^1.2.0",
+    "fluent-ffmpeg": "^2.1.2",
+    "mdns-js": "^1.0.3"
+  },
+  "devDependencies": {
+    "electron": "^31.0.1",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.choppedonions.pcnestspeaker",
+    "productName": "PC Nest Speaker",
+    "copyright": "Copyright © 2026 ChoppedOnions.xyz",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "icon": "assets/icon.icns"
+    },
+    "directories": {
+      "buildResources": "assets",
+      "output": "dist"
+    },
+    "extraResources": [
+      {
+        "from": "ffmpeg/",
+        "to": "ffmpeg",
+        "filter": ["**/*"]
+      }
+    ],
+    "files": [
+      "src/**/*",
+      "!src/**/*.map"
+    ]
+  }
+}

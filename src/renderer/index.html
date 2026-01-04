@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>PC Nest Speaker</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <h1 class="logo">PC Nest Speaker</h1>
+      <p class="tagline">Stream system audio to your Nest</p>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+      <!-- Status Card -->
+      <div class="card status-card">
+        <div class="status-indicator" id="status-indicator">
+          <div class="status-dot"></div>
+          <span class="status-text">Ready</span>
+        </div>
+      </div>
+
+      <!-- Speaker Selection -->
+      <div class="card">
+        <h2 class="card-title">Select Speaker</h2>
+        <div class="speaker-list" id="speaker-list">
+          <div class="empty-state">
+            <p>No speakers discovered</p>
+            <button class="btn btn-secondary" id="discover-btn">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+              </svg>
+              Discover Speakers
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="card controls-card">
+        <button class="btn btn-primary btn-large" id="stream-btn" disabled>
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+          <span>Start Streaming</span>
+        </button>
+      </div>
+
+      <!-- Info -->
+      <div class="card info-card">
+        <h3>How it works</h3>
+        <ol>
+          <li>Click "Discover Speakers" to find Nest devices</li>
+          <li>Select your speaker from the list</li>
+          <li>Click "Start Streaming" to begin</li>
+          <li>Play any audio on your PC - it will play on the Nest!</li>
+        </ol>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>&copy; 2026 <a href="#" id="business-link">ChoppedOnions.xyz</a></p>
+    </footer>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay" hidden>
+      <div class="spinner"></div>
+      <p id="loading-text">Loading...</p>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
