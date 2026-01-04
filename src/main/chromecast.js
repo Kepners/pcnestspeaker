@@ -78,9 +78,9 @@ class ChromecastManager {
    * Cast audio to a speaker
    * @param {string} speakerName - Name of the speaker
    * @param {string} streamUrl - URL of the audio stream
-   * @param {string} contentType - MIME type (default: application/x-mpegURL for HLS)
+   * @param {string} contentType - MIME type (default: audio/mpeg for MP3 streaming)
    */
-  async castToSpeaker(speakerName, streamUrl, contentType = 'application/x-mpegURL') {
+  async castToSpeaker(speakerName, streamUrl, contentType = 'audio/mpeg') {
     const speaker = this.speakers.get(speakerName);
     if (!speaker) {
       throw new Error(`Speaker "${speakerName}" not found`);

@@ -2,8 +2,9 @@
  * Audio Streamer - Handles audio capture and streaming via FFmpeg
  *
  * Audio Pipeline:
- * Windows Audio → WASAPI Loopback (electron-audio-loopback) → FFmpeg → HLS → HTTP Server → Nest Speaker
+ * Windows Audio → WASAPI Loopback (electron-audio-loopback) → FFmpeg → MP3 Stream → HTTP → Nest Speaker
  *
+ * Key: Uses progressive MP3 streaming - NO files created on disk!
  * Key: Uses native WASAPI loopback - NO external software (VB-CABLE etc) required!
  */
 
@@ -20,8 +21,7 @@ const CONFIG = {
   sampleRate: 48000,
   channels: 2,
   bitrate: '128k',
-  hlsSegmentTime: 0.5,
-  hlsListSize: 3,
+  chunkSize: 8192, // Bytes per chunk (from reference Python code)
 };
 
 class AudioStreamer {
@@ -30,8 +30,8 @@ class AudioStreamer {
     this.audioCapture = null;
     this.httpServer = null;
     this.isStreaming = false;
-    this.outputDir = path.join(os.tmpdir(), 'pcnestspeaker');
     this.localIp = this.getLocalIp();
+    this.clients = new Set(); // Track connected HTTP clients
   }
 
   /**
@@ -88,36 +88,41 @@ class AudioStreamer {
   }
 
   /**
-   * Start the HTTP server for streaming
+   * Start the HTTP server for MP3 streaming
+   * Streams directly from FFmpeg stdout to connected clients - NO FILES!
    */
-  async startHttpServer(port) {
+  startHttpServer(port) {
     return new Promise((resolve, reject) => {
       this.httpServer = http.createServer((req, res) => {
-        // CORS headers
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Cache-Control', 'no-cache');
-
-        // Serve files from output directory
-        const requestedPath = req.url.replace(/^\//, '').split('?')[0];
-        const filePath = path.join(this.outputDir, requestedPath);
-
-        if (!fs.existsSync(filePath)) {
+        // Only serve the live stream
+        if (req.url !== '/live.mp3' && req.url !== '/') {
           res.writeHead(404);
           res.end('Not found');
           return;
         }
 
-        const ext = path.extname(filePath);
-        const contentType = {
-          '.m3u8': 'application/x-mpegURL',
-          '.ts': 'video/MP2T',
-          '.mp3': 'audio/mpeg',
-        }[ext] || 'application/octet-stream';
+        // Stream headers for Chromecast compatibility
+        res.writeHead(200, {
+          'Content-Type': 'audio/mpeg',
+          'Cache-Control': 'no-cache, no-store',
+          'Connection': 'keep-alive',
+          'Access-Control-Allow-Origin': '*',
+          'Transfer-Encoding': 'chunked',
+        });
 
-        res.setHeader('Content-Type', contentType);
+        // Track this client
+        this.clients.add(res);
+        console.log(`Client connected. Total clients: ${this.clients.size}`);
 
-        const stream = fs.createReadStream(filePath);
-        stream.pipe(res);
+        // Clean up on disconnect
+        req.on('close', () => {
+          this.clients.delete(res);
+          console.log(`Client disconnected. Total clients: ${this.clients.size}`);
+        });
+
+        res.on('error', () => {
+          this.clients.delete(res);
+        });
       });
 
       this.httpServer.listen(port, '0.0.0.0', () => {
@@ -142,7 +147,7 @@ class AudioStreamer {
       this.audioCapture = audioLoopback.startCapture({
         sampleRate: CONFIG.sampleRate,
         channels: CONFIG.channels,
-        format: 'f32le', // 32-bit float, little-endian (compatible with FFmpeg)
+        format: 'f32le', // 32-bit float, little-endian
       });
 
       console.log('Native WASAPI audio capture initialized');
@@ -154,95 +159,75 @@ class AudioStreamer {
   }
 
   /**
-   * Start FFmpeg with piped audio input
-   * Receives raw PCM from electron-audio-loopback, outputs HLS
+   * Start FFmpeg with MP3 output to stdout
+   * Streams directly - no files created!
    */
-  async startFFmpegWithPipedAudio(audioStream) {
-    // Create output directory
-    fs.mkdirSync(this.outputDir, { recursive: true });
-
-    // Clean old files
-    try {
-      for (const file of fs.readdirSync(this.outputDir)) {
-        fs.unlinkSync(path.join(this.outputDir, file));
-      }
-    } catch (e) {
-      // Ignore cleanup errors
-    }
-
+  startFFmpegMP3(audioStream) {
     const ffmpeg = this.getFFmpegPath();
-    const playlistPath = path.join(this.outputDir, 'stream.m3u8');
-    const segmentPath = path.join(this.outputDir, 'seg%d.ts');
 
-    // FFmpeg args for piped input (raw PCM from WASAPI)
+    // FFmpeg args for piped input, MP3 output to stdout
     const args = [
       '-hide_banner',
       '-loglevel', 'error',
       // Input: raw PCM from stdin
-      '-f', 'f32le',           // 32-bit float, little-endian
+      '-f', 'f32le',
       '-ar', String(CONFIG.sampleRate),
       '-ac', String(CONFIG.channels),
-      '-i', 'pipe:0',          // Read from stdin
-      // Audio processing
-      '-af', 'aresample=async=1:first_pts=0',
-      // Output encoding
-      '-c:a', 'aac',
+      '-i', 'pipe:0',
+      // Audio processing - async resampling for stability
+      '-af', 'aresample=async=1:min_hard_comp=0.100000:first_pts=0',
+      // MP3 output
+      '-c:a', 'libmp3lame',
       '-b:a', CONFIG.bitrate,
-      '-profile:a', 'aac_low',
-      // HLS output
-      '-f', 'hls',
-      '-hls_time', String(CONFIG.hlsSegmentTime),
-      '-hls_list_size', String(CONFIG.hlsListSize),
-      '-hls_flags', 'delete_segments+independent_segments',
-      '-hls_segment_type', 'mpegts',
-      '-hls_segment_filename', segmentPath,
-      '-fflags', '+genpts+nobuffer',
-      '-flags', 'low_delay',
-      playlistPath,
+      '-q:a', '2',
+      // Streaming optimizations
+      '-fflags', '+nobuffer',
+      '-bufsize', '256k',
+      '-f', 'mp3',
+      'pipe:1', // Output to stdout
     ];
 
-    return new Promise((resolve, reject) => {
-      this.ffmpegProcess = spawn(ffmpeg, args, {
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-
-      // Pipe audio data from WASAPI capture to FFmpeg
-      audioStream.on('data', (buffer) => {
-        if (this.ffmpegProcess && this.ffmpegProcess.stdin.writable) {
-          this.ffmpegProcess.stdin.write(buffer);
-        }
-      });
-
-      audioStream.on('error', (err) => {
-        console.error('Audio capture error:', err);
-      });
-
-      this.ffmpegProcess.stderr.on('data', (data) => {
-        console.error('FFmpeg:', data.toString());
-      });
-
-      this.ffmpegProcess.on('error', (err) => {
-        reject(err);
-      });
-
-      this.ffmpegProcess.on('close', (code) => {
-        console.log(`FFmpeg exited with code ${code}`);
-      });
-
-      // Wait for playlist to be created
-      const checkPlaylist = setInterval(() => {
-        if (fs.existsSync(playlistPath) && fs.statSync(playlistPath).size > 0) {
-          clearInterval(checkPlaylist);
-          resolve(playlistPath);
-        }
-      }, 200);
-
-      // Timeout after 20 seconds
-      setTimeout(() => {
-        clearInterval(checkPlaylist);
-        reject(new Error('FFmpeg timeout - no stream created'));
-      }, 20000);
+    this.ffmpegProcess = spawn(ffmpeg, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
+
+    // Pipe audio data from WASAPI capture to FFmpeg stdin
+    audioStream.on('data', (buffer) => {
+      if (this.ffmpegProcess && this.ffmpegProcess.stdin.writable) {
+        this.ffmpegProcess.stdin.write(buffer);
+      }
+    });
+
+    audioStream.on('error', (err) => {
+      console.error('Audio capture error:', err);
+    });
+
+    // Pipe FFmpeg MP3 output to all connected HTTP clients
+    this.ffmpegProcess.stdout.on('data', (chunk) => {
+      for (const client of this.clients) {
+        try {
+          if (!client.writableEnded) {
+            client.write(chunk);
+          }
+        } catch (e) {
+          this.clients.delete(client);
+        }
+      }
+    });
+
+    this.ffmpegProcess.stderr.on('data', (data) => {
+      console.error('FFmpeg:', data.toString());
+    });
+
+    this.ffmpegProcess.on('error', (err) => {
+      console.error('FFmpeg error:', err);
+    });
+
+    this.ffmpegProcess.on('close', (code) => {
+      console.log(`FFmpeg exited with code ${code}`);
+    });
+
+    console.log('FFmpeg MP3 streaming started');
   }
 
   /**
@@ -265,12 +250,12 @@ class AudioStreamer {
     // Initialize native audio capture (WASAPI loopback)
     const audioStream = await this.initAudioCapture();
 
-    // Start FFmpeg with piped audio
-    await this.startFFmpegWithPipedAudio(audioStream);
+    // Start FFmpeg with MP3 output to connected clients
+    this.startFFmpegMP3(audioStream);
 
     this.isStreaming = true;
 
-    const streamUrl = `http://${this.localIp}:${port}/stream.m3u8`;
+    const streamUrl = `http://${this.localIp}:${port}/live.mp3`;
     console.log('Stream URL:', streamUrl);
 
     return streamUrl;
@@ -282,6 +267,16 @@ class AudioStreamer {
   async stop() {
     console.log('Stopping audio stream...');
     this.isStreaming = false;
+
+    // Close all client connections
+    for (const client of this.clients) {
+      try {
+        client.end();
+      } catch (e) {
+        // Ignore
+      }
+    }
+    this.clients.clear();
 
     // Stop audio capture
     if (this.audioCapture) {
@@ -309,17 +304,6 @@ class AudioStreamer {
     if (this.httpServer) {
       this.httpServer.close();
       this.httpServer = null;
-    }
-
-    // Clean up temp files
-    try {
-      if (fs.existsSync(this.outputDir)) {
-        for (const file of fs.readdirSync(this.outputDir)) {
-          fs.unlinkSync(path.join(this.outputDir, file));
-        }
-      }
-    } catch (e) {
-      // Ignore cleanup errors
     }
 
     console.log('Audio stream stopped');
