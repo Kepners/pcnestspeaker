@@ -12,6 +12,21 @@
 
 ---
 
+## Competitive Advantage
+
+**NO existing solution streams Windows system audio to Google Nest speakers:**
+
+| Solution | Nest Support | System Audio |
+|----------|--------------|--------------|
+| Windows built-in | No | No |
+| Chrome/Edge casting | No (tab only) | No |
+| AirParrot ($16) | **NO** | Yes |
+| **PC Nest Speaker** | **YES** | **YES** |
+
+**Key differentiator:** We support Google Nest speakers AND stereo pairs - competitors don't.
+
+---
+
 ## Project Structure
 
 ```
