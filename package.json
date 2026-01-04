@@ -8,7 +8,9 @@
     "dev": "electron . --dev",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac"
+    "build:mac": "electron-builder --mac",
+    "download-ffmpeg": "node scripts/download-ffmpeg.js",
+    "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [
     "chromecast",
