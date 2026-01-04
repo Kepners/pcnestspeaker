@@ -22,6 +22,7 @@
   "private": true,
   "dependencies": {
     "castv2-client": "^1.2.0",
+    "electron-audio-loopback": "^1.0.0",
     "fluent-ffmpeg": "^2.1.2",
     "mdns-js": "^1.0.3"
   },

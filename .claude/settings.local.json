@@ -8,7 +8,10 @@
       "Bash(ffmpeg:*)",
       "Bash(findstr:*)",
       "Bash(python:*)",
-      "Bash(pip show:*)"
+      "Bash(pip show:*)",
+      "Bash(timeout /t 10 /nobreak)",
+      "Bash(start \"\" \"https://github.com/rdp/screen-capture-recorder-to-video-windows-free/releases\")",
+      "Bash(powershell:*)"
     ]
   }
 }

@@ -2,7 +2,9 @@
  * Audio Streamer - Handles audio capture and streaming via FFmpeg
  *
  * Audio Pipeline:
- * Windows Audio → Loopback Capture → FFmpeg → HLS/MP3 → HTTP Server → Nest Speaker
+ * Windows Audio → WASAPI Loopback (electron-audio-loopback) → FFmpeg → HLS → HTTP Server → Nest Speaker
+ *
+ * Key: Uses native WASAPI loopback - NO external software (VB-CABLE etc) required!
  */
 
 const { spawn } = require('child_process');
@@ -20,15 +22,14 @@ const CONFIG = {
   bitrate: '128k',
   hlsSegmentTime: 0.5,
   hlsListSize: 3,
-  mp3ChunkSize: 8192,
 };
 
 class AudioStreamer {
   constructor() {
     this.ffmpegProcess = null;
+    this.audioCapture = null;
     this.httpServer = null;
     this.isStreaming = false;
-    this.mode = 'hls'; // 'hls' or 'mp3'
     this.outputDir = path.join(os.tmpdir(), 'pcnestspeaker');
     this.localIp = this.getLocalIp();
   }
@@ -49,73 +50,21 @@ class AudioStreamer {
   }
 
   /**
-   * Find available audio capture device
-   */
-  async findAudioDevice() {
-    return new Promise((resolve, reject) => {
-      const ffmpeg = this.getFFmpegPath();
-      const proc = spawn(ffmpeg, [
-        '-list_devices', 'true',
-        '-f', 'dshow',
-        '-i', 'dummy'
-      ]);
-
-      let stderr = '';
-      proc.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      proc.on('close', () => {
-        // Parse audio devices from FFmpeg output
-        const lines = stderr.split('\n');
-        const audioDevices = [];
-
-        for (const line of lines) {
-          if (line.includes('(audio)')) {
-            const match = line.match(/"([^"]+)"/);
-            if (match) {
-              audioDevices.push(match[1]);
-            }
-          }
-        }
-
-        // Priority order for devices
-        const preferred = [
-          'Stereo Mix',
-          'What U Hear',
-          'Wave Out Mix',
-          'virtual-audio-capturer',
-          'CABLE Output',
-        ];
-
-        for (const pref of preferred) {
-          const found = audioDevices.find(d =>
-            d.toLowerCase().includes(pref.toLowerCase())
-          );
-          if (found) {
-            resolve(found);
-            return;
-          }
-        }
-
-        // Return first audio device if no preferred found
-        if (audioDevices.length > 0) {
-          resolve(audioDevices[0]);
-        } else {
-          reject(new Error('No audio capture device found. Enable "Stereo Mix" in Windows Sound settings.'));
-        }
-      });
-    });
-  }
-
-  /**
    * Get FFmpeg path (bundled or system)
    */
   getFFmpegPath() {
-    // Check for bundled FFmpeg
-    const bundled = path.join(process.resourcesPath || '', 'ffmpeg', 'ffmpeg.exe');
-    if (fs.existsSync(bundled)) {
-      return bundled;
+    // Check for bundled FFmpeg in resources
+    if (process.resourcesPath) {
+      const bundled = path.join(process.resourcesPath, 'ffmpeg', 'ffmpeg.exe');
+      if (fs.existsSync(bundled)) {
+        return bundled;
+      }
+    }
+
+    // Check in project ffmpeg folder (dev mode)
+    const devPath = path.join(__dirname, '../../ffmpeg/ffmpeg.exe');
+    if (fs.existsSync(devPath)) {
+      return devPath;
     }
 
     // Fall back to system FFmpeg
@@ -149,7 +98,8 @@ class AudioStreamer {
         res.setHeader('Cache-Control', 'no-cache');
 
         // Serve files from output directory
-        const filePath = path.join(this.outputDir, req.url.replace(/^\//, ''));
+        const requestedPath = req.url.replace(/^\//, '').split('?')[0];
+        const filePath = path.join(this.outputDir, requestedPath);
 
         if (!fs.existsSync(filePath)) {
           res.writeHead(404);
@@ -171,6 +121,7 @@ class AudioStreamer {
       });
 
       this.httpServer.listen(port, '0.0.0.0', () => {
+        console.log(`HTTP server listening on port ${port}`);
         resolve();
       });
 
@@ -179,33 +130,66 @@ class AudioStreamer {
   }
 
   /**
-   * Start FFmpeg with HLS output
+   * Initialize audio capture using electron-audio-loopback
+   * This uses native WASAPI loopback - no VB-CABLE needed!
    */
-  async startFFmpegHLS(audioDevice) {
+  async initAudioCapture() {
+    try {
+      // Import the native audio loopback module
+      const audioLoopback = require('electron-audio-loopback');
+
+      // Start capturing system audio
+      this.audioCapture = audioLoopback.startCapture({
+        sampleRate: CONFIG.sampleRate,
+        channels: CONFIG.channels,
+        format: 'f32le', // 32-bit float, little-endian (compatible with FFmpeg)
+      });
+
+      console.log('Native WASAPI audio capture initialized');
+      return this.audioCapture;
+    } catch (error) {
+      console.error('Failed to initialize native audio capture:', error);
+      throw new Error('Audio capture failed. Please ensure Windows audio is working.');
+    }
+  }
+
+  /**
+   * Start FFmpeg with piped audio input
+   * Receives raw PCM from electron-audio-loopback, outputs HLS
+   */
+  async startFFmpegWithPipedAudio(audioStream) {
     // Create output directory
     fs.mkdirSync(this.outputDir, { recursive: true });
 
     // Clean old files
-    for (const file of fs.readdirSync(this.outputDir)) {
-      fs.unlinkSync(path.join(this.outputDir, file));
+    try {
+      for (const file of fs.readdirSync(this.outputDir)) {
+        fs.unlinkSync(path.join(this.outputDir, file));
+      }
+    } catch (e) {
+      // Ignore cleanup errors
     }
 
     const ffmpeg = this.getFFmpegPath();
     const playlistPath = path.join(this.outputDir, 'stream.m3u8');
     const segmentPath = path.join(this.outputDir, 'seg%d.ts');
 
+    // FFmpeg args for piped input (raw PCM from WASAPI)
     const args = [
       '-hide_banner',
       '-loglevel', 'error',
-      '-f', 'dshow',
-      '-audio_buffer_size', '50',
-      '-i', `audio=${audioDevice}`,
-      '-af', 'aresample=async=1:first_pts=0',
-      '-ac', String(CONFIG.channels),
+      // Input: raw PCM from stdin
+      '-f', 'f32le',           // 32-bit float, little-endian
       '-ar', String(CONFIG.sampleRate),
+      '-ac', String(CONFIG.channels),
+      '-i', 'pipe:0',          // Read from stdin
+      // Audio processing
+      '-af', 'aresample=async=1:first_pts=0',
+      // Output encoding
       '-c:a', 'aac',
       '-b:a', CONFIG.bitrate,
       '-profile:a', 'aac_low',
+      // HLS output
       '-f', 'hls',
       '-hls_time', String(CONFIG.hlsSegmentTime),
       '-hls_list_size', String(CONFIG.hlsListSize),
@@ -218,7 +202,20 @@ class AudioStreamer {
     ];
 
     return new Promise((resolve, reject) => {
-      this.ffmpegProcess = spawn(ffmpeg, args);
+      this.ffmpegProcess = spawn(ffmpeg, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      // Pipe audio data from WASAPI capture to FFmpeg
+      audioStream.on('data', (buffer) => {
+        if (this.ffmpegProcess && this.ffmpegProcess.stdin.writable) {
+          this.ffmpegProcess.stdin.write(buffer);
+        }
+      });
+
+      audioStream.on('error', (err) => {
+        console.error('Audio capture error:', err);
+      });
 
       this.ffmpegProcess.stderr.on('data', (data) => {
         console.error('FFmpeg:', data.toString());
@@ -226,6 +223,10 @@ class AudioStreamer {
 
       this.ffmpegProcess.on('error', (err) => {
         reject(err);
+      });
+
+      this.ffmpegProcess.on('close', (code) => {
+        console.log(`FFmpeg exited with code ${code}`);
       });
 
       // Wait for playlist to be created
@@ -253,18 +254,19 @@ class AudioStreamer {
       throw new Error('Already streaming');
     }
 
-    // Find audio device
-    const audioDevice = await this.findAudioDevice();
-    console.log('Using audio device:', audioDevice);
+    console.log('Starting audio stream...');
 
     // Find available port
     const port = await this.findAvailablePort();
 
-    // Start HTTP server
+    // Start HTTP server first
     await this.startHttpServer(port);
 
-    // Start FFmpeg
-    await this.startFFmpegHLS(audioDevice);
+    // Initialize native audio capture (WASAPI loopback)
+    const audioStream = await this.initAudioCapture();
+
+    // Start FFmpeg with piped audio
+    await this.startFFmpegWithPipedAudio(audioStream);
 
     this.isStreaming = true;
 
@@ -278,13 +280,32 @@ class AudioStreamer {
    * Stop streaming
    */
   async stop() {
+    console.log('Stopping audio stream...');
     this.isStreaming = false;
 
+    // Stop audio capture
+    if (this.audioCapture) {
+      try {
+        const audioLoopback = require('electron-audio-loopback');
+        audioLoopback.stopCapture();
+      } catch (e) {
+        // Ignore errors
+      }
+      this.audioCapture = null;
+    }
+
+    // Stop FFmpeg
     if (this.ffmpegProcess) {
-      this.ffmpegProcess.kill('SIGTERM');
+      try {
+        this.ffmpegProcess.stdin.end();
+        this.ffmpegProcess.kill('SIGTERM');
+      } catch (e) {
+        // Ignore errors
+      }
       this.ffmpegProcess = null;
     }
 
+    // Stop HTTP server
     if (this.httpServer) {
       this.httpServer.close();
       this.httpServer = null;
@@ -300,6 +321,8 @@ class AudioStreamer {
     } catch (e) {
       // Ignore cleanup errors
     }
+
+    console.log('Audio stream stopped');
   }
 }
 

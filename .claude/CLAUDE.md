@@ -153,14 +153,45 @@ Located at: `C:\Users\kepne\OneDrive\Documents\#NestAudioBridge`
 
 ---
 
+## Project Structure (Updated)
+
+```
+pcnestspeaker/
+├── .claude/
+│   └── CLAUDE.md              # This file - project knowledge
+├── src/
+│   ├── main/
+│   │   ├── electron-main.js   # Main process entry
+│   │   ├── preload.js         # IPC bridge
+│   │   ├── audio-streamer.js  # WASAPI → FFmpeg → HLS
+│   │   └── chromecast.js      # Speaker discovery & casting
+│   └── renderer/
+│       ├── index.html         # UI
+│       ├── styles.css         # Warm Neutral theme
+│       └── renderer.js        # UI logic
+├── docs/
+│   ├── ARCHITECTURE.md        # System architecture
+│   └── APP_DOCUMENTATION.md   # Feature documentation
+├── reference/python/          # Original Python implementations
+├── ffmpeg/                    # Bundled FFmpeg binaries
+├── assets/                    # App icons
+├── package.json               # Dependencies & build config
+└── README.md                  # User-facing docs
+```
+
+---
+
 ## Next Steps
 
-1. **Set up Electron skeleton** - Basic window, IPC structure
-2. **Port FFmpeg logic** - Node.js child_process wrapper
-3. **Implement Chromecast** - Use node-castv2-client or similar
-4. **Build UI** - Warm Neutral themed HTML/CSS
-5. **Add licensing** - Stripe + Vercel integration
-6. **Configure builds** - electron-builder for Win/Mac
+1. ~~Set up Electron skeleton~~ ✅ DONE
+2. ~~Port FFmpeg logic~~ ✅ DONE
+3. ~~Implement Chromecast~~ ✅ DONE (castv2-client)
+4. ~~Build UI~~ ✅ DONE (Warm Neutral theme)
+5. ~~Add WASAPI capture~~ ✅ DONE (electron-audio-loopback)
+6. **Bundle FFmpeg** - Download and include in ffmpeg/
+7. **Test full pipeline** - npm install && npm start
+8. **Add licensing** - Stripe + Vercel integration
+9. **Configure builds** - electron-builder for Win/Mac
 
 ---
 
@@ -175,6 +206,15 @@ Located at: `C:\Users\kepne\OneDrive\Documents\#NestAudioBridge`
 - **CRITICAL UPDATE:** Switching to electron-audio-loopback for native WASAPI capture
 - User requirement: All-in-one app, no external software installation needed
 - Found speakers: DENNIS, Den pair, Back garden speaker, STUDY, Green TV
+
+### January 4, 2026 (Session 2)
+- Created complete Electron app skeleton
+- Implemented Chromecast discovery (mdns-js + castv2-client)
+- Built audio streamer with WASAPI loopback via electron-audio-loopback
+- Created UI with Warm Neutral color scheme
+- Set up IPC communication between main/renderer
+- Configured electron-builder for Windows/Mac builds
+- **Key insight:** AirParrot uses same WASAPI loopback technique - confirms our approach
 
 ---
 
