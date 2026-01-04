@@ -61,10 +61,12 @@ pcnestspeaker/
 
 ## Key Technical Details
 
-### Audio Pipeline
+### Audio Pipeline (Updated - No External Software)
 ```
-Windows Audio -> VB-CABLE Input -> CABLE Output -> FFmpeg -> HTTP Server -> Nest Speaker
+Windows Audio Output -> electron-audio-loopback (WASAPI) -> FFmpeg -> HTTP Server -> Nest Speaker
 ```
+
+**Key Change:** Uses Chromium's built-in loopback capture. User keeps their normal audio output (headphones, speakers). No VB-CABLE or configuration needed.
 
 ### FFmpeg Settings (Optimized)
 
@@ -87,9 +89,21 @@ FFmpeg Buffer: 256k
 ```
 
 ### Dependencies
-- **User Must Install:** VB-CABLE or Voicemeeter
-- **Bundled/Required:** FFmpeg (consider bundling with Electron)
-- **Node Packages:** electron, node-castv2-client (or pychromecast equivalent)
+- **User Must Install:** NOTHING - all-in-one professional app
+- **Bundled:** FFmpeg (packaged with Electron app)
+- **Node Packages:**
+  - electron (>=31.0.1)
+  - electron-audio-loopback (WASAPI system audio capture)
+  - castv2-client (Chromecast protocol)
+  - fluent-ffmpeg (FFmpeg wrapper)
+
+### Audio Capture Solution (Critical Decision - January 2026)
+**electron-audio-loopback** captures system audio natively:
+- No VB-CABLE or virtual audio devices required
+- No user configuration needed
+- Works with ANY Windows audio output (headphones, speakers, monitors)
+- Captures "what you hear" automatically via WASAPI loopback
+- Source: https://github.com/alectrocute/electron-audio-loopback
 
 ---
 
@@ -142,6 +156,10 @@ Located at: `C:\Users\kepne\OneDrive\Documents\#NestAudioBridge`
 - Created docs/ with ARCHITECTURE.md and APP_DOCUMENTATION.md
 - Imported reference Python files to reference/python/
 - Decisions: Electron app, Stripe licensing, HLS+MP3 fallback, user-configurable speaker
+- Tested Python streaming - works but requires VB-CABLE (user doesn't want this)
+- **CRITICAL UPDATE:** Switching to electron-audio-loopback for native WASAPI capture
+- User requirement: All-in-one app, no external software installation needed
+- Found speakers: DENNIS, Den pair, Back garden speaker, STUDY, Green TV
 
 ---
 
