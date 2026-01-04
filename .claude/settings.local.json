@@ -6,7 +6,9 @@
       "Bash(copy \"C:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\#NestAudioBridge\\\\nest-audio-bridge-v2\\\\cast_system_audio_to_nest_v2.py\" \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\reference\\\\python\"\" && copy \"C:UserskepneOneDriveDocuments#NestAudioBridgecast_system_audio_to_nest_improved_FIXED.py\" \"c:UserskepneOneDriveDocumentsGitHubpcnestspeakerreferencepython\"\")",
       "Bash(copy:*)",
       "Bash(ffmpeg:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(python:*)",
+      "Bash(pip show:*)"
     ]
   }
 }

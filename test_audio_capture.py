@@ -112,12 +112,14 @@ def discover_speakers():
 
         speakers = []
         for cc in chromecasts:
+            info = cc.cast_info
             speakers.append({
-                "name": cc.name,
-                "model": cc.model_name,
-                "ip": cc.host
+                "name": info.friendly_name,
+                "model": info.model_name,
+                "ip": info.host,
+                "type": info.cast_type
             })
-            print(f"  [OK] {cc.name} ({cc.model_name}) @ {cc.host}")
+            print(f"  [OK] {info.friendly_name} ({info.model_name}) @ {info.host}")
 
         return speakers
     except Exception as e:
