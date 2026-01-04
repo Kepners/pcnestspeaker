@@ -5,8 +5,12 @@
 
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
+const { initMain } = require('electron-audio-loopback');
 const { ChromecastManager } = require('./chromecast');
 const { AudioStreamer } = require('./audio-streamer');
+
+// IMPORTANT: Initialize audio loopback BEFORE app is ready
+initMain();
 
 // Keep global references
 let mainWindow = null;
@@ -16,7 +20,6 @@ let audioStreamer = null;
 // Settings
 const settings = {
   selectedSpeaker: null,
-  streamMode: 'hls', // 'hls' or 'mp3'
 };
 
 function createWindow() {
@@ -76,29 +79,45 @@ ipcMain.handle('discover-speakers', async () => {
   }
 });
 
-// Start streaming
-ipcMain.handle('start-streaming', async (event, speakerName) => {
+// Prepare streaming (start HTTP server and FFmpeg, return URL)
+ipcMain.handle('prepare-streaming', async () => {
   try {
-    if (!chromecastManager) {
-      return { success: false, error: 'No speakers discovered' };
-    }
-
     // Initialize audio streamer
     if (!audioStreamer) {
       audioStreamer = new AudioStreamer();
     }
 
-    // Start the stream
+    // Start the HTTP server and FFmpeg
     const streamUrl = await audioStreamer.start();
-
-    // Cast to speaker
-    await chromecastManager.castToSpeaker(speakerName, streamUrl);
-
-    settings.selectedSpeaker = speakerName;
 
     return { success: true, url: streamUrl };
   } catch (error) {
-    console.error('Streaming error:', error);
+    console.error('Prepare streaming error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Receive audio data from renderer process
+ipcMain.on('audio-data', (event, buffer) => {
+  if (audioStreamer) {
+    audioStreamer.writeAudioData(buffer);
+  }
+});
+
+// Cast to speaker
+ipcMain.handle('cast-to-speaker', async (event, speakerName, streamUrl) => {
+  try {
+    if (!chromecastManager) {
+      return { success: false, error: 'No speakers discovered' };
+    }
+
+    // Cast to speaker
+    await chromecastManager.castToSpeaker(speakerName, streamUrl);
+    settings.selectedSpeaker = speakerName;
+
+    return { success: true };
+  } catch (error) {
+    console.error('Cast error:', error);
     return { success: false, error: error.message };
   }
 });
@@ -124,7 +143,6 @@ ipcMain.handle('get-status', () => {
   return {
     isStreaming: audioStreamer?.isStreaming || false,
     selectedSpeaker: settings.selectedSpeaker,
-    streamMode: settings.streamMode,
   };
 });
 

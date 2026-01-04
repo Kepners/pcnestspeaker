@@ -1,11 +1,11 @@
 /**
- * Audio Streamer - Handles audio capture and streaming via FFmpeg
+ * Audio Streamer - Handles FFmpeg encoding and HTTP streaming
  *
  * Audio Pipeline:
- * Windows Audio → WASAPI Loopback (electron-audio-loopback) → FFmpeg → MP3 Stream → HTTP → Nest Speaker
+ * Renderer (MediaStream via WASAPI) → IPC → FFmpeg (MP3) → HTTP → Nest Speaker
  *
  * Key: Uses progressive MP3 streaming - NO files created on disk!
- * Key: Uses native WASAPI loopback - NO external software (VB-CABLE etc) required!
+ * Key: Audio capture happens in renderer process using electron-audio-loopback
  */
 
 const { spawn } = require('child_process');
@@ -21,17 +21,16 @@ const CONFIG = {
   sampleRate: 48000,
   channels: 2,
   bitrate: '128k',
-  chunkSize: 8192, // Bytes per chunk (from reference Python code)
 };
 
 class AudioStreamer {
   constructor() {
     this.ffmpegProcess = null;
-    this.audioCapture = null;
     this.httpServer = null;
     this.isStreaming = false;
     this.localIp = this.getLocalIp();
     this.clients = new Set(); // Track connected HTTP clients
+    this.streamUrl = null;
   }
 
   /**
@@ -135,41 +134,18 @@ class AudioStreamer {
   }
 
   /**
-   * Initialize audio capture using electron-audio-loopback
-   * This uses native WASAPI loopback - no VB-CABLE needed!
-   */
-  async initAudioCapture() {
-    try {
-      // Import the native audio loopback module
-      const audioLoopback = require('electron-audio-loopback');
-
-      // Start capturing system audio
-      this.audioCapture = audioLoopback.startCapture({
-        sampleRate: CONFIG.sampleRate,
-        channels: CONFIG.channels,
-        format: 'f32le', // 32-bit float, little-endian
-      });
-
-      console.log('Native WASAPI audio capture initialized');
-      return this.audioCapture;
-    } catch (error) {
-      console.error('Failed to initialize native audio capture:', error);
-      throw new Error('Audio capture failed. Please ensure Windows audio is working.');
-    }
-  }
-
-  /**
    * Start FFmpeg with MP3 output to stdout
-   * Streams directly - no files created!
+   * Receives raw PCM from stdin, streams MP3 to HTTP clients
    */
-  startFFmpegMP3(audioStream) {
+  startFFmpegMP3() {
     const ffmpeg = this.getFFmpegPath();
 
     // FFmpeg args for piped input, MP3 output to stdout
+    // Input format: 32-bit float, little-endian, stereo, 48kHz
     const args = [
       '-hide_banner',
       '-loglevel', 'error',
-      // Input: raw PCM from stdin
+      // Input: raw PCM from stdin (Float32LE from Web Audio API)
       '-f', 'f32le',
       '-ar', String(CONFIG.sampleRate),
       '-ac', String(CONFIG.channels),
@@ -189,17 +165,6 @@ class AudioStreamer {
 
     this.ffmpegProcess = spawn(ffmpeg, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    // Pipe audio data from WASAPI capture to FFmpeg stdin
-    audioStream.on('data', (buffer) => {
-      if (this.ffmpegProcess && this.ffmpegProcess.stdin.writable) {
-        this.ffmpegProcess.stdin.write(buffer);
-      }
-    });
-
-    audioStream.on('error', (err) => {
-      console.error('Audio capture error:', err);
     });
 
     // Pipe FFmpeg MP3 output to all connected HTTP clients
@@ -231,6 +196,17 @@ class AudioStreamer {
   }
 
   /**
+   * Write audio data to FFmpeg stdin
+   * Called from IPC when renderer sends audio buffers
+   * @param {Buffer} buffer - Raw PCM audio data (Float32LE)
+   */
+  writeAudioData(buffer) {
+    if (this.ffmpegProcess && this.ffmpegProcess.stdin.writable) {
+      this.ffmpegProcess.stdin.write(Buffer.from(buffer));
+    }
+  }
+
+  /**
    * Start streaming
    * @returns {Promise<string>} Stream URL
    */
@@ -247,18 +223,15 @@ class AudioStreamer {
     // Start HTTP server first
     await this.startHttpServer(port);
 
-    // Initialize native audio capture (WASAPI loopback)
-    const audioStream = await this.initAudioCapture();
-
-    // Start FFmpeg with MP3 output to connected clients
-    this.startFFmpegMP3(audioStream);
+    // Start FFmpeg
+    this.startFFmpegMP3();
 
     this.isStreaming = true;
 
-    const streamUrl = `http://${this.localIp}:${port}/live.mp3`;
-    console.log('Stream URL:', streamUrl);
+    this.streamUrl = `http://${this.localIp}:${port}/live.mp3`;
+    console.log('Stream URL:', this.streamUrl);
 
-    return streamUrl;
+    return this.streamUrl;
   }
 
   /**
@@ -277,17 +250,6 @@ class AudioStreamer {
       }
     }
     this.clients.clear();
-
-    // Stop audio capture
-    if (this.audioCapture) {
-      try {
-        const audioLoopback = require('electron-audio-loopback');
-        audioLoopback.stopCapture();
-      } catch (e) {
-        // Ignore errors
-      }
-      this.audioCapture = null;
-    }
 
     // Stop FFmpeg
     if (this.ffmpegProcess) {

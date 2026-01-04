@@ -1,6 +1,6 @@
 /**
  * PC Nest Speaker - Renderer Process
- * Handles UI interactions and communicates with main process via IPC
+ * Handles UI interactions, audio capture, and communicates with main process via IPC
  */
 
 // DOM Elements
@@ -16,6 +16,10 @@ const businessLink = document.getElementById('business-link');
 let speakers = [];
 let selectedSpeaker = null;
 let isStreaming = false;
+let audioContext = null;
+let mediaStream = null;
+let audioProcessor = null;
+let streamUrl = null;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
@@ -142,6 +146,73 @@ async function toggleStreaming() {
   }
 }
 
+/**
+ * Get system audio loopback using electron-audio-loopback
+ * This captures "what you hear" via WASAPI loopback
+ */
+async function getLoopbackAudioStream() {
+  // Tell main process to enable loopback mode
+  await window.api.enableLoopbackAudio();
+
+  // Get a MediaStream with system audio
+  // electron-audio-loopback overrides getDisplayMedia to provide loopback
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video: true, // Required by Chromium, but we remove the track
+    audio: true,
+  });
+
+  // Remove video tracks we don't need
+  const videoTracks = stream.getVideoTracks();
+  videoTracks.forEach(track => {
+    track.stop();
+    stream.removeTrack(track);
+  });
+
+  // Restore normal getDisplayMedia behavior
+  await window.api.disableLoopbackAudio();
+
+  return stream;
+}
+
+/**
+ * Set up audio processing to send PCM to main process
+ */
+function setupAudioProcessing(stream) {
+  audioContext = new AudioContext({
+    sampleRate: 48000,
+    latencyHint: 'interactive',
+  });
+
+  const source = audioContext.createMediaStreamSource(stream);
+
+  // Create a ScriptProcessorNode to get raw audio samples
+  // Note: ScriptProcessorNode is deprecated but still works, AudioWorklet would be better
+  const bufferSize = 4096;
+  audioProcessor = audioContext.createScriptProcessor(bufferSize, 2, 2);
+
+  audioProcessor.onaudioprocess = (e) => {
+    if (!isStreaming) return;
+
+    // Get audio data from both channels
+    const left = e.inputBuffer.getChannelData(0);
+    const right = e.inputBuffer.getChannelData(1);
+
+    // Interleave stereo channels (L R L R L R...)
+    const interleaved = new Float32Array(left.length * 2);
+    for (let i = 0; i < left.length; i++) {
+      interleaved[i * 2] = left[i];
+      interleaved[i * 2 + 1] = right[i];
+    }
+
+    // Send to main process for FFmpeg encoding
+    window.api.sendAudioData(interleaved.buffer);
+  };
+
+  // Connect the pipeline
+  source.connect(audioProcessor);
+  audioProcessor.connect(audioContext.destination);
+}
+
 async function startStreaming() {
   if (!selectedSpeaker) {
     showError('Please select a speaker first');
@@ -151,24 +222,64 @@ async function startStreaming() {
   showLoading('Starting stream...');
 
   try {
-    const result = await window.api.startStreaming(selectedSpeaker.name);
-
-    if (result.success) {
-      setStreamingState(true);
-    } else {
-      showError(result.error || 'Failed to start streaming');
+    // 1. Prepare streaming (start HTTP server and FFmpeg)
+    const prepResult = await window.api.prepareStreaming();
+    if (!prepResult.success) {
+      throw new Error(prepResult.error || 'Failed to prepare streaming');
     }
+    streamUrl = prepResult.url;
+
+    // 2. Get system audio loopback
+    showLoading('Capturing audio...');
+    mediaStream = await getLoopbackAudioStream();
+
+    // 3. Set up audio processing to send PCM to main
+    setupAudioProcessing(mediaStream);
+
+    // 4. Cast to speaker
+    showLoading('Casting to speaker...');
+    const castResult = await window.api.castToSpeaker(selectedSpeaker.name, streamUrl);
+    if (!castResult.success) {
+      throw new Error(castResult.error || 'Failed to cast to speaker');
+    }
+
+    setStreamingState(true);
   } catch (error) {
-    showError(error.message);
+    console.error('Start streaming error:', error);
+    showError(error.message || 'Failed to start streaming');
+
+    // Cleanup on error
+    await cleanupAudio();
   }
 
   hideLoading();
+}
+
+async function cleanupAudio() {
+  if (audioProcessor) {
+    audioProcessor.disconnect();
+    audioProcessor = null;
+  }
+
+  if (audioContext) {
+    await audioContext.close();
+    audioContext = null;
+  }
+
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(track => track.stop());
+    mediaStream = null;
+  }
 }
 
 async function stopStreaming() {
   showLoading('Stopping stream...');
 
   try {
+    // Stop audio capture
+    await cleanupAudio();
+
+    // Stop streaming in main process
     const result = await window.api.stopStreaming();
 
     if (result.success) {

@@ -9,9 +9,17 @@ contextBridge.exposeInMainWorld('api', {
   discoverSpeakers: () => ipcRenderer.invoke('discover-speakers'),
 
   // Streaming controls
-  startStreaming: (speakerName) => ipcRenderer.invoke('start-streaming', speakerName),
+  prepareStreaming: () => ipcRenderer.invoke('prepare-streaming'),
+  castToSpeaker: (speakerName, streamUrl) => ipcRenderer.invoke('cast-to-speaker', speakerName, streamUrl),
   stopStreaming: () => ipcRenderer.invoke('stop-streaming'),
   getStatus: () => ipcRenderer.invoke('get-status'),
+
+  // Send audio data to main process for FFmpeg
+  sendAudioData: (buffer) => ipcRenderer.send('audio-data', buffer),
+
+  // Audio loopback control (handled by electron-audio-loopback)
+  enableLoopbackAudio: () => ipcRenderer.invoke('enable-loopback-audio'),
+  disableLoopbackAudio: () => ipcRenderer.invoke('disable-loopback-audio'),
 
   // Utilities
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
