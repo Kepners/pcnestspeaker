@@ -46,11 +46,12 @@
     playerManager.setPlaybackConfig(playbackConfig);
 
     // ===================
-    // WebRTC via webrtc-streamer
+    // WebRTC via webrtc-streamer (based on official webrtcstreamer.js)
     // ===================
     let peerConnection = null;
     let webrtcStreamerUrl = null;
-    let iceCandidates = [];
+    let currentPeerId = null;
+    let earlyCandidates = [];
     const audioElement = document.getElementById('webrtc-audio');
 
     function log(msg) {
@@ -58,13 +59,50 @@
       document.getElementById('status').textContent = msg;
     }
 
+    // Send ICE candidate to server (only if remote description is set)
+    async function sendIceCandidate(candidate, serverUrl, peerId) {
+      try {
+        await fetch(serverUrl + '/api/addIceCandidate?peerid=' + encodeURIComponent(peerId), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'bypass-tunnel-reminder': 'true'
+          },
+          body: JSON.stringify(candidate)
+        });
+      } catch (e) {
+        console.error('Failed to send ICE candidate:', e);
+      }
+    }
+
+    // Get server's ICE candidates and add them
+    async function getServerIceCandidates(serverUrl, peerId) {
+      try {
+        const response = await fetch(serverUrl + '/api/getIceCandidate?peerid=' + encodeURIComponent(peerId), {
+          headers: { 'bypass-tunnel-reminder': 'true' }
+        });
+        if (response.ok) {
+          const candidates = await response.json();
+          if (candidates && candidates.length) {
+            log('Adding ' + candidates.length + ' server ICE candidates');
+            for (const c of candidates) {
+              await peerConnection.addIceCandidate(new RTCIceCandidate(c));
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to get server ICE candidates:', e);
+      }
+    }
+
     /**
      * Connect to webrtc-streamer server
-     * Flow: Create offer → POST to /api/call → Get answer → Connect
+     * Based on official webrtcstreamer.js implementation
      */
     async function connectToWebRTCStreamer(serverUrl, streamName = 'pcaudio') {
       webrtcStreamerUrl = serverUrl;
-      const sessionId = 'session_' + Date.now();  // Unique session ID
+      currentPeerId = '' + Math.random();  // Random peer ID like official lib
+      earlyCandidates = [];
       log('Connecting to ' + serverUrl);
 
       // Create PeerConnection
@@ -75,12 +113,18 @@
       };
 
       peerConnection = new RTCPeerConnection(config);
-      log('PeerConnection created');
+      log('PeerConnection created, peerId: ' + currentPeerId);
 
-      // Collect ICE candidates to send with offer
+      // Handle ICE candidates - send immediately if remote desc set, else queue
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          iceCandidates.push(event.candidate);
+          if (peerConnection.currentRemoteDescription) {
+            // Remote description set - send immediately
+            sendIceCandidate(event.candidate, serverUrl, currentPeerId);
+          } else {
+            // Queue for later
+            earlyCandidates.push(event.candidate);
+          }
         }
       };
 
@@ -117,14 +161,11 @@
       await peerConnection.setLocalDescription(offer);
       log('Created offer');
 
-      // Wait a moment for ICE gathering
-      await new Promise(resolve => setTimeout(resolve, 500));
-
       // Call webrtc-streamer API
       try {
-        // Use the pre-configured stream name (server started with -n pcaudio -U audiocap://1)
-        // Reference the named stream as the audio source, use unique session ID
-        const callUrl = serverUrl + '/api/call?peerid=' + encodeURIComponent(sessionId) + '&audiourl=' + encodeURIComponent(streamName);
+        // Build URL like official lib: /api/call?peerid=xxx&audiourl=streamname
+        const callUrl = serverUrl + '/api/call?peerid=' + encodeURIComponent(currentPeerId) +
+                        '&audiourl=' + encodeURIComponent(streamName);
 
         log('Calling ' + callUrl);
         const response = await fetch(callUrl, {
@@ -143,22 +184,19 @@
         const answer = await response.json();
         log('Got answer from server');
 
+        // Set remote description
         await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
         log('Set remote description');
 
-        // Send gathered ICE candidates (use same sessionId as the call)
-        for (const candidate of iceCandidates) {
-          const iceUrl = serverUrl + '/api/addIceCandidate?peerid=' + encodeURIComponent(sessionId);
-          await fetch(iceUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'bypass-tunnel-reminder': 'true'
-            },
-            body: JSON.stringify(candidate)
-          });
+        // Now send any early candidates that were queued
+        while (earlyCandidates.length) {
+          const candidate = earlyCandidates.shift();
+          await sendIceCandidate(candidate, serverUrl, currentPeerId);
         }
-        log('Sent ICE candidates');
+        log('Sent early ICE candidates');
+
+        // Get server's ICE candidates
+        await getServerIceCandidates(serverUrl, currentPeerId);
 
       } catch (e) {
         log('Connection error: ' + e.message);
@@ -168,6 +206,12 @@
 
     function disconnect() {
       if (peerConnection) {
+        // Hangup call on server
+        if (webrtcStreamerUrl && currentPeerId) {
+          fetch(webrtcStreamerUrl + '/api/hangup?peerid=' + encodeURIComponent(currentPeerId), {
+            headers: { 'bypass-tunnel-reminder': 'true' }
+          }).catch(() => {});
+        }
         peerConnection.close();
         peerConnection = null;
         audioElement.srcObject = null;
@@ -182,8 +226,6 @@
 
       switch (data.type) {
         case 'connect':
-          // Connect to webrtc-streamer server
-          // data.url = "http://192.168.x.x:8080"
           if (data.url) {
             connectToWebRTCStreamer(data.url, data.stream || 'pcaudio');
           } else {
@@ -228,7 +270,6 @@
         .then(r => r.json())
         .then(data => {
           log('Server reachable via HTTPS!');
-          // Now try the actual WebRTC connection
           connectToWebRTCStreamer(httpsUrl, 'pcaudio');
         })
         .catch(e => {
@@ -246,7 +287,6 @@
           const customData = loadRequestData.media.customData;
           if (customData.webrtcUrl) {
             log('WebRTC URL from customData: ' + customData.webrtcUrl);
-            // Don't play HTTP media, use WebRTC instead
             playerManager.stop();
             connectToWebRTCStreamer(customData.webrtcUrl, customData.stream || 'pcaudio');
           }
@@ -260,14 +300,11 @@
       (request) => {
         if (request.media && request.media.customData && request.media.customData.webrtcUrl) {
           log('WebRTC mode - URL: ' + request.media.customData.webrtcUrl);
-          // Start WebRTC connection
           setTimeout(() => {
             connectToWebRTCStreamer(request.media.customData.webrtcUrl, request.media.customData.stream || 'pcaudio');
           }, 500);
-          // Return null to prevent media playback (we'll use WebRTC audio element)
           return null;
         }
-        // Normal media load
         if (request.media) {
           request.media.streamType = cast.framework.messages.StreamType.LIVE;
           request.autoplay = true;
