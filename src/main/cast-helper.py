@@ -307,10 +307,11 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None):
             )
             if chromecasts:
                 cast = chromecasts[0]
-                browser.stop_discovery()
             else:
                 # Fallback: try discovery without IP hint
                 print(f"[WebRTC] Direct connection failed, trying discovery...", file=sys.stderr)
+                if browser:
+                    browser.stop_discovery()
                 chromecasts, browser = pychromecast.get_listed_chromecasts(
                     friendly_names=[speaker_name],
                     timeout=10
@@ -319,7 +320,6 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None):
                     browser.stop_discovery()
                     return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
                 cast = chromecasts[0]
-                browser.stop_discovery()
         else:
             # Fall back to discovery if no IP provided
             print(f"[WebRTC] Looking for '{speaker_name}'...", file=sys.stderr)
@@ -334,11 +334,14 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None):
                 return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
 
             cast = chromecasts[0]
-            browser.stop_discovery()
 
         host = cast.cast_info.host if hasattr(cast, 'cast_info') else speaker_ip or 'unknown'
         print(f"[WebRTC] Connected to {host}, waiting for ready...", file=sys.stderr)
         cast.wait(timeout=10)
+
+        # Stop discovery AFTER wait() completes - zeroconf must stay running until then
+        if browser:
+            browser.stop_discovery()
 
         # Launch custom receiver
         print(f"[WebRTC] Launching receiver (App ID: {CUSTOM_APP_ID})...", file=sys.stderr)
@@ -368,7 +371,6 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None):
             time.sleep(2)  # Wait for receiver to process
             print("[WebRTC] WebRTC URL sent to receiver!", file=sys.stderr)
 
-        # Browser already stopped above
         return {
             "success": True,
             "mode": "webrtc",
