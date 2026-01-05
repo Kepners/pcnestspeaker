@@ -6,19 +6,46 @@
  * 2. MP3 - Fallback progressive streaming
  */
 
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
 const net = require('net');
 
+// Ensure Windows Firewall allows our HTTP server
+function ensureFirewallRule(port) {
+  if (process.platform !== 'win32') return Promise.resolve();
+
+  return new Promise((resolve) => {
+    // Check if rule exists
+    exec(`netsh advfirewall firewall show rule name="PC Nest Speaker HTTP" >nul 2>&1`, (err) => {
+      if (!err) {
+        console.log('Firewall rule already exists');
+        resolve();
+        return;
+      }
+
+      // Create rule (will prompt for admin if needed)
+      console.log('Creating firewall rule for port', port);
+      exec(`netsh advfirewall firewall add rule name="PC Nest Speaker HTTP" dir=in action=allow protocol=TCP localport=${port}`, (err2) => {
+        if (err2) {
+          console.log('Could not create firewall rule (may need admin rights):', err2.message);
+        } else {
+          console.log('Firewall rule created successfully');
+        }
+        resolve(); // Continue even if rule creation fails
+      });
+    });
+  });
+}
+
 // Configuration
 const CONFIG = {
   port: 8000,
   sampleRate: 48000,
   channels: 2,
-  bitrate: '320k',  // Higher bitrate = faster buffer fill = lower latency (~8-10s vs ~22s)
+  bitrate: '320k',  // Higher bitrate = faster buffer fill = lower latency
   hlsSegmentTime: 0.5,  // 0.5 second segments for low latency
   hlsListSize: 3,       // Keep only 3 segments in playlist
 };
@@ -204,9 +231,29 @@ class AudioStreamer {
   }
 
   /**
-   * Start HTTP server for progressive MP3 streaming
+   * Start HTTP server for progressive MP3 streaming with accumulating buffer
+   * New clients get all buffered data immediately, then live audio continues
    */
   startMp3Server(port) {
+    // Accumulating buffer - stores last ~10 seconds of audio (400KB at 320kbps)
+    const MAX_BUFFER_SIZE = 400 * 1024;
+    this.audioBuffer = [];
+    this.audioBufferSize = 0;
+
+    console.log(`Audio buffer: max ${Math.round(MAX_BUFFER_SIZE / 1024)} KB (~10 seconds at 320kbps)`);
+
+    // Method to add audio to buffer (called by FFmpeg handler)
+    this.addToBuffer = (chunk) => {
+      this.audioBuffer.push(chunk);
+      this.audioBufferSize += chunk.length;
+
+      // Trim old data if buffer exceeds max size
+      while (this.audioBufferSize > MAX_BUFFER_SIZE && this.audioBuffer.length > 1) {
+        const removed = this.audioBuffer.shift();
+        this.audioBufferSize -= removed.length;
+      }
+    };
+
     return new Promise((resolve, reject) => {
       this.httpServer = http.createServer((req, res) => {
         if (req.url !== '/live.mp3' && req.url !== '/') {
@@ -222,6 +269,13 @@ class AudioStreamer {
           'Access-Control-Allow-Origin': '*',
           'Transfer-Encoding': 'chunked',
         });
+
+        // Send ALL buffered audio immediately - fills Cast buffer fast!
+        if (this.audioBuffer.length > 0) {
+          const buffered = Buffer.concat(this.audioBuffer);
+          res.write(buffered);
+          console.log(`Sent ${Math.round(buffered.length / 1024)} KB buffered audio to client`);
+        }
 
         this.clients.add(res);
         console.log(`Client connected. Total: ${this.clients.size}`);
@@ -310,7 +364,7 @@ class AudioStreamer {
   }
 
   /**
-   * Start FFmpeg for MP3 output
+   * Start FFmpeg for MP3 streaming
    */
   startMp3FFmpeg(audioDevice) {
     const ffmpeg = this.getFFmpegPath();
@@ -324,21 +378,15 @@ class AudioStreamer {
       '-probesize', '32',
       '-analyzeduration', '0',
       '-rtbufsize', '64k',
-      // Input from dshow
       '-f', 'dshow',
       '-audio_buffer_size', '50',
       '-i', `audio=${audioDevice}`,
       // Audio processing
       '-ac', String(CONFIG.channels),
       '-ar', String(CONFIG.sampleRate),
-      // MP3 output
+      // MP3 320kbps output
       '-c:a', 'libmp3lame',
       '-b:a', CONFIG.bitrate,
-      '-reservoir', '0',
-      // Low latency output
-      '-flush_packets', '1',
-      '-avioflags', 'direct',
-      '-max_delay', '0',
       '-f', 'mp3',
       'pipe:1',
     ];
@@ -349,7 +397,26 @@ class AudioStreamer {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
+    let bytesStreamed = 0;
+    let firstChunk = true;
     this.ffmpegProcess.stdout.on('data', (chunk) => {
+      if (firstChunk) {
+        console.log(`FFmpeg: First audio chunk received (${chunk.length} bytes)`);
+        firstChunk = false;
+      }
+      bytesStreamed += chunk.length;
+
+      // Add to rolling buffer (for new clients)
+      if (this.addToBuffer) {
+        this.addToBuffer(chunk);
+      }
+
+      // Log every 50KB of data streamed (more frequent logging)
+      if (bytesStreamed % 51200 < chunk.length) {
+        console.log(`FFmpeg data: ${Math.round(bytesStreamed / 1024)} KB streamed, buffer: ${Math.round(this.audioBufferSize / 1024)} KB, ${this.clients.size} clients`);
+      }
+
+      // Send to all connected clients
       for (const client of this.clients) {
         try {
           if (!client.writableEnded) {
@@ -407,6 +474,9 @@ class AudioStreamer {
     console.log('Using audio device:', audioDevice);
 
     const port = await this.findAvailablePort();
+
+    // Ensure firewall allows incoming connections
+    await ensureFirewallRule(port);
 
     if (mode === 'hls') {
       // HLS mode

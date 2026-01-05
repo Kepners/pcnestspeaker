@@ -39,18 +39,6 @@
     };
 
     playerManager.setMessageInterceptor(
-      cast.framework.messages.MessageType.LOAD,
-      (request) => {
-        if (request.media) {
-          request.media.streamType = cast.framework.messages.StreamType.LIVE;
-          request.autoplay = true;
-          request.currentTime = 0;
-        }
-        return request;
-      }
-    );
-
-    playerManager.setMessageInterceptor(
       cast.framework.messages.MessageType.PRELOAD,
       () => null
     );
@@ -217,7 +205,27 @@
       }
     });
 
-    log('Ready - Awaiting connect');
+    log('Ready - Auto-connecting...');
+
+    // Auto-connect to webrtc-streamer on load (for testing)
+    // The sender will pass the URL, but we'll try a test connection first
+    setTimeout(() => {
+      // Try to detect local network - this is a test
+      log('Testing connection...');
+
+      // Try common local IPs - the sender should provide the actual URL
+      // For now, test with a placeholder to see if fetch works at all
+      fetch('http://192.168.50.48:8080/api/getMediaList')
+        .then(r => r.json())
+        .then(data => {
+          log('Server reachable! Found ' + data.length + ' streams');
+          // Now try the actual WebRTC connection
+          connectToWebRTCStreamer('http://192.168.50.48:8080', 'pcaudio');
+        })
+        .catch(e => {
+          log('Connection blocked: ' + e.message);
+        });
+    }, 2000);
 
     // Listen for LOAD events with customData containing webrtc-streamer URL
     playerManager.addEventListener(

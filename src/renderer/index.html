@@ -35,8 +35,29 @@
         </div>
       </div>
 
-      <!-- Audio Source Selection -->
+      <!-- Streaming Mode Selection -->
       <div class="card">
+        <h2 class="card-title">Streaming Mode</h2>
+        <div class="mode-selector">
+          <label class="mode-option">
+            <input type="radio" name="stream-mode" value="http" checked>
+            <span class="mode-label">
+              <strong>HTTP (Reliable)</strong>
+              <small>~8 second latency</small>
+            </span>
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="stream-mode" value="webrtc">
+            <span class="mode-label">
+              <strong>WebRTC (Low Latency)</strong>
+              <small>~500ms latency (experimental)</small>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Audio Source Selection (HTTP mode only) -->
+      <div class="card" id="audio-source-card">
         <h2 class="card-title">Audio Source</h2>
         <select class="select" id="audio-device-select" disabled>
           <option value="">Click "Discover" to find devices</option>
@@ -89,6 +110,7 @@
     </div>
   </div>
 
+  <script src="webrtc-client.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

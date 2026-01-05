@@ -266,6 +266,57 @@ body {
   height: 20px;
 }
 
+/* Mode Selector */
+.mode-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mode-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mode-option:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--color-beige);
+}
+
+.mode-option input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-blush);
+}
+
+.mode-option input[type="radio"]:checked + .mode-label strong {
+  color: var(--color-blush);
+}
+
+.mode-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mode-label strong {
+  font-weight: 500;
+  color: var(--color-beige);
+  transition: color 0.2s ease;
+}
+
+.mode-label small {
+  font-size: 0.75rem;
+  color: var(--color-grey);
+}
+
 /* Select Dropdown */
 .select {
   width: 100%;

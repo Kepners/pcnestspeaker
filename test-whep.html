@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WHEP Test - WebRTC Audio</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #1a1a1a; color: #fff; }
+    button { padding: 15px 30px; font-size: 18px; margin: 10px; cursor: pointer; }
+    #status { margin: 20px 0; padding: 15px; background: #333; border-radius: 8px; }
+    .success { color: #4CAF50; }
+    .error { color: #f44336; }
+  </style>
+</head>
+<body>
+  <h1>WHEP WebRTC Audio Test</h1>
+  <p>Testing connection to webrtc-streamer</p>
+
+  <div>
+    <button onclick="connect()">Connect to Audio</button>
+    <button onclick="disconnect()">Disconnect</button>
+  </div>
+
+  <div id="status">Status: Ready</div>
+
+  <audio id="audio" autoplay controls style="width: 100%; margin-top: 20px;"></audio>
+
+  <script>
+    const WHEP_URL = 'http://localhost:8080/api/whep?url=pcaudio';
+    let pc = null;
+
+    function log(msg, isError = false) {
+      console.log(msg);
+      document.getElementById('status').innerHTML += `<div class="${isError ? 'error' : ''}">${new Date().toLocaleTimeString()}: ${msg}</div>`;
+    }
+
+    async function connect() {
+      log('Creating PeerConnection...');
+
+      pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+
+      pc.ontrack = (event) => {
+        log('Received audio track!', false);
+        document.getElementById('audio').srcObject = event.streams[0];
+        log('Audio playing - check latency!', false);
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        log(`ICE state: ${pc.iceConnectionState}`);
+      };
+
+      pc.onconnectionstatechange = () => {
+        log(`Connection state: ${pc.connectionState}`);
+        if (pc.connectionState === 'connected') {
+          log('SUCCESS - WebRTC connected!', false);
+        }
+      };
+
+      // Add transceiver for receiving audio
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+
+      try {
+        // Create offer
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        log('Created offer, sending to server...');
+
+        // Send to WHEP endpoint
+        const response = await fetch(WHEP_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/sdp' },
+          body: offer.sdp
+        });
+
+        if (!response.ok) {
+          throw new Error(`WHEP error: ${response.status} ${response.statusText}`);
+        }
+
+        const answerSdp = await response.text();
+        log('Got answer from server');
+
+        // Set remote description
+        await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+        log('Set remote description, waiting for connection...');
+
+      } catch (e) {
+        log(`Error: ${e.message}`, true);
+      }
+    }
+
+    function disconnect() {
+      if (pc) {
+        pc.close();
+        pc = null;
+        log('Disconnected');
+      }
+      document.getElementById('audio').srcObject = null;
+    }
+  </script>
+</body>
+</html>

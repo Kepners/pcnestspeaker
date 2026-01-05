@@ -237,6 +237,52 @@ ipcMain.handle('open-external', async (event, url) => {
   await shell.openExternal(url);
 });
 
+// ===================
+// WebRTC Low-Latency Mode
+// ===================
+
+// Launch custom receiver for WebRTC
+ipcMain.handle('webrtc-launch', async (event, speakerName) => {
+  try {
+    sendLog(`[WebRTC] Launching receiver on "${speakerName}"...`);
+    const result = await runPython(['webrtc-launch', speakerName]);
+
+    if (result.success) {
+      sendLog('[WebRTC] Custom receiver launched', 'success');
+    } else {
+      sendLog(`[WebRTC] Launch failed: ${result.error}`, 'error');
+    }
+    return result;
+  } catch (error) {
+    sendLog(`[WebRTC] Launch error: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+// Send WebRTC signaling message (SDP offer/answer, ICE candidates)
+ipcMain.handle('webrtc-signal', async (event, speakerName, message) => {
+  try {
+    const messageType = message.type || 'unknown';
+    sendLog(`[WebRTC] Signaling: ${messageType}`);
+
+    // Pass message as JSON string to Python
+    const messageJson = JSON.stringify(message);
+    const result = await runPython(['webrtc-signal', speakerName, messageJson]);
+
+    if (result.success) {
+      if (result.response) {
+        sendLog(`[WebRTC] Got response: ${result.response.type || 'data'}`, 'success');
+      }
+    } else {
+      sendLog(`[WebRTC] Signal failed: ${result.error}`, 'error');
+    }
+    return result;
+  } catch (error) {
+    sendLog(`[WebRTC] Signal error: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
 // App lifecycle
 app.whenReady().then(() => {
   createWindow();

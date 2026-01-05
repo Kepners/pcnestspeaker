@@ -39,7 +39,18 @@
       "Bash(cmd /c \"mkdir c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\docs 2>nul & copy c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\cast-receiver\\\\receiver.html c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\docs\\\\receiver.html\")",
       "Bash(cd:*)",
       "Bash(timeout /t 15 /nobreak)",
-      "Bash(cmd /c copy \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\cast-receiver\\\\receiver.html\" \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\docs\\\\receiver.html\")"
+      "Bash(cmd /c copy \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\cast-receiver\\\\receiver.html\" \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\docs\\\\receiver.html\")",
+      "Bash(timeout:*)",
+      "Bash(cmd /c \"set ELECTRON_RUN_AS_NODE= && cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && start npm run dev\")",
+      "Bash(explorer.exe \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\start-app.bat\")",
+      "Bash(cmd /c start \"\" \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\start-app.bat\")",
+      "Bash(cmd /c \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\start-app.bat\")",
+      "Bash(cmd /c start \"PC Nest Speaker\" cmd /k \"cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && set ELECTRON_RUN_AS_NODE= && npm run dev\")",
+      "Bash(tar:*)",
+      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/webrtc-streamer-v0.8.14-dirty-Windows-AMD64-Release/bin/webrtc-streamer.exe\" --help)",
+      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/webrtc-streamer-v0.8.14-dirty-Windows-AMD64-Release/bin/webrtc-streamer.exe\" -v -n \"pcaudio\" -U \"audiocap://virtual-audio-capturer\" -H 0.0.0.0:8080)",
+      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/webrtc-streamer-v0.8.14-dirty-Windows-AMD64-Release/bin/webrtc-streamer.exe\" -v -n \"pcaudio\" -U \"audiocap://0\" -H 0.0.0.0:8080)",
+      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/webrtc-streamer-v0.8.14-dirty-Windows-AMD64-Release/bin/webrtc-streamer.exe\" -v -n \"pcaudio\" -U \"audiocap://0\" -a -H 0.0.0.0:8080)"
     ]
   }
 }

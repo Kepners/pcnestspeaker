@@ -163,21 +163,23 @@ def webrtc_stream(speaker_name, webrtc_server_port=8080):
         webrtc_url = f"http://{local_ip}:{webrtc_server_port}"
         print(f"[WebRTC] WebRTC streamer URL: {webrtc_url}", file=sys.stderr)
 
-        # Use play_media to send the webrtc URL via customData
+        # Use play_media to send the webrtc URL via media_info/customData
         mc = cast.media_controller
-        print(f"[WebRTC] Sending play_media with customData...", file=sys.stderr)
+        print(f"[WebRTC] Sending play_media with media_info...", file=sys.stderr)
 
-        # Send a dummy media URL with customData containing the real webrtc URL
+        # Send a dummy media URL with media_info containing customData
         # The receiver will intercept this and use WebRTC instead
         mc.play_media(
             "https://placeholder.webrtc/audio.mp3",  # Placeholder - receiver ignores this
             "audio/mpeg",
             stream_type="LIVE",
             autoplay=True,
-            custom_data={
-                "webrtcUrl": webrtc_url,
-                "stream": "pcaudio",
-                "mode": "webrtc"
+            media_info={
+                "customData": {
+                    "webrtcUrl": webrtc_url,
+                    "stream": "pcaudio",
+                    "mode": "webrtc"
+                }
             }
         )
 

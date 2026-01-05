@@ -1,6 +1,6 @@
 /**
  * PC Nest Speaker - Renderer Process
- * Uses Python pychromecast for reliable Nest casting
+ * Supports HTTP streaming (8s latency) and WebRTC (sub-1s latency)
  */
 
 // DOM Elements
@@ -12,15 +12,19 @@ const loadingOverlay = document.getElementById('loading-overlay');
 const loadingText = document.getElementById('loading-text');
 const businessLink = document.getElementById('business-link');
 const audioDeviceSelect = document.getElementById('audio-device-select');
+const audioSourceCard = document.getElementById('audio-source-card');
 const debugLog = document.getElementById('debug-log');
 const clearLogBtn = document.getElementById('clear-log-btn');
 const pingBtn = document.getElementById('ping-btn');
+const modeRadios = document.querySelectorAll('input[name="stream-mode"]');
 
 // State
 let speakers = [];
 let audioDevices = [];
 let selectedSpeaker = null;
 let isStreaming = false;
+let streamingMode = 'http'; // 'http' or 'webrtc'
+let webrtcClient = null;
 
 // Debug logging
 function log(message, type = 'info') {
@@ -58,6 +62,15 @@ function setupEventListeners() {
     window.api.openExternal('https://choppedonions.xyz');
   });
 
+  // Mode selection
+  modeRadios.forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      streamingMode = e.target.value;
+      log(`Streaming mode: ${streamingMode}`);
+      updateModeUI();
+    });
+  });
+
   // Clear log button
   if (clearLogBtn) {
     clearLogBtn.addEventListener('click', () => {
@@ -80,6 +93,15 @@ function setupEventListeners() {
     log(`Error: ${error}`, 'error');
     showError(error);
   });
+}
+
+// Update UI based on streaming mode
+function updateModeUI() {
+  // HTTP mode needs audio device selection; WebRTC uses system audio automatically
+  if (audioSourceCard) {
+    audioSourceCard.style.display = streamingMode === 'http' ? 'block' : 'none';
+  }
+  updateStreamButtonState();
 }
 
 async function discoverDevices() {

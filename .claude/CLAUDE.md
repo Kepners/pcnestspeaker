@@ -214,13 +214,24 @@ $env:ELECTRON_RUN_AS_NODE = $null; npm run dev
 **Symptom:** `TypeError: Cannot read properties of undefined (reading 'commandLine')` or `ipcMain.handle is not a function`
 
 ### Launching Electron from Claude Code
-**Use PowerShell Start-Process to launch Electron in a new window:**
+**Use the batch file to launch Electron:**
 
 ```bash
-powershell -Command "Start-Process cmd -ArgumentList '/c cd /d c:\Users\kepne\OneDrive\Documents\GitHub\pcnestspeaker && npm run dev' -WindowStyle Normal"
+cmd /c start "" "c:\Users\kepne\OneDrive\Documents\GitHub\pcnestspeaker\start-app.bat"
 ```
 
-Direct bash commands won't work because Claude Code's Bash runs in a subprocess that doesn't properly handle GUI windows.
+The `start-app.bat` file:
+1. Clears the `ELECTRON_RUN_AS_NODE` environment variable
+2. Changes to the project directory
+3. Runs `npm run dev`
+
+Direct bash/PowerShell commands don't work reliably because Claude Code's environment sets `ELECTRON_RUN_AS_NODE` which breaks Electron.
+
+### Windows Firewall (Auto-configured)
+The app automatically creates a firewall rule for port 8000 on startup. If it fails (needs admin rights), run this once as Administrator:
+```cmd
+netsh advfirewall firewall add rule name="PC Nest Speaker HTTP" dir=in action=allow protocol=TCP localport=8000
+```
 
 ---
 
@@ -236,18 +247,55 @@ Direct bash commands won't work because Claude Code's Bash runs in a subprocess 
 | **Status** | **Published** (works on all devices) |
 | **Registered** | January 5, 2026 |
 
-### Custom Receiver Features (MP3 Optimized)
+### Custom Receiver Features (MP3 + WebRTC)
 - **Streaming Mode:** MP3 progressive (no files, direct pipe)
-- `autoResumeDuration: 0.1` (start after just 100ms buffer)
-- `autoPauseDuration: 0.05` (only pause if buffer < 50ms)
-- `initialBandwidth: 10000000` (10 Mbps - skip bandwidth probing)
+- **WebRTC Namespace:** `urn:x-cast:com.pcnestspeaker.webrtc`
+- `autoResumeDuration: 0` (resume immediately)
+- `autoPauseDuration: 0` (never auto-pause)
+- `initialBandwidth: 100000000` (100 Mbps - skip all probing)
 - `disablePreload: true` (reduce startup delay)
 - Message interceptor forces LIVE stream type for minimal buffering
+- **WebRTC support:** Accepts SDP offer/answer, ICE candidates via custom namespace
 
 ### Files
 - `cast-receiver/receiver.html` - Source file
 - `docs/receiver.html` - GitHub Pages deployment
 - `docs/index.html` - Redirect to receiver.html
+
+---
+
+## CRITICAL: Latency Analysis (January 5, 2026)
+
+### Why HTTP Streaming Has 15-25 Second Latency
+**Chromecast has a ~350KB buffer** that must fill before playback starts:
+
+| Format | Data Rate | Buffer Fill Time |
+|--------|-----------|------------------|
+| MP3 128kbps | 16 KB/s | **21.8 seconds** |
+| MP3 320kbps | 40 KB/s | **8.75 seconds** |
+| WAV 16-bit | 176 KB/s | **~2 seconds** |
+
+**Solution:** Increased bitrate to 320kbps (8-10s latency vs 22s).
+
+### Chrome Tab Casting Protocol (Sub-500ms Latency)
+Chrome uses proprietary WebRTC protocol:
+- **App ID:** `0F5096E8` (Chrome Mirroring - internal)
+- **Namespace:** `urn:x-cast:com.google.cast.webrtc`
+- **Audio:** Opus 128kbps, 48kHz, stereo
+- **Target delay:** 400ms built into protocol
+- Uses UDP/DTLS - no HTTP buffering
+
+**Nobody has reverse-engineered this for third-party use.**
+
+### WebRTC Custom Receiver Approach
+Our receiver supports WebRTC via custom namespace:
+1. Electron captures system audio via desktopCapturer (Windows loopback)
+2. Creates RTCPeerConnection, adds audio track
+3. Sends SDP offer to receiver via Cast messaging
+4. Receiver creates answer, establishes connection
+5. Audio streams over UDP/DTLS directly - no HTTP buffering
+
+**Status:** Receiver ready, sender implementation pending.
 
 ---
 
@@ -326,6 +374,26 @@ mc.block_until_active(timeout=30)
 - **WORKING:** Full pipeline tested - PC audio streams to Den pair successfully!
 - Speakers found: Green TV, DENNIS, Den pair, Back garden speaker, STUDY
 
+### January 5, 2026 (Session 4)
+- Custom Cast receiver registered (App ID: FCAA4619) and published
+- Fixed 404 on receiver URL - needed to copy to docs/ for GitHub Pages
+- **LATENCY DISCOVERY:** Chromecast has ~350KB buffer = 22s delay at 128kbps!
+- Increased bitrate to 320kbps → should reduce to ~8-10 seconds
+- Researched Chrome tab casting - uses proprietary WebRTC protocol (App ID: 0F5096E8)
+- Protocol uses `urn:x-cast:com.google.cast.webrtc` namespace with custom OFFER/ANSWER
+- **CREATED:** WebRTC-enabled custom receiver with signaling support
+- WebRTC namespace: `urn:x-cast:com.pcnestspeaker.webrtc`
+- User request: Implement WebRTC like browser does for sub-500ms latency
+- Auto-start streaming on speaker selection implemented
+
+### January 5, 2026 (Session 5)
+- **WORKING MP3 STREAMING:** Full pipeline working with 8 second latency
+- Fixed firewall issues - added automatic firewall rule creation to audio-streamer.js
+- Confirmed 320kbps bitrate reduces latency from 15s (128kbps) to 8s
+- Added FFmpeg data logging to debug streaming issues
+- virtual-audio-capturer works for system audio capture
+- Default media receiver works; custom receiver available for testing
+
 ---
 
-*Last Updated: January 4, 2026*
+*Last Updated: January 5, 2026*
