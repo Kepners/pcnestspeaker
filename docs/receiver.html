@@ -122,8 +122,8 @@
       // Call webrtc-streamer API
       try {
         // Use the pre-configured stream name (server started with -n pcaudio -U audiocap://1)
-        // Just reference the stream, don't specify audio source (already configured)
-        const callUrl = serverUrl + '/api/call?peerid=' + encodeURIComponent(streamName);
+        // Reference the named stream as the audio source
+        const callUrl = serverUrl + '/api/call?peerid=session1&audiourl=' + encodeURIComponent(streamName);
 
         log('Calling ' + callUrl);
         const response = await fetch(callUrl, {
