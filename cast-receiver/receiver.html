@@ -5,12 +5,13 @@
   <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
   <style>
     body { background: #334E58; margin: 0; padding: 0; }
-    #status { color: #FCBFB7; font-family: sans-serif; font-size: 24px; text-align: center; padding-top: 40%; }
+    #player { position: absolute; width: 100%; height: 100%; }
+    #status { color: #FCBFB7; font-family: sans-serif; font-size: 24px; text-align: center; padding-top: 40%; position: relative; z-index: 100; }
   </style>
 </head>
 <body>
-  <cast-media-player></cast-media-player>
-  <div id="status">PC Nest Speaker</div>
+  <cast-media-player id="player"></cast-media-player>
+  <div id="status">PC Nest Speaker v2</div>
   <audio id="webrtc-audio" autoplay></audio>
 
   <script>
@@ -56,6 +57,12 @@
     function log(msg) {
       console.log('[WebRTC] ' + msg);
       document.getElementById('status').textContent = msg;
+    }
+
+    // Hide default media player when using WebRTC
+    function hideDefaultPlayer() {
+      const player = document.getElementById('player');
+      if (player) player.style.display = 'none';
     }
 
     /**
@@ -237,6 +244,7 @@
             // Extract the actual HTTPS URL from webrtc://https://example.com/path
             const httpsUrl = contentId.replace('webrtc://', '');
             log('WebRTC URL: ' + httpsUrl);
+            hideDefaultPlayer();  // Hide default media player UI
             connectToMediaMTX(httpsUrl, 'pcaudio');
             return null;  // Cancel default media player
           }

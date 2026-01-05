@@ -5,12 +5,13 @@
   <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
   <style>
     body { background: #334E58; margin: 0; padding: 0; }
-    #status { color: #FCBFB7; font-family: sans-serif; font-size: 24px; text-align: center; padding-top: 40%; }
+    #player { position: absolute; width: 100%; height: 100%; }
+    #status { color: #FCBFB7; font-family: sans-serif; font-size: 24px; text-align: center; padding-top: 40%; position: relative; z-index: 100; }
   </style>
 </head>
 <body>
-  <cast-media-player></cast-media-player>
-  <div id="status">PC Nest Speaker</div>
+  <cast-media-player id="player"></cast-media-player>
+  <div id="status">PC Nest Speaker v2</div>
   <audio id="webrtc-audio" autoplay></audio>
 
   <script>
@@ -56,6 +57,12 @@
     function log(msg) {
       console.log('[WebRTC] ' + msg);
       document.getElementById('status').textContent = msg;
+    }
+
+    // Hide default media player when using WebRTC
+    function hideDefaultPlayer() {
+      const player = document.getElementById('player');
+      if (player) player.style.display = 'none';
     }
 
     /**
@@ -220,37 +227,8 @@
     // Register custom message handler
     context.addCustomMessageListener(WEBRTC_NAMESPACE, handleMessage);
 
-    // Start receiver
-    context.start({
-      playbackConfig: playbackConfig,
-      skipPlayersLoad: false,
-      disableIdleTimeout: true,
-      supportedCommands: cast.framework.messages.Command.ALL_BASIC_MEDIA,
-      customNamespaces: {
-        [WEBRTC_NAMESPACE]: cast.framework.system.MessageType.JSON
-      }
-    });
-
-    log('Ready - Waiting for URL...');
-
-    // Listen for LOAD events with customData containing MediaMTX URL
-    playerManager.addEventListener(
-      cast.framework.events.EventType.LOAD_START,
-      (event) => {
-        log('Load event received');
-        const loadRequestData = playerManager.getQueueManager().getItems()[0];
-        if (loadRequestData && loadRequestData.media && loadRequestData.media.customData) {
-          const customData = loadRequestData.media.customData;
-          if (customData.webrtcUrl) {
-            log('WebRTC URL from customData: ' + customData.webrtcUrl);
-            playerManager.stop();
-            connectToMediaMTX(customData.webrtcUrl, customData.stream || 'pcaudio');
-          }
-        }
-      }
-    );
-
-    // Also intercept LOAD to check for WebRTC URL
+    // CRITICAL: Set up LOAD interceptor BEFORE context.start()
+    // This intercepts all media load requests to check for WebRTC URLs
     playerManager.setMessageInterceptor(
       cast.framework.messages.MessageType.LOAD,
       (request) => {
@@ -265,36 +243,32 @@
           if (contentId.startsWith('webrtc://')) {
             // Extract the actual HTTPS URL from webrtc://https://example.com/path
             const httpsUrl = contentId.replace('webrtc://', '');
-            log('WebRTC mode (contentId) - URL: ' + httpsUrl);
-            setTimeout(() => {
-              connectToMediaMTX(httpsUrl, 'pcaudio');
-            }, 500);
-            return null;
+            log('WebRTC URL: ' + httpsUrl);
+            hideDefaultPlayer();  // Hide default media player UI
+            connectToMediaMTX(httpsUrl, 'pcaudio');
+            return null;  // Cancel default media player
           }
         }
 
         // Method 2: Check media.customData
         if (request.media && request.media.customData) {
-          log('media.customData: ' + JSON.stringify(request.media.customData));
+          log('customData: ' + JSON.stringify(request.media.customData));
           if (request.media.customData.webrtcUrl) {
-            log('WebRTC mode (media.customData) - URL: ' + request.media.customData.webrtcUrl);
-            setTimeout(() => {
-              connectToMediaMTX(request.media.customData.webrtcUrl, request.media.customData.stream || 'pcaudio');
-            }, 500);
+            log('WebRTC URL: ' + request.media.customData.webrtcUrl);
+            connectToMediaMTX(request.media.customData.webrtcUrl, request.media.customData.stream || 'pcaudio');
             return null;
           }
         }
 
         // Method 3: Check root-level customData
         if (request.customData && request.customData.webrtcUrl) {
-          log('WebRTC mode (request.customData) - URL: ' + request.customData.webrtcUrl);
-          setTimeout(() => {
-            connectToMediaMTX(request.customData.webrtcUrl, request.customData.stream || 'pcaudio');
-          }, 500);
+          log('WebRTC URL: ' + request.customData.webrtcUrl);
+          connectToMediaMTX(request.customData.webrtcUrl, request.customData.stream || 'pcaudio');
           return null;
         }
 
         // Not WebRTC - handle as regular media
+        log('Regular media: ' + (request.media ? request.media.contentId : 'none'));
         if (request.media) {
           request.media.streamType = cast.framework.messages.StreamType.LIVE;
           request.autoplay = true;
@@ -303,6 +277,19 @@
         return request;
       }
     );
+
+    // Start receiver (AFTER interceptor is set up)
+    context.start({
+      playbackConfig: playbackConfig,
+      skipPlayersLoad: false,
+      disableIdleTimeout: true,
+      supportedCommands: cast.framework.messages.Command.ALL_BASIC_MEDIA,
+      customNamespaces: {
+        [WEBRTC_NAMESPACE]: cast.framework.system.MessageType.JSON
+      }
+    });
+
+    log('Ready - Waiting for URL...');
   </script>
 </body>
 </html>
