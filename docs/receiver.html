@@ -39,18 +39,6 @@
     };
 
     playerManager.setMessageInterceptor(
-      cast.framework.messages.MessageType.LOAD,
-      (request) => {
-        if (request.media) {
-          request.media.streamType = cast.framework.messages.StreamType.LIVE;
-          request.autoplay = true;
-          request.currentTime = 0;
-        }
-        return request;
-      }
-    );
-
-    playerManager.setMessageInterceptor(
       cast.framework.messages.MessageType.PRELOAD,
       () => null
     );
@@ -218,6 +206,47 @@
     });
 
     log('Ready - Awaiting connect');
+
+    // Listen for LOAD events with customData containing webrtc-streamer URL
+    playerManager.addEventListener(
+      cast.framework.events.EventType.LOAD_START,
+      (event) => {
+        log('Load event received');
+        const loadRequestData = playerManager.getQueueManager().getItems()[0];
+        if (loadRequestData && loadRequestData.media && loadRequestData.media.customData) {
+          const customData = loadRequestData.media.customData;
+          if (customData.webrtcUrl) {
+            log('WebRTC URL from customData: ' + customData.webrtcUrl);
+            // Don't play HTTP media, use WebRTC instead
+            playerManager.stop();
+            connectToWebRTCStreamer(customData.webrtcUrl, customData.stream || 'pcaudio');
+          }
+        }
+      }
+    );
+
+    // Also intercept LOAD to check customData before playback
+    playerManager.setMessageInterceptor(
+      cast.framework.messages.MessageType.LOAD,
+      (request) => {
+        if (request.media && request.media.customData && request.media.customData.webrtcUrl) {
+          log('WebRTC mode - URL: ' + request.media.customData.webrtcUrl);
+          // Start WebRTC connection
+          setTimeout(() => {
+            connectToWebRTCStreamer(request.media.customData.webrtcUrl, request.media.customData.stream || 'pcaudio');
+          }, 500);
+          // Return null to prevent media playback (we'll use WebRTC audio element)
+          return null;
+        }
+        // Normal media load
+        if (request.media) {
+          request.media.streamType = cast.framework.messages.StreamType.LIVE;
+          request.autoplay = true;
+          request.currentTime = 0;
+        }
+        return request;
+      }
+    );
   </script>
 </body>
 </html>

@@ -130,13 +130,10 @@ def get_local_ip():
         return "127.0.0.1"
 
 
-def webrtc_connect(speaker_name, webrtc_server_port=8080):
-    """Launch custom receiver and tell it to connect to webrtc-streamer.
+def webrtc_stream(speaker_name, webrtc_server_port=8080):
+    """Start WebRTC streaming via play_media with customData.
 
-    This is the new simpler approach:
-    1. Launch custom receiver on Cast device
-    2. Send 'connect' message with webrtc-streamer URL
-    3. Receiver connects directly to webrtc-streamer (no SDP relay needed)
+    Uses standard media controller to pass webrtc-streamer URL to receiver.
     """
     try:
         print(f"[WebRTC] Looking for '{speaker_name}'...", file=sys.stderr)
@@ -155,32 +152,126 @@ def webrtc_connect(speaker_name, webrtc_server_port=8080):
         print(f"[WebRTC] Connecting to {host}...", file=sys.stderr)
         cast.wait()
 
-        # Register WebRTC controller
-        webrtc = WebRTCController()
-        cast.register_handler(webrtc)
-
         # Launch custom receiver
         print(f"[WebRTC] Launching receiver (App ID: {CUSTOM_APP_ID})...", file=sys.stderr)
         cast.start_app(CUSTOM_APP_ID)
-        time.sleep(3)  # Wait for receiver to load
+        time.sleep(4)  # Wait for receiver to load
         print("[WebRTC] Receiver launched!", file=sys.stderr)
+
+        # Get local IP for webrtc-streamer URL
+        local_ip = get_local_ip()
+        webrtc_url = f"http://{local_ip}:{webrtc_server_port}"
+        print(f"[WebRTC] WebRTC streamer URL: {webrtc_url}", file=sys.stderr)
+
+        # Use play_media to send the webrtc URL via customData
+        mc = cast.media_controller
+        print(f"[WebRTC] Sending play_media with customData...", file=sys.stderr)
+
+        # Send a dummy media URL with customData containing the real webrtc URL
+        # The receiver will intercept this and use WebRTC instead
+        mc.play_media(
+            "https://placeholder.webrtc/audio.mp3",  # Placeholder - receiver ignores this
+            "audio/mpeg",
+            stream_type="LIVE",
+            autoplay=True,
+            custom_data={
+                "webrtcUrl": webrtc_url,
+                "stream": "pcaudio",
+                "mode": "webrtc"
+            }
+        )
+
+        # Wait for connection
+        time.sleep(3)
+
+        browser.stop_discovery()
+        return {
+            "success": True,
+            "mode": "webrtc",
+            "url": webrtc_url,
+            "message": "WebRTC stream initiated via customData"
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def webrtc_connect(speaker_name, webrtc_server_port=8080):
+    """Launch custom receiver and tell it to connect to webrtc-streamer.
+
+    Uses custom namespace messaging (may not work on all devices).
+    """
+    try:
+        print(f"[WebRTC] Looking for '{speaker_name}'...", file=sys.stderr)
+
+        chromecasts, browser = pychromecast.get_listed_chromecasts(
+            friendly_names=[speaker_name],
+            timeout=10
+        )
+
+        if not chromecasts:
+            browser.stop_discovery()
+            return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
+
+        cast = chromecasts[0]
+        host = cast.cast_info.host if hasattr(cast, 'cast_info') else 'unknown'
+        print(f"[WebRTC] Connecting to {host}...", file=sys.stderr)
+        cast.wait()
+
+        # Launch custom receiver first
+        print(f"[WebRTC] Launching receiver (App ID: {CUSTOM_APP_ID})...", file=sys.stderr)
+        cast.start_app(CUSTOM_APP_ID)
+        time.sleep(5)  # Wait for receiver to load
+        print("[WebRTC] Receiver launched!", file=sys.stderr)
+
+        # Disconnect and reconnect to pick up new namespace
+        print("[WebRTC] Reconnecting to pick up namespace...", file=sys.stderr)
+        cast.disconnect()
+        time.sleep(1)
+
+        # Get a fresh connection
+        chromecasts2, browser2 = pychromecast.get_listed_chromecasts(
+            friendly_names=[speaker_name],
+            timeout=10
+        )
+        if not chromecasts2:
+            browser.stop_discovery()
+            browser2.stop_discovery()
+            return {"success": False, "error": f"Speaker '{speaker_name}' not found on reconnect"}
+
+        cast2 = chromecasts2[0]
+        cast2.wait()
+
+        # Register WebRTC controller on new connection
+        webrtc = WebRTCController()
+        cast2.register_handler(webrtc)
+        time.sleep(2)  # Wait for handler registration
 
         # Get local IP for webrtc-streamer URL
         local_ip = get_local_ip()
         webrtc_url = f"http://{local_ip}:{webrtc_server_port}"
         print(f"[WebRTC] Sending connect message: {webrtc_url}", file=sys.stderr)
 
-        # Send connect message to receiver
-        webrtc.send_message({
-            "type": "connect",
-            "url": webrtc_url,
-            "stream": "pcaudio"
-        })
+        # Send connect message to receiver with retry
+        for attempt in range(3):
+            try:
+                webrtc.send_message({
+                    "type": "connect",
+                    "url": webrtc_url,
+                    "stream": "pcaudio"
+                })
+                print(f"[WebRTC] Message sent (attempt {attempt + 1})", file=sys.stderr)
+                break
+            except Exception as e:
+                print(f"[WebRTC] Send failed (attempt {attempt + 1}): {e}", file=sys.stderr)
+                if attempt < 2:
+                    time.sleep(2)
 
         # Wait a moment for the connection to establish
-        time.sleep(2)
+        time.sleep(3)
 
         browser.stop_discovery()
+        browser2.stop_discovery()
         return {
             "success": True,
             "mode": "webrtc",
@@ -358,6 +449,13 @@ if __name__ == "__main__":
         url = sys.argv[3]
         content_type = sys.argv[4] if len(sys.argv) > 4 else "audio/mpeg"
         result = cast_to_speaker(speaker, url, content_type)
+        print(json.dumps(result))
+
+    elif command == "webrtc-stream" and len(sys.argv) >= 3:
+        # Start WebRTC streaming using play_media with customData
+        speaker = sys.argv[2]
+        port = int(sys.argv[3]) if len(sys.argv) > 3 else 8080
+        result = webrtc_stream(speaker, port)
         print(json.dumps(result))
 
     elif command == "webrtc-connect" and len(sys.argv) >= 3:
