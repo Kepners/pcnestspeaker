@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>PC Nest Speaker - Low Latency Receiver</title>
+  <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+  <style>
+    body {
+      background: #334E58;
+      margin: 0;
+      padding: 0;
+    }
+    #status {
+      color: #FCBFB7;
+      font-family: sans-serif;
+      font-size: 24px;
+      text-align: center;
+      padding-top: 40%;
+    }
+  </style>
+</head>
+<body>
+  <cast-media-player></cast-media-player>
+  <div id="status">PC Nest Speaker</div>
+
+  <script>
+    const context = cast.framework.CastReceiverContext.getInstance();
+    const playerManager = context.getPlayerManager();
+
+    // Configure for MINIMAL latency
+    const playbackConfig = new cast.framework.PlaybackConfig();
+
+    // Start playback after just 1 segment (0.5s with our HLS config)
+    playbackConfig.autoResumeNumberOfSegments = 1;
+
+    // Resume after only 0.5 seconds of buffer
+    playbackConfig.autoResumeDuration = 0.5;
+
+    // Pause if buffer drops below 0.2 seconds
+    playbackConfig.autoPauseDuration = 0.2;
+
+    // Initial bandwidth estimate (higher = faster start)
+    playbackConfig.initialBandwidth = 5000000; // 5 Mbps
+
+    // Shaka player config for live streams
+    playbackConfig.shakaConfig = {
+      streaming: {
+        // Minimal buffer sizes
+        bufferingGoal: 1,           // Only buffer 1 second ahead
+        rebufferingGoal: 0.5,       // Resume after 0.5s buffered
+        bufferBehind: 2,            // Keep 2s behind (for seeking)
+        // Live stream settings
+        lowLatencyMode: true,
+        inaccurateManifestTolerance: 0,
+        segmentPrefetchLimit: 1,
+      },
+      manifest: {
+        // Faster manifest updates
+        defaultPresentationDelay: 0.5,
+        availabilityWindowOverride: 5,
+      }
+    };
+
+    // Set the playback config
+    context.getPlayerManager().setPlaybackConfig(playbackConfig);
+
+    // Log events for debugging
+    playerManager.addEventListener(
+      cast.framework.events.EventType.PLAYER_LOADING,
+      (event) => console.log('Loading media...')
+    );
+
+    playerManager.addEventListener(
+      cast.framework.events.EventType.BUFFERING,
+      (event) => console.log('Buffering:', event.isBuffering)
+    );
+
+    playerManager.addEventListener(
+      cast.framework.events.EventType.PLAYING,
+      (event) => console.log('Playing!')
+    );
+
+    // Start the receiver
+    context.start({
+      playbackConfig: playbackConfig,
+      // Support audio-only devices (Nest speakers)
+      supportedCommands: cast.framework.messages.Command.ALL_BASIC_MEDIA
+    });
+
+    console.log('PC Nest Speaker receiver started with low-latency config');
+  </script>
+</body>
+</html>
