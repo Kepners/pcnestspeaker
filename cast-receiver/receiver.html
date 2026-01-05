@@ -169,11 +169,12 @@
       log('Created offer');
 
       // Call webrtc-streamer API
-      // Official API: url= is for VIDEO, audiourl= is for AUDIO
-      // Using audiocap://1 = virtual-audio-capturer (captures any system audio output)
+      // Use the named stream configured on the server (e.g., "pcaudio")
+      // This uses whatever audio device webrtc-streamer was started with
       try {
         const callUrl = serverUrl + '/api/call?peerid=' + encodeURIComponent(currentPeerId) +
-                        '&audiourl=' + encodeURIComponent('audiocap://1');
+                        '&url=' + encodeURIComponent(streamName) +
+                        '&options=' + encodeURIComponent('rtptransport=tcp&timeout=60');
 
         log('Calling ' + callUrl);
         const response = await fetch(callUrl, {
@@ -263,27 +264,7 @@
       }
     });
 
-    log('Ready - Auto-connecting...');
-
-    // Auto-connect to webrtc-streamer on load via HTTPS tunnel
-    setTimeout(() => {
-      log('Testing HTTPS connection...');
-
-      // Use localtunnel HTTPS URL to avoid mixed content blocking
-      const httpsUrl = 'https://sad-rabbits-lead.loca.lt';
-
-      fetch(httpsUrl + '/api/getMediaList', {
-        headers: { 'bypass-tunnel-reminder': 'true' }
-      })
-        .then(r => r.json())
-        .then(data => {
-          log('Server reachable via HTTPS!');
-          connectToWebRTCStreamer(httpsUrl, 'pcaudio');
-        })
-        .catch(e => {
-          log('HTTPS error: ' + e.message);
-        });
-    }, 2000);
+    log('Ready - Waiting for URL...');
 
     // Listen for LOAD events with customData containing webrtc-streamer URL
     playerManager.addEventListener(
