@@ -170,10 +170,10 @@
 
       // Call webrtc-streamer API
       // Official API: url= is for VIDEO, audiourl= is for AUDIO
-      // For audio-only, we use audiourl= with direct device URL (audiocap://3 = VB-CABLE)
+      // Using audiocap://1 = virtual-audio-capturer (captures any system audio output)
       try {
         const callUrl = serverUrl + '/api/call?peerid=' + encodeURIComponent(currentPeerId) +
-                        '&audiourl=' + encodeURIComponent('audiocap://3');
+                        '&audiourl=' + encodeURIComponent('audiocap://1');
 
         log('Calling ' + callUrl);
         const response = await fetch(callUrl, {
