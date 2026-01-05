@@ -142,14 +142,16 @@
       log('WHEP URL: ' + whepUrl);
 
       try {
+        log('Fetching: ' + whepUrl);
         const response = await fetch(whepUrl, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/sdp',
-            'bypass-tunnel-reminder': 'true'
+            'Content-Type': 'application/sdp'
           },
           body: peerConnection.localDescription.sdp
         });
+
+        log('Response status: ' + response.status);
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -180,8 +182,11 @@
         log('Set remote description');
 
       } catch (e) {
-        log('Connection error: ' + e.message);
-        console.error('WHEP error:', e);
+        log('Error: ' + e.name + ': ' + e.message);
+        console.error('WHEP error details:', e);
+        console.error('Error name:', e.name);
+        console.error('Error message:', e.message);
+        console.error('Error stack:', e.stack);
       }
     }
 
