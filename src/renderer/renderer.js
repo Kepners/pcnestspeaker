@@ -31,7 +31,7 @@ let streamingMode = 'http'; // 'http', 'webrtc-system', or 'webrtc-vbcable'
 let dependencies = {
   vbcable: null,      // null = checking, true = installed, false = missing
   screenCapture: null,
-  webrtcStreamer: null,
+  mediamtx: null,
   ffmpeg: null
 };
 
@@ -115,6 +115,22 @@ function setupEventListeners() {
     log(`Error: ${error}`, 'error');
     showError(error);
   });
+
+  // Listen for auto-discovered speakers (fired on app startup)
+  window.api.onSpeakersDiscovered((discoveredSpeakers) => {
+    log(`Auto-discovered ${discoveredSpeakers.length} speakers`, 'success');
+    speakers = discoveredSpeakers;
+    discoveredSpeakers.forEach(s => log(`  - ${s.name} (${s.model})`));
+    renderSpeakers();
+  });
+
+  // Listen for auto-discovered audio devices (fired on app startup)
+  window.api.onAudioDevicesDiscovered((devices) => {
+    log(`Auto-discovered ${devices.length} audio devices`);
+    audioDevices = devices;
+    devices.forEach(d => log(`  - ${d}`));
+    renderAudioDevices();
+  });
 }
 
 // Check all dependencies
@@ -127,7 +143,7 @@ async function checkDependencies() {
 
     log(`VB-CABLE: ${result.vbcable ? 'OK' : 'Missing'}`);
     log(`screen-capture-recorder: ${result.screenCapture ? 'OK' : 'Missing'}`);
-    log(`webrtc-streamer: ${result.webrtcStreamer ? 'OK' : 'Bundled'}`);
+    log(`MediaMTX: ${result.mediamtx ? 'OK' : 'Bundled'}`);
     log(`FFmpeg: ${result.ffmpeg ? 'OK' : 'Bundled'}`);
 
     updateDependencyIndicators();
@@ -137,7 +153,7 @@ async function checkDependencies() {
     dependencies = {
       vbcable: false,
       screenCapture: false,
-      webrtcStreamer: true, // Bundled
+      mediamtx: true, // Bundled
       ffmpeg: true // Bundled
     };
     updateDependencyIndicators();
@@ -159,7 +175,7 @@ function updateDependencyIndicators() {
   if (webrtcSystemDeps) {
     webrtcSystemDeps.innerHTML = `
       <span class="dep-item ${dependencies.screenCapture ? 'dep-ok' : 'dep-missing'}">screen-capture</span>
-      <span class="dep-item dep-ok">webrtc-streamer</span>
+      <span class="dep-item dep-ok">MediaMTX</span>
     `;
   }
 
@@ -168,7 +184,7 @@ function updateDependencyIndicators() {
   if (webrtcVbcableDeps) {
     webrtcVbcableDeps.innerHTML = `
       <span class="dep-item ${dependencies.vbcable ? 'dep-ok' : 'dep-missing'}">VB-CABLE</span>
-      <span class="dep-item dep-ok">webrtc-streamer</span>
+      <span class="dep-item dep-ok">MediaMTX</span>
     `;
   }
 }
@@ -371,7 +387,7 @@ function renderAudioDevices() {
   updateStreamButtonState();
 }
 
-async function selectSpeaker(index) {
+function selectSpeaker(index) {
   selectedSpeaker = speakers[index];
   log(`Selected speaker: ${selectedSpeaker.name}`);
 
@@ -381,21 +397,7 @@ async function selectSpeaker(index) {
   });
 
   updateStreamButtonState();
-
-  // For WebRTC modes, ping the speaker immediately to verify connection
-  if (streamingMode.startsWith('webrtc')) {
-    log(`Testing connection to ${selectedSpeaker.name}...`);
-    try {
-      const result = await window.api.pingSpeaker(selectedSpeaker.name);
-      if (result.success) {
-        log(`${selectedSpeaker.name} connected!`, 'success');
-      } else {
-        log(`Connection test failed: ${result.error}`, 'warn');
-      }
-    } catch (error) {
-      log(`Connection test error: ${error.message}`, 'warn');
-    }
-  }
+  // Note: Removed auto-ping on selection. User can manually ping with the Test button.
 }
 
 function updateStreamButtonState() {

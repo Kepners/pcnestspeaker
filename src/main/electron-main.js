@@ -25,8 +25,23 @@ const DEPENDENCY_URLS = {
   'screen-capture-recorder': 'https://github.com/rdp/screen-capture-recorder-to-video-windows-free/releases/download/v0.13.3/Setup.Screen.Capturer.Recorder.v0.13.3.exe'
 };
 
-// Bundled webrtc-streamer path
-const WEBRTC_STREAMER_PATH = path.join(__dirname, '../../webrtc-streamer-v0.8.14-dirty-Windows-AMD64-Release/bin/webrtc-streamer.exe');
+// Bundled MediaMTX path (replaces webrtc-streamer for WebRTC streaming)
+// In dev: mediamtx/ folder in project root
+// In production: resources/mediamtx/ in the app package
+const MEDIAMTX_PATH = app.isPackaged
+  ? path.join(process.resourcesPath, 'mediamtx', 'mediamtx.exe')
+  : path.join(__dirname, '../../mediamtx/mediamtx.exe');
+const MEDIAMTX_CONFIG = app.isPackaged
+  ? path.join(process.resourcesPath, 'mediamtx', 'mediamtx-audio.yml')
+  : path.join(__dirname, '../../mediamtx/mediamtx-audio.yml');
+
+// MediaMTX process reference
+let mediamtxProcess = null;
+let ffmpegWebrtcProcess = null;
+
+// Background WebRTC pipeline status
+let webrtcPipelineReady = false;
+let webrtcPipelineError = null;
 
 // Kill any leftover processes from previous runs (called on startup)
 function killLeftoverProcesses() {
@@ -34,9 +49,9 @@ function killLeftoverProcesses() {
 
   if (process.platform === 'win32') {
     try {
-      // Kill any existing webrtc-streamer processes
-      execSync('taskkill /F /IM webrtc-streamer.exe 2>nul', { stdio: 'ignore' });
-      console.log('[Main] Killed leftover webrtc-streamer');
+      // Kill any existing MediaMTX processes
+      execSync('taskkill /F /IM mediamtx.exe 2>nul', { stdio: 'ignore' });
+      console.log('[Main] Killed leftover mediamtx');
     } catch (e) {
       // Process not running - that's fine
     }
@@ -102,20 +117,34 @@ function cleanup() {
     pythonCastProcess = null;
   }
 
-  // Stop webrtc-streamer (WebRTC mode)
-  if (webrtcStreamerProcess) {
-    sendLog('Stopping webrtc-streamer...');
+  // Stop FFmpeg WebRTC publishing process
+  if (ffmpegWebrtcProcess) {
+    sendLog('Stopping FFmpeg WebRTC stream...');
     try {
-      // Kill the process tree on Windows
-      if (process.platform === 'win32') {
-        execSync(`taskkill /PID ${webrtcStreamerProcess.pid} /F /T`, { stdio: 'ignore' });
-      } else {
-        webrtcStreamerProcess.kill('SIGTERM');
-      }
+      ffmpegWebrtcProcess.kill();
     } catch (e) {
       // Process may already be dead
     }
-    webrtcStreamerProcess = null;
+    ffmpegWebrtcProcess = null;
+  }
+
+  // Stop MediaMTX (WebRTC mode)
+  sendLog('Stopping MediaMTX...');
+  if (mediamtxProcess) {
+    try {
+      mediamtxProcess.kill();
+    } catch (e) {
+      // Process may already be dead
+    }
+    mediamtxProcess = null;
+  }
+  // Also force kill by name in case process handle is lost
+  try {
+    if (process.platform === 'win32') {
+      execSync('taskkill /F /IM mediamtx.exe', { stdio: 'ignore' });
+    }
+  } catch (e) {
+    // Process may already be dead
   }
 
   // Stop localtunnel
@@ -152,7 +181,7 @@ async function checkAllDependencies() {
   const deps = {
     vbcable: false,
     screenCapture: false,
-    webrtcStreamer: false,
+    mediamtx: false,
     ffmpeg: true // Assume bundled FFmpeg is always available
   };
 
@@ -162,72 +191,164 @@ async function checkAllDependencies() {
   // Check screen-capture-recorder (virtual-audio-capturer)
   deps.screenCapture = await checkAudioDeviceExists('virtual-audio-capturer');
 
-  // Check webrtc-streamer (bundled)
-  deps.webrtcStreamer = fs.existsSync(WEBRTC_STREAMER_PATH);
+  // Check MediaMTX (bundled - replaces webrtc-streamer)
+  deps.mediamtx = fs.existsSync(MEDIAMTX_PATH);
 
   return deps;
 }
 
-// Start webrtc-streamer process
-async function startWebRTCStreamer(audioDeviceIndex = 1) {
-  if (webrtcStreamerProcess) {
-    sendLog('webrtc-streamer already running');
+// Start MediaMTX server (replaces webrtc-streamer)
+async function startMediaMTX() {
+  if (mediamtxProcess) {
+    sendLog('MediaMTX already running');
     return true;
   }
 
-  if (!fs.existsSync(WEBRTC_STREAMER_PATH)) {
-    throw new Error('webrtc-streamer not found. Please reinstall the app.');
+  if (!fs.existsSync(MEDIAMTX_PATH)) {
+    throw new Error('MediaMTX not found. Please reinstall the app.');
   }
 
-  sendLog(`Starting webrtc-streamer with audio device ${audioDeviceIndex}...`);
+  sendLog('Starting MediaMTX server...');
 
   return new Promise((resolve, reject) => {
-    // Spawn through shell to ensure proper Windows audio API access
-    webrtcStreamerProcess = spawn(WEBRTC_STREAMER_PATH, [
-      '-v',
-      '-n', 'pcaudio',
-      '-U', `audiocap://${audioDeviceIndex}`,
-      '-a',  // Enable audio capture layer
-      '-H', '0.0.0.0:8443'
-    ], {
-      cwd: path.dirname(WEBRTC_STREAMER_PATH),
-      shell: true,
-      env: { ...process.env }  // Explicitly inherit environment
+    // Launch MediaMTX with our custom config
+    mediamtxProcess = spawn(MEDIAMTX_PATH, [MEDIAMTX_CONFIG], {
+      cwd: path.dirname(MEDIAMTX_PATH),
+      stdio: ['ignore', 'pipe', 'pipe']
     });
 
-    let started = false;
+    mediamtxProcess.stdout.on('data', (data) => {
+      const msg = data.toString().trim();
+      if (msg) sendLog(`[MediaMTX] ${msg}`);
+    });
 
-    webrtcStreamerProcess.stdout.on('data', (data) => {
-      const msg = data.toString();
-      sendLog(`[webrtc-streamer] ${msg.trim()}`);
-      if (msg.includes('HTTP Listen')) {
-        started = true;
-        resolve(true);
+    mediamtxProcess.stderr.on('data', (data) => {
+      const msg = data.toString().trim();
+      if (msg) sendLog(`[MediaMTX] ${msg}`);
+    });
+
+    mediamtxProcess.on('error', (err) => {
+      sendLog(`MediaMTX launch error: ${err.message}`, 'error');
+      mediamtxProcess = null;
+      reject(err);
+    });
+
+    mediamtxProcess.on('close', (code) => {
+      sendLog(`MediaMTX exited with code ${code}`);
+      mediamtxProcess = null;
+    });
+
+    // Poll the API to check if server is ready
+    let attempts = 0;
+    const maxAttempts = 20;
+
+    const checkServer = () => {
+      attempts++;
+      const http = require('http');
+
+      const req = http.get('http://localhost:9997/v3/paths/list', (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            sendLog('[MediaMTX] Server ready!', 'success');
+            resolve(true);
+          } else if (attempts < maxAttempts) {
+            setTimeout(checkServer, 500);
+          }
+        });
+      });
+
+      req.on('error', (e) => {
+        if (attempts < maxAttempts) {
+          setTimeout(checkServer, 500);
+        } else {
+          sendLog(`MediaMTX failed to start after ${maxAttempts} attempts`, 'error');
+          reject(new Error('MediaMTX failed to start'));
+        }
+      });
+
+      req.setTimeout(2000, () => {
+        req.destroy();
+        if (attempts < maxAttempts) {
+          setTimeout(checkServer, 500);
+        }
+      });
+    };
+
+    // Start polling after a short delay
+    setTimeout(checkServer, 1000);
+  });
+}
+
+// Start FFmpeg to publish audio to MediaMTX via RTSP
+async function startFFmpegWebRTC(audioDevice) {
+  if (ffmpegWebrtcProcess) {
+    sendLog('FFmpeg WebRTC stream already running');
+    return true;
+  }
+
+  if (!audioStreamer) {
+    audioStreamer = new AudioStreamer();
+  }
+
+  sendLog(`Starting FFmpeg RTSP stream with device: ${audioDevice}...`);
+
+  return new Promise((resolve, reject) => {
+    // FFmpeg command to capture audio via DirectShow and publish to MediaMTX RTSP
+    // Using Opus codec for WebRTC compatibility
+    const ffmpegPath = audioStreamer.getFFmpegPath();
+    const args = [
+      '-f', 'dshow',
+      '-i', `audio=${audioDevice}`,
+      '-c:a', 'libopus',
+      '-b:a', '128k',
+      '-ar', '48000',
+      '-ac', '2',
+      '-f', 'rtsp',
+      '-rtsp_transport', 'tcp',
+      'rtsp://localhost:8554/pcaudio'
+    ];
+
+    sendLog(`[FFmpeg] ${ffmpegPath} ${args.join(' ')}`);
+
+    ffmpegWebrtcProcess = spawn(ffmpegPath, args, {
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    ffmpegWebrtcProcess.stdout.on('data', (data) => {
+      const msg = data.toString().trim();
+      if (msg) sendLog(`[FFmpeg] ${msg}`);
+    });
+
+    ffmpegWebrtcProcess.stderr.on('data', (data) => {
+      const msg = data.toString().trim();
+      // FFmpeg outputs progress to stderr
+      if (msg && !msg.includes('frame=') && !msg.includes('size=')) {
+        sendLog(`[FFmpeg] ${msg}`);
       }
     });
 
-    webrtcStreamerProcess.stderr.on('data', (data) => {
-      sendLog(`[webrtc-streamer] ${data.toString().trim()}`);
+    ffmpegWebrtcProcess.on('error', (err) => {
+      sendLog(`FFmpeg launch error: ${err.message}`, 'error');
+      ffmpegWebrtcProcess = null;
+      reject(err);
     });
 
-    webrtcStreamerProcess.on('error', (err) => {
-      sendLog(`webrtc-streamer error: ${err.message}`, 'error');
-      webrtcStreamerProcess = null;
-      if (!started) reject(err);
+    ffmpegWebrtcProcess.on('close', (code) => {
+      sendLog(`FFmpeg exited with code ${code}`);
+      ffmpegWebrtcProcess = null;
     });
 
-    webrtcStreamerProcess.on('close', (code) => {
-      sendLog(`webrtc-streamer exited with code ${code}`);
-      webrtcStreamerProcess = null;
-      if (!started) reject(new Error(`webrtc-streamer exited with code ${code}`));
-    });
-
-    // Timeout after 10 seconds
+    // Give FFmpeg a moment to start publishing
     setTimeout(() => {
-      if (!started && webrtcStreamerProcess) {
-        resolve(true); // Assume started even without message
+      if (ffmpegWebrtcProcess) {
+        sendLog('[FFmpeg] Audio stream publishing to MediaMTX', 'success');
+        resolve(true);
+      } else {
+        reject(new Error('FFmpeg failed to start'));
       }
-    }, 10000);
+    }, 2000);
   });
 }
 
@@ -282,6 +403,93 @@ async function startLocalTunnel(port = 8443) {
       }
     }, 30000);
   });
+}
+
+// Auto-discover speakers on startup
+async function autoDiscoverDevices() {
+  sendLog('Auto-discovering speakers and audio devices...');
+
+  try {
+    // Initialize audio streamer
+    if (!audioStreamer) {
+      audioStreamer = new AudioStreamer();
+    }
+
+    // Discover speakers in background
+    sendLog('Scanning for Chromecast/Nest speakers...');
+    const speakerResult = await runPython(['discover']);
+    if (speakerResult.success && speakerResult.speakers) {
+      discoveredSpeakers = speakerResult.speakers;
+      sendLog(`Found ${speakerResult.speakers.length} speakers`, 'success');
+
+      // Send to renderer
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('speakers-discovered', speakerResult.speakers);
+      }
+    }
+
+    // Discover audio devices
+    const audioDevices = await audioStreamer.getAudioDevices();
+    sendLog(`Found ${audioDevices.length} audio devices`);
+
+    // Send to renderer
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('audio-devices-discovered', audioDevices);
+    }
+
+  } catch (error) {
+    sendLog(`Auto-discovery failed: ${error.message}`, 'error');
+  }
+}
+
+// Pre-start WebRTC pipeline in background (runs on app startup)
+// This starts MediaMTX, FFmpeg, and localtunnel so streaming starts instantly
+async function preStartWebRTCPipeline() {
+  sendLog('Pre-starting WebRTC pipeline in background...');
+
+  try {
+    // Find the best audio device
+    if (!audioStreamer) {
+      audioStreamer = new AudioStreamer();
+    }
+
+    const devices = await audioStreamer.getAudioDevices();
+    let audioDevice = 'virtual-audio-capturer';
+
+    // Prefer virtual-audio-capturer, fallback to VB-CABLE
+    const vacDevice = devices.find(d => d.toLowerCase().includes('virtual-audio-capturer'));
+    if (vacDevice) {
+      audioDevice = vacDevice;
+    } else {
+      const vbDevice = devices.find(d => d.toLowerCase().includes('cable output'));
+      if (vbDevice) {
+        audioDevice = vbDevice;
+      }
+    }
+
+    sendLog(`[Background] Using audio device: ${audioDevice}`);
+
+    // Step 1: Start MediaMTX
+    await startMediaMTX();
+    sendLog('[Background] MediaMTX ready', 'success');
+
+    // Step 2: Start FFmpeg
+    await startFFmpegWebRTC(audioDevice);
+    sendLog('[Background] FFmpeg publishing', 'success');
+
+    // Step 3: Start localtunnel
+    const url = await startLocalTunnel(8889);
+    sendLog(`[Background] Tunnel ready: ${url}`, 'success');
+
+    webrtcPipelineReady = true;
+    webrtcPipelineError = null;
+    sendLog('WebRTC pipeline ready! Select a speaker and click "Start".', 'success');
+
+  } catch (error) {
+    webrtcPipelineReady = false;
+    webrtcPipelineError = error.message;
+    sendLog(`[Background] Pipeline failed: ${error.message}`, 'error');
+  }
 }
 
 // Run Python cast-helper script
@@ -395,35 +603,56 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       }
 
     } else if (streamingMode === 'webrtc-system' || streamingMode === 'webrtc-vbcable') {
-      // WebRTC streaming modes
+      // WebRTC streaming modes using MediaMTX
+      // Pipeline: FFmpeg (DirectShow) -> RTSP -> MediaMTX -> WebRTC -> Cast Receiver
 
-      // Determine audio device index
-      let audioDeviceIndex = 1; // Default: virtual-audio-capturer
+      let httpsUrl = tunnelUrl; // Use pre-started tunnel if available
 
-      if (streamingMode === 'webrtc-vbcable') {
-        audioDeviceIndex = 3; // VB-CABLE Output
-      } else if (audioDevice) {
-        // Try to find the device index from FFmpeg
-        if (!audioStreamer) {
-          audioStreamer = new AudioStreamer();
+      // Check if pipeline was pre-started in background
+      if (webrtcPipelineReady && mediamtxProcess && ffmpegWebrtcProcess && tunnelUrl) {
+        sendLog('Using pre-started WebRTC pipeline (instant start!)', 'success');
+        httpsUrl = tunnelUrl;
+      } else {
+        // Pipeline not ready - start it now
+        sendLog('Starting WebRTC pipeline...');
+
+        // Determine audio device name for FFmpeg
+        let audioDeviceName = 'virtual-audio-capturer'; // Default for system audio
+
+        if (streamingMode === 'webrtc-vbcable') {
+          audioDeviceName = 'CABLE Output (VB-Audio Virtual Cable)';
+        } else {
+          // For system audio mode, use virtual-audio-capturer from screen-capture-recorder
+          if (!audioStreamer) {
+            audioStreamer = new AudioStreamer();
+          }
+          const devices = await audioStreamer.getAudioDevices();
+          const vacDevice = devices.find(d =>
+            d.toLowerCase().includes('virtual-audio-capturer')
+          );
+          if (vacDevice) {
+            audioDeviceName = vacDevice;
+          }
         }
-        const devices = await audioStreamer.getAudioDevices();
-        const idx = devices.findIndex(d =>
-          d.toLowerCase().includes('virtual-audio-capturer')
-        );
-        if (idx >= 0) audioDeviceIndex = idx;
+
+        sendLog(`Using audio device: ${audioDeviceName}`);
+
+        // Step 1: Start MediaMTX server
+        await startMediaMTX();
+        sendLog('MediaMTX server started', 'success');
+
+        // Step 2: Start FFmpeg to publish audio to MediaMTX via RTSP
+        await startFFmpegWebRTC(audioDeviceName);
+        sendLog('FFmpeg publishing to MediaMTX', 'success');
+
+        // Step 3: Start localtunnel for HTTPS (Cast requires HTTPS)
+        // MediaMTX WebRTC endpoint is on port 8889
+        httpsUrl = await startLocalTunnel(8889);
+        sendLog(`HTTPS tunnel ready: ${httpsUrl}`, 'success');
       }
 
-      // Start webrtc-streamer
-      await startWebRTCStreamer(audioDeviceIndex);
-      sendLog('webrtc-streamer started', 'success');
-
-      // Start localtunnel for HTTPS
-      const httpsUrl = await startLocalTunnel(8443);
-      sendLog(`HTTPS tunnel ready: ${httpsUrl}`, 'success');
-
-      // Launch custom receiver on Cast device with WebRTC URL
-      // Look up speaker IP from cached discovery results for direct connection
+      // Step 4: Launch custom receiver on Cast device
+      // The receiver will connect to MediaMTX WebRTC endpoint via WHEP
       const speaker = discoveredSpeakers.find(s => s.name === speakerName);
       const speakerIp = speaker ? speaker.ip : null;
 
@@ -433,7 +662,7 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       const result = await runPython(args);
 
       if (result.success) {
-        sendLog('WebRTC streaming started!', 'success');
+        sendLog('WebRTC streaming started! (via MediaMTX)', 'success');
         return { success: true, url: httpsUrl, mode: streamingMode };
       } else {
         // Stop services if casting failed
@@ -518,14 +747,14 @@ ipcMain.handle('check-dependencies', async () => {
     const deps = await checkAllDependencies();
     sendLog(`VB-CABLE: ${deps.vbcable ? 'OK' : 'Missing'}`);
     sendLog(`screen-capture-recorder: ${deps.screenCapture ? 'OK' : 'Missing'}`);
-    sendLog(`webrtc-streamer: ${deps.webrtcStreamer ? 'OK' : 'Missing'}`);
+    sendLog(`MediaMTX: ${deps.mediamtx ? 'OK' : 'Missing'}`);
     return deps;
   } catch (error) {
     sendLog(`Dependency check failed: ${error.message}`, 'error');
     return {
       vbcable: false,
       screenCapture: false,
-      webrtcStreamer: false,
+      mediamtx: false,
       ffmpeg: true
     };
   }
@@ -603,6 +832,22 @@ app.whenReady().then(() => {
   // Kill any leftover processes from previous runs (port conflicts, etc.)
   killLeftoverProcesses();
   createWindow();
+
+  // Auto-discover speakers and audio devices in background
+  // This populates the UI without user having to click "Discover"
+  setTimeout(() => {
+    autoDiscoverDevices().catch(err => {
+      console.log('[Main] Auto-discovery failed:', err.message);
+    });
+  }, 1500); // Wait 1.5s for window to load
+
+  // Start WebRTC pipeline in background after discovery completes
+  // This makes streaming near-instant when user clicks "Start"
+  setTimeout(() => {
+    preStartWebRTCPipeline().catch(err => {
+      console.log('[Main] Background pipeline failed:', err.message);
+    });
+  }, 3000); // Wait 3s (after discovery)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

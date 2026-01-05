@@ -73,6 +73,14 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "mediamtx/",
+        "to": "mediamtx",
+        "filter": [
+          "mediamtx.exe",
+          "mediamtx-audio.yml"
+        ]
       }
     ],
     "files": [

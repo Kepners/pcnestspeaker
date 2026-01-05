@@ -163,13 +163,19 @@ pcnestspeaker/
 │   ├── main/
 │   │   ├── electron-main.js   # Main process entry
 │   │   ├── preload.js         # IPC bridge
-│   │   ├── audio-streamer.js  # WASAPI → FFmpeg → HLS
-│   │   └── chromecast.js      # Speaker discovery & casting
+│   │   ├── audio-streamer.js  # FFmpeg → HTTP streaming
+│   │   └── cast-helper.py     # Python pychromecast for Nest
 │   └── renderer/
 │       ├── index.html         # UI
 │       ├── styles.css         # Warm Neutral theme
 │       └── renderer.js        # UI logic
+├── mediamtx/                  # MediaMTX for WebRTC streaming
+│   ├── mediamtx.exe           # v1.15.6 Windows binary
+│   └── mediamtx-audio.yml     # Audio-only WebRTC config
+├── cast-receiver/
+│   └── receiver.html          # Custom Cast receiver (WHEP)
 ├── docs/
+│   ├── receiver.html          # GitHub Pages deployment
 │   ├── ARCHITECTURE.md        # System architecture
 │   └── APP_DOCUMENTATION.md   # Feature documentation
 ├── reference/python/          # Original Python implementations
@@ -287,15 +293,43 @@ Chrome uses proprietary WebRTC protocol:
 
 **Nobody has reverse-engineered this for third-party use.**
 
-### WebRTC Custom Receiver Approach
-Our receiver supports WebRTC via custom namespace:
-1. Electron captures system audio via desktopCapturer (Windows loopback)
-2. Creates RTCPeerConnection, adds audio track
-3. Sends SDP offer to receiver via Cast messaging
-4. Receiver creates answer, establishes connection
-5. Audio streams over UDP/DTLS directly - no HTTP buffering
+### WebRTC via MediaMTX (Implemented - January 5, 2026)
+**Solution:** MediaMTX receives FFmpeg RTSP streams and serves WebRTC via WHEP protocol.
 
-**Status:** Receiver ready, sender implementation pending.
+**Pipeline:**
+```
+FFmpeg (DirectShow) → RTSP → MediaMTX → WebRTC (WHEP) → Cast Receiver
+```
+
+**Why MediaMTX:**
+- FFmpeg uses DirectShow which can see `virtual-audio-capturer`
+- webrtc-streamer uses WASAPI which CANNOT see DirectShow devices
+- MediaMTX bridges RTSP (from FFmpeg) to WebRTC (for Cast receiver)
+
+**MediaMTX Configuration:**
+- RTSP input: `rtsp://localhost:8554/pcaudio`
+- WebRTC output: `http://localhost:8889/pcaudio/whep` (WHEP protocol)
+- API endpoint: `http://localhost:9997/v3/paths/list`
+
+**FFmpeg Command (Opus for WebRTC):**
+```bash
+ffmpeg -f dshow -i "audio=virtual-audio-capturer" \
+  -c:a libopus -b:a 128k -ar 48000 -ac 2 \
+  -f rtsp -rtsp_transport tcp rtsp://localhost:8554/pcaudio
+```
+
+**Cast Receiver (WHEP Protocol):**
+```javascript
+// Simple WHEP - POST SDP offer, get SDP answer
+const response = await fetch(serverUrl + '/pcaudio/whep', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/sdp' },
+  body: peerConnection.localDescription.sdp
+});
+await peerConnection.setRemoteDescription({ type: 'answer', sdp: await response.text() });
+```
+
+**Status:** TESTED AND WORKING - Full pipeline verified January 5, 2026.
 
 ---
 
@@ -393,6 +427,25 @@ mc.block_until_active(timeout=30)
 - Added FFmpeg data logging to debug streaming issues
 - virtual-audio-capturer works for system audio capture
 - Default media receiver works; custom receiver available for testing
+
+### January 5, 2026 (Session 6) - MediaMTX Integration
+- **PROBLEM:** webrtc-streamer uses WASAPI - can't see DirectShow devices (VB-CABLE, virtual-audio-capturer)
+- **SOLUTION:** MediaMTX v1.15.6 - receives FFmpeg RTSP streams, serves WebRTC via WHEP
+- Downloaded MediaMTX Windows binary (48MB)
+- Created `mediamtx-audio.yml` config optimized for audio-only WebRTC
+- Updated `electron-main.js` with startMediaMTX() and startFFmpegWebRTC() functions
+- Rewrote `cast-receiver/receiver.html` to use WHEP protocol instead of webrtc-streamer API
+- Updated `package.json` extraResources to bundle MediaMTX with the app
+- **TESTED:** Full pipeline verified:
+  - MediaMTX starts on :8554 (RTSP), :8889 (WebRTC/WHEP), :9997 (API)
+  - FFmpeg publishes Opus audio to MediaMTX via RTSP
+  - Stream appears with `"ready": true` and `"tracks": ["Opus"]`
+  - WHEP endpoint responds correctly (405 for GET, ready for POST)
+- **Ports:**
+  - 8554: RTSP input (FFmpeg → MediaMTX)
+  - 8889: WebRTC/WHEP output (MediaMTX → Cast receiver)
+  - 8189: ICE UDP/TCP (WebRTC media)
+  - 9997: MediaMTX API (health checks)
 
 ---
 

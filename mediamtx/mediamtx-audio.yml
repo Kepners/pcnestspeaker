@@ -1,0 +1,96 @@
+###############################################
+# MediaMTX Configuration for PC Nest Speaker
+# Optimized for low-latency audio-only WebRTC streaming
+###############################################
+
+# Logging
+logLevel: info
+logDestinations: [stdout]
+
+# Timeouts
+readTimeout: 10s
+writeTimeout: 10s
+writeQueueSize: 512
+
+###############################################
+# Authentication - allow all for local use
+###############################################
+authMethod: internal
+authInternalUsers:
+- user: any
+  pass:
+  ips: []
+  permissions:
+  - action: publish
+    path:
+  - action: read
+    path:
+- user: any
+  pass:
+  ips: ['127.0.0.1', '::1']
+  permissions:
+  - action: api
+  - action: metrics
+
+###############################################
+# Control API - enabled for monitoring
+###############################################
+api: yes
+apiAddress: :9997
+apiEncryption: no
+apiAllowOrigins: ['*']
+
+###############################################
+# RTSP server - receives FFmpeg stream
+###############################################
+rtsp: yes
+rtspTransports: [tcp]
+rtspEncryption: "no"
+rtspAddress: :8554
+
+###############################################
+# RTMP server - disabled (not needed)
+###############################################
+rtmp: no
+
+###############################################
+# HLS server - disabled (not needed)
+###############################################
+hls: no
+
+###############################################
+# WebRTC server - serves to Cast receiver
+###############################################
+webrtc: yes
+webrtcAddress: :8889
+webrtcEncryption: no
+webrtcAllowOrigins: ['*']
+webrtcIPsFromInterfaces: yes
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcHandshakeTimeout: 10s
+webrtcTrackGatherTimeout: 2s
+webrtcSTUNGatherTimeout: 5s
+# Add Google STUN server for NAT traversal
+webrtcICEServers2:
+  - url: stun:stun.l.google.com:19302
+
+###############################################
+# SRT server - disabled (not needed)
+###############################################
+srt: no
+
+###############################################
+# Path configuration
+###############################################
+pathDefaults:
+  source: publisher
+  sourceOnDemand: no
+  maxReaders: 0
+  overridePublisher: yes
+  record: no
+
+# Define pcaudio path for our stream
+paths:
+  pcaudio:
+    source: publisher

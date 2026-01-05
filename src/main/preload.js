@@ -36,6 +36,14 @@ contextBridge.exposeInMainWorld('api', {
   onLog: (callback) => {
     ipcRenderer.on('log', (event, message, type) => callback(message, type));
   },
+
+  // Auto-discovery events (fired on app startup)
+  onSpeakersDiscovered: (callback) => {
+    ipcRenderer.on('speakers-discovered', (event, speakers) => callback(speakers));
+  },
+  onAudioDevicesDiscovered: (callback) => {
+    ipcRenderer.on('audio-devices-discovered', (event, devices) => callback(devices));
+  },
 });
 
 // Expose WebRTC-specific APIs separately (for low-latency streaming)

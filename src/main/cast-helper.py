@@ -349,15 +349,30 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None):
         time.sleep(3)  # Wait for receiver to load
         print("[WebRTC] Receiver launched!", file=sys.stderr)
 
-        # If HTTPS URL provided, send it to receiver via play_media customData
+        # If HTTPS URL provided, send it to receiver via play_media with customData
+        # This is more reliable than custom namespace messaging
         if https_url:
             print(f"[WebRTC] Sending WebRTC URL to receiver: {https_url}", file=sys.stderr)
-            mc = cast.media_controller
 
-            # The receiver intercepts LOAD messages and checks customData.webrtcUrl
+            # Wait for receiver to be fully loaded
+            for i in range(10):
+                cast.socket_client.receiver_controller.update_status()
+                time.sleep(0.5)
+                if cast.status and cast.status.app_id == CUSTOM_APP_ID:
+                    print(f"[WebRTC] App ready, transport_id: {cast.status.transport_id}", file=sys.stderr)
+                    break
+                print(f"[WebRTC] Waiting for app... ({i+1}/10)", file=sys.stderr)
+
+            # Use media controller to send customData with WebRTC URL
+            # The receiver intercepts LOAD messages and extracts customData.webrtcUrl
+            mc = cast.media_controller
+            print(f"[WebRTC] Sending play_media with customData...", file=sys.stderr)
+
+            # Send a LOAD message with customData containing the WebRTC URL
+            # The receiver will intercept this and use WebRTC instead of playing the dummy URL
             mc.play_media(
-                "https://placeholder.webrtc/audio.mp3",  # Placeholder - receiver ignores this
-                "audio/mpeg",
+                "https://placeholder.webrtc/stream.opus",  # Dummy URL - receiver ignores this
+                "audio/ogg",
                 stream_type="LIVE",
                 autoplay=True,
                 media_info={
@@ -368,8 +383,17 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None):
                     }
                 }
             )
+
+            # Wait for media controller to be active
+            try:
+                mc.block_until_active(timeout=10)
+                print("[WebRTC] Media controller active", file=sys.stderr)
+            except Exception as e:
+                # This is expected since receiver intercepts and cancels the LOAD
+                print(f"[WebRTC] block_until_active: {e} (expected for WebRTC mode)", file=sys.stderr)
+
             time.sleep(2)  # Wait for receiver to process
-            print("[WebRTC] WebRTC URL sent to receiver!", file=sys.stderr)
+            print("[WebRTC] WebRTC URL sent via play_media customData!", file=sys.stderr)
 
         return {
             "success": True,
