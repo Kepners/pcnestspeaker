@@ -121,8 +121,10 @@
 
       // Call webrtc-streamer API
       try {
+        // Use audiourl (not url) for audio-only streams
+        // url is for video, audiourl is for audio
         const callUrl = serverUrl + '/api/call?peerid=' + encodeURIComponent(streamName) +
-                        '&url=' + encodeURIComponent('audiocap://0');
+                        '&url=&audiourl=' + encodeURIComponent('audiocap://0');
 
         log('Calling ' + callUrl);
         const response = await fetch(callUrl, {
