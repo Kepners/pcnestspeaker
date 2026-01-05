@@ -64,6 +64,7 @@
      */
     async function connectToWebRTCStreamer(serverUrl, streamName = 'pcaudio') {
       webrtcStreamerUrl = serverUrl;
+      const sessionId = 'session_' + Date.now();  // Unique session ID
       log('Connecting to ' + serverUrl);
 
       // Create PeerConnection
@@ -122,8 +123,8 @@
       // Call webrtc-streamer API
       try {
         // Use the pre-configured stream name (server started with -n pcaudio -U audiocap://1)
-        // Reference the named stream as the audio source
-        const callUrl = serverUrl + '/api/call?peerid=session1&audiourl=' + encodeURIComponent(streamName);
+        // Reference the named stream as the audio source, use unique session ID
+        const callUrl = serverUrl + '/api/call?peerid=' + encodeURIComponent(sessionId) + '&audiourl=' + encodeURIComponent(streamName);
 
         log('Calling ' + callUrl);
         const response = await fetch(callUrl, {
@@ -145,9 +146,9 @@
         await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
         log('Set remote description');
 
-        // Send gathered ICE candidates
+        // Send gathered ICE candidates (use same sessionId as the call)
         for (const candidate of iceCandidates) {
-          const iceUrl = serverUrl + '/api/addIceCandidate?peerid=' + encodeURIComponent(streamName);
+          const iceUrl = serverUrl + '/api/addIceCandidate?peerid=' + encodeURIComponent(sessionId);
           await fetch(iceUrl, {
             method: 'POST',
             headers: {
