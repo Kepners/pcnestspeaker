@@ -1,99 +1,182 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>PC Nest Speaker - Low Latency Receiver</title>
+  <title>PC Nest Speaker - WebRTC Receiver</title>
   <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
   <style>
-    body {
-      background: #334E58;
-      margin: 0;
-      padding: 0;
-    }
-    #status {
-      color: #FCBFB7;
-      font-family: sans-serif;
-      font-size: 24px;
-      text-align: center;
-      padding-top: 40%;
-    }
+    body { background: #334E58; margin: 0; padding: 0; }
+    #status { color: #FCBFB7; font-family: sans-serif; font-size: 24px; text-align: center; padding-top: 40%; }
   </style>
 </head>
 <body>
   <cast-media-player></cast-media-player>
   <div id="status">PC Nest Speaker</div>
+  <audio id="webrtc-audio" autoplay></audio>
 
   <script>
+    const WEBRTC_NAMESPACE = 'urn:x-cast:com.pcnestspeaker.webrtc';
+
+    // Cast framework setup
     const context = cast.framework.CastReceiverContext.getInstance();
     const playerManager = context.getPlayerManager();
-
-    // Configure for MINIMAL latency - optimized for MP3 progressive streams
     const playbackConfig = new cast.framework.PlaybackConfig();
 
-    // Start playback with minimal buffer (works for MP3)
-    playbackConfig.autoResumeDuration = 0.1;  // Start after just 0.1s of buffer
-    playbackConfig.autoPauseDuration = 0.05;  // Only pause if buffer drops to 50ms
-
-    // High bandwidth estimate = no bandwidth probing delay
-    playbackConfig.initialBandwidth = 10000000; // 10 Mbps
-
-    // Disable preloading to reduce startup delay
+    // Low latency settings for HTTP fallback
+    playbackConfig.autoResumeDuration = 0;
+    playbackConfig.autoPauseDuration = 0;
+    playbackConfig.initialBandwidth = 100000000;
     playbackConfig.disablePreload = true;
-
-    // For HLS streams (if used), also set Shaka config
+    playbackConfig.autoResumeNumberOfSegments = 0;
     playbackConfig.shakaConfig = {
       streaming: {
-        bufferingGoal: 0.5,        // Only buffer 0.5 seconds ahead
-        rebufferingGoal: 0.1,      // Resume after 0.1s buffered
-        bufferBehind: 1,           // Keep 1s behind
+        bufferingGoal: 0.1,
+        rebufferingGoal: 0,
+        bufferBehind: 0,
         lowLatencyMode: true,
-        segmentPrefetchLimit: 0,   // Don't prefetch
+        segmentPrefetchLimit: 0,
+        retryParameters: { maxAttempts: 1, timeout: 1000 }
       }
     };
 
-    // Intercept load requests to force LIVE stream type for minimal buffering
     playerManager.setMessageInterceptor(
       cast.framework.messages.MessageType.LOAD,
-      (loadRequestData) => {
-        console.log('Load intercepted, forcing LIVE mode');
-        if (loadRequestData.media) {
-          loadRequestData.media.streamType = cast.framework.messages.StreamType.LIVE;
+      (request) => {
+        if (request.media) {
+          request.media.streamType = cast.framework.messages.StreamType.LIVE;
+          request.autoplay = true;
+          request.currentTime = 0;
         }
-        return loadRequestData;
+        return request;
       }
     );
 
-    // Set the playback config
+    playerManager.setMessageInterceptor(
+      cast.framework.messages.MessageType.PRELOAD,
+      () => null
+    );
+
     playerManager.setPlaybackConfig(playbackConfig);
 
-    // Log events for debugging
-    playerManager.addEventListener(
-      cast.framework.events.EventType.PLAYER_LOADING,
-      (event) => console.log('Loading media...')
-    );
+    // ===================
+    // WebRTC SUPPORT
+    // ===================
+    let peerConnection = null;
+    const audioElement = document.getElementById('webrtc-audio');
 
-    playerManager.addEventListener(
-      cast.framework.events.EventType.BUFFERING,
-      (event) => console.log('Buffering:', event.isBuffering)
-    );
+    function log(msg) {
+      console.log('[WebRTC] ' + msg);
+      document.getElementById('status').textContent = msg;
+    }
 
-    playerManager.addEventListener(
-      cast.framework.events.EventType.PLAYING,
-      (event) => console.log('Playing!')
-    );
+    function createPeerConnection() {
+      const config = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      };
 
-    playerManager.addEventListener(
-      cast.framework.events.EventType.ERROR,
-      (event) => console.log('Error:', event.detailedErrorCode)
-    );
+      peerConnection = new RTCPeerConnection(config);
+      log('PeerConnection created');
 
-    // Start the receiver with minimal options
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          log('Sending ICE candidate');
+          sendMessage({ type: 'ice', candidate: event.candidate });
+        }
+      };
+
+      peerConnection.ontrack = (event) => {
+        log('Received audio track!');
+        if (event.streams && event.streams[0]) {
+          audioElement.srcObject = event.streams[0];
+          audioElement.play().catch(e => log('Play error: ' + e));
+          log('Playing WebRTC audio');
+        }
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        log('Connection: ' + peerConnection.connectionState);
+      };
+
+      return peerConnection;
+    }
+
+    function sendMessage(data) {
+      context.sendCustomMessage(WEBRTC_NAMESPACE, undefined, data);
+    }
+
+    async function handleOffer(offer) {
+      log('Received SDP offer');
+
+      if (!peerConnection) {
+        createPeerConnection();
+      }
+
+      try {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        log('Set remote description');
+
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        log('Created answer');
+
+        sendMessage({ type: 'answer', sdp: answer });
+        log('Sent SDP answer');
+      } catch (e) {
+        log('Offer error: ' + e.message);
+      }
+    }
+
+    async function handleIce(candidate) {
+      if (peerConnection && candidate) {
+        try {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+          log('Added ICE candidate');
+        } catch (e) {
+          log('ICE error: ' + e.message);
+        }
+      }
+    }
+
+    function handleMessage(event) {
+      log('Message received: ' + event.data.type);
+      const data = event.data;
+
+      switch (data.type) {
+        case 'offer':
+          handleOffer(data.sdp);
+          break;
+        case 'ice':
+          handleIce(data.candidate);
+          break;
+        case 'close':
+          if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+            log('Connection closed');
+          }
+          break;
+        default:
+          log('Unknown message type: ' + data.type);
+      }
+    }
+
+    // Register custom message handler for WebRTC signaling
+    context.addCustomMessageListener(WEBRTC_NAMESPACE, handleMessage);
+
+    // Start receiver
     context.start({
       playbackConfig: playbackConfig,
       skipPlayersLoad: false,
-      supportedCommands: cast.framework.messages.Command.ALL_BASIC_MEDIA
+      disableIdleTimeout: true,
+      supportedCommands: cast.framework.messages.Command.ALL_BASIC_MEDIA,
+      customNamespaces: {
+        [WEBRTC_NAMESPACE]: cast.framework.system.MessageType.JSON
+      }
     });
 
-    console.log('PC Nest Speaker receiver started - MP3 low-latency mode');
+    log('WebRTC receiver ready');
   </script>
 </body>
 </html>

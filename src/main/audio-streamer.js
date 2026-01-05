@@ -18,7 +18,7 @@ const CONFIG = {
   port: 8000,
   sampleRate: 48000,
   channels: 2,
-  bitrate: '128k',
+  bitrate: '320k',  // Higher bitrate = faster buffer fill = lower latency (~8-10s vs ~22s)
   hlsSegmentTime: 0.5,  // 0.5 second segments for low latency
   hlsListSize: 3,       // Keep only 3 segments in playlist
 };

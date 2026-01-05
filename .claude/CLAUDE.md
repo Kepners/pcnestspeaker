@@ -236,12 +236,13 @@ Direct bash commands won't work because Claude Code's Bash runs in a subprocess 
 | **Status** | **Published** (works on all devices) |
 | **Registered** | January 5, 2026 |
 
-### Custom Receiver Features
-- Low-latency playback configuration
-- `autoResumeNumberOfSegments: 1` (start after 1 segment)
-- `autoResumeDuration: 0.5` (resume after 0.5s buffer)
-- `bufferingGoal: 1` (only buffer 1 second ahead)
-- `lowLatencyMode: true` (Shaka player setting)
+### Custom Receiver Features (MP3 Optimized)
+- **Streaming Mode:** MP3 progressive (no files, direct pipe)
+- `autoResumeDuration: 0.1` (start after just 100ms buffer)
+- `autoPauseDuration: 0.05` (only pause if buffer < 50ms)
+- `initialBandwidth: 10000000` (10 Mbps - skip bandwidth probing)
+- `disablePreload: true` (reduce startup delay)
+- Message interceptor forces LIVE stream type for minimal buffering
 
 ### Files
 - `cast-receiver/receiver.html` - Source file

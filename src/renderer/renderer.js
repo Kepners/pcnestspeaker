@@ -181,7 +181,7 @@ function renderAudioDevices() {
   updateStreamButtonState();
 }
 
-function selectSpeaker(index) {
+async function selectSpeaker(index) {
   selectedSpeaker = speakers[index];
   log(`Selected speaker: ${selectedSpeaker.name}`);
 
@@ -191,6 +191,13 @@ function selectSpeaker(index) {
   });
 
   updateStreamButtonState();
+
+  // Auto-start streaming if audio device is available
+  const selectedAudioDevice = audioDeviceSelect.value;
+  if (selectedAudioDevice && !isStreaming) {
+    log('Auto-starting stream...');
+    await startStreaming();
+  }
 }
 
 function updateStreamButtonState() {

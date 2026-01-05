@@ -56,33 +56,24 @@ def cast_to_speaker(speaker_name, media_url, content_type="application/x-mpegURL
         print(f"Connecting to {host}...", file=sys.stderr)
         cast.wait()
 
-        # Set volume to 50% and play connection notification sound
-        print("Setting volume to 50%...", file=sys.stderr)
-        cast.set_volume(0.5)
-
         import time
         mc = cast.media_controller
 
-        # Play ping sound (same as direct test that worked)
-        print("Playing ping sound...", file=sys.stderr)
-        mc.play_media("http://commondatastorage.googleapis.com/codeskulptor-assets/Collision8-Bit.ogg", "audio/ogg")
-        mc.block_until_active(timeout=10)
-        print("Ping played!", file=sys.stderr)
+        # Launch custom receiver
+        print(f"Launching custom receiver (App ID: {CUSTOM_APP_ID})...", file=sys.stderr)
+        cast.start_app(CUSTOM_APP_ID)
+        time.sleep(1)
+        print("Custom receiver loaded!", file=sys.stderr)
 
-        # Wait for ping to finish
-        time.sleep(2)
-
-        # Try custom low-latency receiver, fallback to default if fails
-        try:
-            print(f"Launching custom receiver (App ID: {CUSTOM_APP_ID})...", file=sys.stderr)
-            cast.start_app(CUSTOM_APP_ID)
-            time.sleep(3)
-            print("Custom receiver loaded!", file=sys.stderr)
-        except Exception as e:
-            print(f"Custom receiver failed ({e}), using default...", file=sys.stderr)
-
+        # Play stream with aggressive settings
         print(f"Playing stream: {media_url}", file=sys.stderr)
-        mc.play_media(media_url, content_type, stream_type="LIVE")
+        mc.play_media(
+            media_url,
+            content_type,
+            stream_type="LIVE",
+            autoplay=True,
+            current_time=0
+        )
         mc.block_until_active(timeout=30)
 
         browser.stop_discovery()
