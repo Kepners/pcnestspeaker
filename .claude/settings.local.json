@@ -50,7 +50,9 @@
       "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/webrtc-streamer-v0.8.14-dirty-Windows-AMD64-Release/bin/webrtc-streamer.exe\" --help)",
       "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/webrtc-streamer-v0.8.14-dirty-Windows-AMD64-Release/bin/webrtc-streamer.exe\" -v -n \"pcaudio\" -U \"audiocap://virtual-audio-capturer\" -H 0.0.0.0:8080)",
       "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/webrtc-streamer-v0.8.14-dirty-Windows-AMD64-Release/bin/webrtc-streamer.exe\" -v -n \"pcaudio\" -U \"audiocap://0\" -H 0.0.0.0:8080)",
-      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/webrtc-streamer-v0.8.14-dirty-Windows-AMD64-Release/bin/webrtc-streamer.exe\" -v -n \"pcaudio\" -U \"audiocap://0\" -a -H 0.0.0.0:8080)"
+      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/webrtc-streamer-v0.8.14-dirty-Windows-AMD64-Release/bin/webrtc-streamer.exe\" -v -n \"pcaudio\" -U \"audiocap://0\" -a -H 0.0.0.0:8080)",
+      "Bash(openssl req:*)",
+      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/webrtc-streamer-v0.8.14-dirty-Windows-AMD64-Release/bin/webrtc-streamer.exe\" -v -n \"pcaudio\" -U \"audiocap://0\" -a -c \"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/webrtc-combined.pem\" -H 0.0.0.0:8443)"
     ]
   }
 }

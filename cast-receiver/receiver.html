@@ -207,23 +207,22 @@
 
     log('Ready - Auto-connecting...');
 
-    // Auto-connect to webrtc-streamer on load (for testing)
-    // The sender will pass the URL, but we'll try a test connection first
+    // Auto-connect to webrtc-streamer on load via HTTPS tunnel
     setTimeout(() => {
-      // Try to detect local network - this is a test
-      log('Testing connection...');
+      log('Testing HTTPS connection...');
 
-      // Try common local IPs - the sender should provide the actual URL
-      // For now, test with a placeholder to see if fetch works at all
-      fetch('http://192.168.50.48:8080/api/getMediaList')
+      // Use localtunnel HTTPS URL to avoid mixed content blocking
+      const httpsUrl = 'https://solid-loops-judge.loca.lt';
+
+      fetch(httpsUrl + '/api/getMediaList')
         .then(r => r.json())
         .then(data => {
-          log('Server reachable! Found ' + data.length + ' streams');
+          log('Server reachable via HTTPS!');
           // Now try the actual WebRTC connection
-          connectToWebRTCStreamer('http://192.168.50.48:8080', 'pcaudio');
+          connectToWebRTCStreamer(httpsUrl, 'pcaudio');
         })
         .catch(e => {
-          log('Connection blocked: ' + e.message);
+          log('HTTPS error: ' + e.message);
         });
     }, 2000);
 
