@@ -105,14 +105,21 @@
       earlyCandidates = [];
       log('Connecting to ' + serverUrl);
 
-      // Create PeerConnection
-      const config = {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' }
-        ]
-      };
+      // First get ICE servers from webrtc-streamer (like official lib)
+      let iceConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+      try {
+        const iceResponse = await fetch(serverUrl + '/api/getIceServers', {
+          headers: { 'bypass-tunnel-reminder': 'true' }
+        });
+        if (iceResponse.ok) {
+          iceConfig = await iceResponse.json();
+          log('Got ICE servers from server');
+        }
+      } catch (e) {
+        log('Using default STUN server');
+      }
 
-      peerConnection = new RTCPeerConnection(config);
+      peerConnection = new RTCPeerConnection(iceConfig);
       log('PeerConnection created, peerId: ' + currentPeerId);
 
       // Handle ICE candidates - send immediately if remote desc set, else queue
@@ -162,11 +169,11 @@
       log('Created offer');
 
       // Call webrtc-streamer API
+      // Official API format: /api/call?peerid=xxx&url=streamname
+      // For audio-only streams, use the named stream (pcaudio) which maps to audiocap://3
       try {
-        // Build URL: /api/call?peerid=xxx&audiourl=audiocap://1
-        // Use the actual audio device URL, not the stream name
         const callUrl = serverUrl + '/api/call?peerid=' + encodeURIComponent(currentPeerId) +
-                        '&audiourl=' + encodeURIComponent('audiocap://1');
+                        '&url=' + encodeURIComponent(streamName);
 
         log('Calling ' + callUrl);
         const response = await fetch(callUrl, {
