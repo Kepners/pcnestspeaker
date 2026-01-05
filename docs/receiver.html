@@ -145,6 +145,7 @@
         log('Fetching: ' + whepUrl);
         const response = await fetch(whepUrl, {
           method: 'POST',
+          mode: 'cors',
           headers: {
             'Content-Type': 'application/sdp'
           },
