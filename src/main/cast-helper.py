@@ -349,8 +349,7 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None):
         time.sleep(3)  # Wait for receiver to load
         print("[WebRTC] Receiver launched!", file=sys.stderr)
 
-        # If HTTPS URL provided, send it to receiver via play_media with customData
-        # This is more reliable than custom namespace messaging
+        # If HTTPS URL provided, send it to receiver via custom namespace message
         if https_url:
             print(f"[WebRTC] Sending WebRTC URL to receiver: {https_url}", file=sys.stderr)
 
@@ -363,27 +362,35 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None):
                     break
                 print(f"[WebRTC] Waiting for app... ({i+1}/10)", file=sys.stderr)
 
-            # Use media controller to send WebRTC URL
-            # The receiver intercepts LOAD messages and checks contentId for webrtc:// prefix
-            mc = cast.media_controller
-            print(f"[WebRTC] Sending play_media with webrtc:// URL...", file=sys.stderr)
+            # Send URL via custom namespace message
+            # The receiver listens on 'urn:x-cast:com.pcnestspeaker.webrtc'
+            WEBRTC_NAMESPACE = "urn:x-cast:com.pcnestspeaker.webrtc"
 
-            # Embed the WebRTC URL in contentId using webrtc:// prefix
-            # This is more reliable than customData which may not propagate correctly
-            # Format: webrtc://https://example.com/path -> receiver extracts https://example.com/path
-            webrtc_content_id = f"webrtc://{https_url}"
-            print(f"[WebRTC] contentId: {webrtc_content_id}", file=sys.stderr)
+            # Create and register a simple message controller
+            from pychromecast.controllers import BaseController
 
-            mc.play_media(
-                webrtc_content_id,  # webrtc://https://xxx.loca.lt
-                "audio/webrtc",     # Custom MIME type to signal WebRTC
-                stream_type="LIVE",
-                autoplay=True
-            )
+            class WebRTCController(BaseController):
+                def __init__(self):
+                    super().__init__(WEBRTC_NAMESPACE)
 
-            # Wait briefly for receiver to process (don't block - receiver cancels the LOAD)
-            time.sleep(3)
-            print("[WebRTC] WebRTC URL sent via contentId!", file=sys.stderr)
+                def receive_message(self, message, data):
+                    print(f"[WebRTC] Received: {data}", file=sys.stderr)
+                    return True
+
+            webrtc_controller = WebRTCController()
+            cast.register_handler(webrtc_controller)
+
+            # Send connect message with URL
+            message = {
+                "type": "connect",
+                "url": https_url,
+                "stream": "pcaudio"
+            }
+            print(f"[WebRTC] Sending message: {message}", file=sys.stderr)
+            webrtc_controller.send_message(message)
+
+            time.sleep(2)
+            print("[WebRTC] URL sent via custom namespace!", file=sys.stderr)
 
         return {
             "success": True,

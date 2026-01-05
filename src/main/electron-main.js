@@ -28,12 +28,17 @@ const DEPENDENCY_URLS = {
 // Bundled MediaMTX path (replaces webrtc-streamer for WebRTC streaming)
 // In dev: mediamtx/ folder in project root
 // In production: resources/mediamtx/ in the app package
-const MEDIAMTX_PATH = app.isPackaged
-  ? path.join(process.resourcesPath, 'mediamtx', 'mediamtx.exe')
-  : path.join(__dirname, '../../mediamtx/mediamtx.exe');
-const MEDIAMTX_CONFIG = app.isPackaged
-  ? path.join(process.resourcesPath, 'mediamtx', 'mediamtx-audio.yml')
-  : path.join(__dirname, '../../mediamtx/mediamtx-audio.yml');
+// NOTE: These are functions to defer app.isPackaged check until app is ready
+function getMediaMTXPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'mediamtx', 'mediamtx.exe')
+    : path.join(__dirname, '../../mediamtx/mediamtx.exe');
+}
+function getMediaMTXConfig() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'mediamtx', 'mediamtx-audio.yml')
+    : path.join(__dirname, '../../mediamtx/mediamtx-audio.yml');
+}
 
 // MediaMTX process reference
 let mediamtxProcess = null;
@@ -59,6 +64,13 @@ function killLeftoverProcesses() {
     try {
       // Kill any localtunnel processes
       execSync('taskkill /F /IM lt.exe 2>nul', { stdio: 'ignore' });
+    } catch (e) {
+      // Process not running - that's fine
+    }
+
+    try {
+      // Kill any cloudflared processes
+      execSync('taskkill /F /IM cloudflared.exe 2>nul', { stdio: 'ignore' });
     } catch (e) {
       // Process not running - that's fine
     }
@@ -192,7 +204,7 @@ async function checkAllDependencies() {
   deps.screenCapture = await checkAudioDeviceExists('virtual-audio-capturer');
 
   // Check MediaMTX (bundled - replaces webrtc-streamer)
-  deps.mediamtx = fs.existsSync(MEDIAMTX_PATH);
+  deps.mediamtx = fs.existsSync(getMediaMTXPath());
 
   return deps;
 }
@@ -204,7 +216,7 @@ async function startMediaMTX() {
     return true;
   }
 
-  if (!fs.existsSync(MEDIAMTX_PATH)) {
+  if (!fs.existsSync(getMediaMTXPath())) {
     throw new Error('MediaMTX not found. Please reinstall the app.');
   }
 
@@ -212,8 +224,9 @@ async function startMediaMTX() {
 
   return new Promise((resolve, reject) => {
     // Launch MediaMTX with our custom config
-    mediamtxProcess = spawn(MEDIAMTX_PATH, [MEDIAMTX_CONFIG], {
-      cwd: path.dirname(MEDIAMTX_PATH),
+    const mtxPath = getMediaMTXPath();
+    mediamtxProcess = spawn(mtxPath, [getMediaMTXConfig()], {
+      cwd: path.dirname(mtxPath),
       stdio: ['ignore', 'pipe', 'pipe']
     });
 
@@ -352,14 +365,108 @@ async function startFFmpegWebRTC(audioDevice) {
   });
 }
 
-// Start localtunnel for HTTPS
+// Find cloudflared executable
+function findCloudflared() {
+  const possiblePaths = [
+    'cloudflared', // If in PATH
+    'C:\\Program Files (x86)\\cloudflared\\cloudflared.exe',
+    'C:\\Program Files\\cloudflared\\cloudflared.exe',
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'cloudflared', 'cloudflared.exe'),
+  ];
+
+  for (const p of possiblePaths) {
+    try {
+      if (p === 'cloudflared') {
+        // Check if in PATH
+        execSync('where cloudflared', { stdio: 'ignore' });
+        return 'cloudflared';
+      } else if (fs.existsSync(p)) {
+        return p;
+      }
+    } catch (e) {
+      // Not found, continue
+    }
+  }
+  return null;
+}
+
+// Start cloudflared tunnel for HTTPS (replaces localtunnel - no interstitial page)
 async function startLocalTunnel(port = 8443) {
   if (localTunnelProcess && tunnelUrl) {
     sendLog(`Tunnel already running at ${tunnelUrl}`);
     return tunnelUrl;
   }
 
-  sendLog('Starting localtunnel for HTTPS...');
+  // First try cloudflared (more reliable, no interstitial)
+  const cloudflaredPath = findCloudflared();
+
+  if (cloudflaredPath) {
+    sendLog('Starting cloudflared tunnel (no interstitial)...');
+
+    return new Promise((resolve, reject) => {
+      localTunnelProcess = spawn(cloudflaredPath, ['tunnel', '--url', `http://localhost:${port}`], {
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+
+      // Cloudflared outputs to stderr
+      localTunnelProcess.stderr.on('data', (data) => {
+        const msg = data.toString();
+
+        // Parse URL from cloudflared output
+        // Format: "https://xxx-xxx-xxx.trycloudflare.com"
+        const urlMatch = msg.match(/(https:\/\/[a-z0-9-]+\.trycloudflare\.com)/i);
+        if (urlMatch && !tunnelUrl) {
+          tunnelUrl = urlMatch[1];
+          sendLog(`Cloudflare tunnel URL: ${tunnelUrl}`, 'success');
+          resolve(tunnelUrl);
+        }
+
+        // Log important messages
+        if (msg.includes('Your quick Tunnel') || msg.includes('trycloudflare.com') || msg.includes('ERR')) {
+          sendLog(`[cloudflared] ${msg.trim()}`);
+        }
+      });
+
+      localTunnelProcess.stdout.on('data', (data) => {
+        const msg = data.toString().trim();
+        if (msg) sendLog(`[cloudflared] ${msg}`);
+      });
+
+      localTunnelProcess.on('error', (err) => {
+        sendLog(`cloudflared error: ${err.message}`, 'error');
+        localTunnelProcess = null;
+        // Fallback to localtunnel
+        startLocalTunnelFallback(port).then(resolve).catch(reject);
+      });
+
+      localTunnelProcess.on('close', (code) => {
+        sendLog(`cloudflared exited with code ${code}`);
+        localTunnelProcess = null;
+        tunnelUrl = null;
+      });
+
+      // Timeout after 30 seconds
+      setTimeout(() => {
+        if (!tunnelUrl) {
+          // Fallback to localtunnel
+          sendLog('cloudflared timed out, trying localtunnel...', 'warn');
+          if (localTunnelProcess) {
+            localTunnelProcess.kill();
+            localTunnelProcess = null;
+          }
+          startLocalTunnelFallback(port).then(resolve).catch(reject);
+        }
+      }, 30000);
+    });
+  } else {
+    sendLog('cloudflared not found, using localtunnel...', 'warn');
+    return startLocalTunnelFallback(port);
+  }
+}
+
+// Fallback to localtunnel if cloudflared is not available
+async function startLocalTunnelFallback(port = 8443) {
+  sendLog('Starting localtunnel for HTTPS (may have interstitial)...');
 
   return new Promise((resolve, reject) => {
     localTunnelProcess = spawn('npx', ['localtunnel', '--port', port.toString()], {

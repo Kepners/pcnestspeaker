@@ -69,7 +69,22 @@
       "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/mediamtx/mediamtx.exe\" --help)",
       "Bash(./mediamtx/mediamtx.exe:*)",
       "Bash(fc cast-receiverreceiver.html docsreceiver.html)",
-      "Bash(fc:*)"
+      "Bash(fc:*)",
+      "Bash(where:*)",
+      "Bash(winget search:*)",
+      "Bash(winget install:*)",
+      "Bash(cmd //c \"dir \"\"C:\\\\Program Files \\(x86\\)\\\\cloudflared\"\" 2>nul || dir \"\"C:\\\\Program Files\\\\cloudflared\"\" 2>nul || echo Not found in Program Files\")",
+      "Bash(\"C:\\\\Program Files \\(x86\\)\\\\cloudflared\\\\cloudflared.exe\" --version)",
+      "Bash(\"C:\\\\Program Files\\\\cloudflared\\\\cloudflared.exe\" --version)",
+      "Bash(cloudflared:*)",
+      "Bash(cmd /c \"cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && start cmd /c \"\"set ELECTRON_RUN_AS_NODE= && npm run dev\"\"\")",
+      "Bash(start /b mediamtxmediamtx.exe:*)",
+      "Bash(cmd /c \"start /b c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\mediamtx\\\\mediamtx.exe c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\mediamtx\\\\mediamtx-audio.yml\")",
+      "Bash(\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\mediamtx\\\\mediamtx.exe\")",
+      "Bash(cmd /c \"start /b ffmpeg -f dshow -i \"\"audio=virtual-audio-capturer\"\" -c:a libopus -b:a 128k -ar 48000 -ac 2 -f rtsp -rtsp_transport tcp rtsp://localhost:8554/pcaudio\")",
+      "Bash(cmd //c \"taskkill /F /PID 510188\")",
+      "Bash(cmd //c \"taskkill /F /IM ffmpeg.exe\")",
+      "Bash(sleep 1 ffmpeg -f dshow -i \"audio=virtual-audio-capturer\" -c:a pcm_mulaw -ar 8000 -ac 1 -f rtsp -rtsp_transport tcp rtsp://localhost:8554/pcaudio)"
     ]
   }
 }
