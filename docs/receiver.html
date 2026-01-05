@@ -169,11 +169,11 @@
       log('Created offer');
 
       // Call webrtc-streamer API
-      // Official API format: /api/call?peerid=xxx&url=streamname
-      // For audio-only streams, use the named stream (pcaudio) which maps to audiocap://3
+      // Official API: url= is for VIDEO, audiourl= is for AUDIO
+      // For audio-only, we use audiourl= with direct device URL (audiocap://3 = VB-CABLE)
       try {
         const callUrl = serverUrl + '/api/call?peerid=' + encodeURIComponent(currentPeerId) +
-                        '&url=' + encodeURIComponent(streamName);
+                        '&audiourl=' + encodeURIComponent('audiocap://3');
 
         log('Calling ' + callUrl);
         const response = await fetch(callUrl, {
