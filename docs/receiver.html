@@ -82,12 +82,42 @@
 
       // Handle incoming audio track
       peerConnection.ontrack = (event) => {
-        log('Audio track received!');
-        if (event.streams && event.streams[0]) {
-          audioElement.srcObject = event.streams[0];
-          audioElement.play().then(() => {
-            log('Playing - Low Latency!');
-          }).catch(e => log('Play error: ' + e.message));
+        log('Track received: ' + event.track.kind);
+        console.log('[WebRTC] Track event:', event);
+        console.log('[WebRTC] Track:', event.track);
+        console.log('[WebRTC] Streams:', event.streams);
+
+        if (event.track.kind === 'audio') {
+          log('Audio track: ' + event.track.id);
+          if (event.streams && event.streams[0]) {
+            audioElement.srcObject = event.streams[0];
+            log('Stream attached to audio element');
+
+            // Try to play with user gesture workaround
+            audioElement.muted = false;
+            audioElement.volume = 1.0;
+
+            audioElement.play().then(() => {
+              log('Playing! Vol=' + audioElement.volume);
+            }).catch(e => {
+              log('Play error: ' + e.message);
+              // Try muted first then unmute (autoplay workaround)
+              audioElement.muted = true;
+              audioElement.play().then(() => {
+                log('Playing muted, unmuting...');
+                setTimeout(() => {
+                  audioElement.muted = false;
+                  log('Unmuted! Vol=' + audioElement.volume);
+                }, 100);
+              }).catch(e2 => log('Muted play failed: ' + e2.message));
+            });
+          } else {
+            log('No streams in track event!');
+            // Try using track directly
+            const stream = new MediaStream([event.track]);
+            audioElement.srcObject = stream;
+            audioElement.play().catch(e => log('Direct track play error: ' + e.message));
+          }
         }
       };
 
@@ -95,7 +125,7 @@
         const state = peerConnection.connectionState;
         log('Connection: ' + state);
         if (state === 'connected') {
-          log('Streaming - Sub-1s Latency!');
+          log('WebRTC Connected!');
         } else if (state === 'failed') {
           log('Connection failed - retrying...');
           // Auto-retry on failure
