@@ -1,7 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(.py \")",
+      "Bash(python:*)",
       "Bash(mkdir:*)",
       "Bash(copy \"C:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\#NestAudioBridge\\\\nest-audio-bridge-v2\\\\cast_system_audio_to_nest_v2.py\" \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\reference\\\\python\"\" && copy \"C:UserskepneOneDriveDocuments#NestAudioBridgecast_system_audio_to_nest_improved_FIXED.py\" \"c:UserskepneOneDriveDocumentsGitHubpcnestspeakerreferencepython\"\")",
       "Bash(copy:*)",
@@ -11,7 +11,34 @@
       "Bash(pip show:*)",
       "Bash(timeout /t 10 /nobreak)",
       "Bash(start \"\" \"https://github.com/rdp/screen-capture-recorder-to-video-windows-free/releases\")",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(cat:*)",
+      "Bash(node -e:*)",
+      "Bash(\"node_modules/electron/dist/electron.exe\" --version)",
+      "Bash(\"node_modules/electron/dist/electron.exe\" --help)",
+      "Bash(\"node_modules/electron/dist/electron.exe\" -e \"console.log\\(process.versions.electron\\)\")",
+      "Bash(\"node_modules/electron/dist/electron.exe\" test-electron.js)",
+      "Bash(\"node_modules/electron/dist/electron.exe\" -e \"const e = require\\(''electron''\\); console.log\\(''app:'', typeof e.app\\); console.log\\(''ipcMain:'', typeof e.ipcMain\\); console.log\\(''keys:'', Object.keys\\(e\\)\\);\")",
+      "Bash(\"node_modules/electron/dist/electron.exe\" -e \"const e = require\\(''electron''\\); console.log\\(''typeof:'', typeof e\\); console.log\\(''value:'', e.substring ? e.substring\\(0, 100\\) : e\\);\")",
+      "Bash(\"node_modules/electron/dist/electron.exe\" -e \"console.log\\(''ELECTRON_RUN_AS_NODE:'', process.env.ELECTRON_RUN_AS_NODE\\); console.log\\(''Is main process:'', process.type\\);\")",
+      "Bash(echo:*)",
+      "Bash(unset:*)",
+      "Bash(set ELECTRON_RUN_AS_NODE=:*)",
+      "Bash(timeout /t 5 /nobreak)",
+      "Bash(cmd /c \"set ELECTRON_RUN_AS_NODE= && cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && npm run dev\")",
+      "Bash(ELECTRON_RUN_AS_NODE= \"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/node_modules/.bin/electron.cmd\":*)",
+      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/node_modules/.bin/electron\" \"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker\" --dev)",
+      "Bash(taskkill:*)",
+      "Bash(curl:*)",
+      "Bash(timeout 5 ffmpeg:*)",
+      "Bash(netsh advfirewall firewall show rule:*)",
+      "Bash(timeout /t 2 /nobreak)",
+      "Bash(cmd /c \"cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && npm run dev\")",
+      "Bash(tasklist:*)",
+      "Bash(start /min cmd /c \"cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && npm run dev\")",
+      "Bash(cmd /c \"mkdir c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\docs 2>nul & copy c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\cast-receiver\\\\receiver.html c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\docs\\\\receiver.html\")",
+      "Bash(cd:*)",
+      "Bash(timeout /t 15 /nobreak)"
     ]
   }
 }

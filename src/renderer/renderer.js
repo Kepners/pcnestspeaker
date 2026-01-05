@@ -1,6 +1,6 @@
 /**
  * PC Nest Speaker - Renderer Process
- * Handles UI interactions, audio capture, and communicates with main process via IPC
+ * Uses Python pychromecast for reliable Nest casting
  */
 
 // DOM Elements
@@ -11,22 +11,37 @@ const streamBtn = document.getElementById('stream-btn');
 const loadingOverlay = document.getElementById('loading-overlay');
 const loadingText = document.getElementById('loading-text');
 const businessLink = document.getElementById('business-link');
+const audioDeviceSelect = document.getElementById('audio-device-select');
+const debugLog = document.getElementById('debug-log');
+const clearLogBtn = document.getElementById('clear-log-btn');
+const pingBtn = document.getElementById('ping-btn');
 
 // State
 let speakers = [];
+let audioDevices = [];
 let selectedSpeaker = null;
 let isStreaming = false;
-let audioContext = null;
-let mediaStream = null;
-let audioProcessor = null;
-let streamUrl = null;
+
+// Debug logging
+function log(message, type = 'info') {
+  const time = new Date().toLocaleTimeString();
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${type}`;
+  entry.innerHTML = `<span class="log-time">${time}</span>${message}`;
+  debugLog.appendChild(entry);
+  debugLog.scrollTop = debugLog.scrollHeight;
+  console.log(`[${type}] ${message}`);
+}
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
+  log('App initialized');
+
   // Check current status
   const status = await window.api.getStatus();
   if (status.isStreaming) {
     setStreamingState(true);
+    log('Resumed streaming session', 'success');
   }
 
   // Set up event listeners
@@ -34,11 +49,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function setupEventListeners() {
-  discoverBtn.addEventListener('click', discoverSpeakers);
+  discoverBtn.addEventListener('click', discoverDevices);
   streamBtn.addEventListener('click', toggleStreaming);
+  pingBtn.addEventListener('click', pingSelectedSpeaker);
+
   businessLink.addEventListener('click', (e) => {
     e.preventDefault();
     window.api.openExternal('https://choppedonions.xyz');
+  });
+
+  // Clear log button
+  if (clearLogBtn) {
+    clearLogBtn.addEventListener('click', () => {
+      debugLog.innerHTML = '';
+      log('Log cleared');
+    });
+  }
+
+  // Listen for logs from main process
+  window.api.onLog((message, type) => {
+    log(`[Main] ${message}`, type);
   });
 
   // Listen for status updates from main process
@@ -47,23 +77,40 @@ function setupEventListeners() {
   });
 
   window.api.onError((error) => {
+    log(`Error: ${error}`, 'error');
     showError(error);
   });
 }
 
-async function discoverSpeakers() {
-  showLoading('Discovering speakers...');
+async function discoverDevices() {
+  log('Starting discovery...');
+  showLoading('Discovering devices...');
 
   try {
-    const result = await window.api.discoverSpeakers();
+    const result = await window.api.discoverDevices();
 
     if (result.success) {
-      speakers = result.speakers;
+      speakers = result.speakers || [];
+      audioDevices = result.audioDevices || [];
+
+      log(`Found ${speakers.length} speakers`, 'success');
+      speakers.forEach(s => log(`  - ${s.name} (${s.model})`));
+
+      log(`Found ${audioDevices.length} audio devices`);
+      audioDevices.forEach(d => log(`  - ${d}`));
+
       renderSpeakers();
+      renderAudioDevices();
+
+      if (result.warning) {
+        log(`Warning: ${result.warning}`, 'warn');
+      }
     } else {
-      showError(result.error || 'Failed to discover speakers');
+      log(`Discovery failed: ${result.error}`, 'error');
+      showError(result.error || 'Failed to discover devices');
     }
   } catch (error) {
+    log(`Discovery error: ${error.message}`, 'error');
     showError(error.message);
   }
 
@@ -75,16 +122,10 @@ function renderSpeakers() {
     speakerList.innerHTML = `
       <div class="empty-state">
         <p>No speakers found on network</p>
-        <button class="btn btn-secondary" id="discover-btn">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-          </svg>
-          Try Again
-        </button>
+        <p style="font-size: 12px; opacity: 0.7;">Make sure your Nest/Chromecast is on the same Wi-Fi</p>
       </div>
     `;
-    document.getElementById('discover-btn').addEventListener('click', discoverSpeakers);
-    streamBtn.disabled = true;
+    updateStreamButtonState();
     return;
   }
 
@@ -107,35 +148,56 @@ function renderSpeakers() {
     </div>
   `).join('');
 
-  // Add refresh button at the end
-  speakerList.innerHTML += `
-    <button class="btn btn-secondary" id="refresh-btn" style="margin-top: 8px;">
-      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M23 4v6h-6M1 20v-6h6"/>
-        <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-      </svg>
-      Refresh
-    </button>
-  `;
-
   // Add click handlers
   speakerList.querySelectorAll('.speaker-item').forEach((item) => {
     item.addEventListener('click', () => selectSpeaker(parseInt(item.dataset.index)));
   });
+}
 
-  document.getElementById('refresh-btn').addEventListener('click', discoverSpeakers);
+function renderAudioDevices() {
+  if (audioDevices.length === 0) {
+    audioDeviceSelect.innerHTML = '<option value="">No audio devices found</option>';
+    audioDeviceSelect.disabled = true;
+    return;
+  }
+
+  // Find best default device (prefer virtual-audio-capturer for WASAPI loopback)
+  // virtual-audio-capturer captures system audio WITHOUT requiring Windows audio output changes
+  let defaultIndex = 0;
+  const preferredKeywords = ['virtual-audio-capturer', 'stereo mix', 'what u hear', 'wave out'];
+  for (let i = 0; i < audioDevices.length; i++) {
+    const deviceLower = audioDevices[i].toLowerCase();
+    if (preferredKeywords.some(kw => deviceLower.includes(kw))) {
+      defaultIndex = i;
+      break;
+    }
+  }
+
+  audioDeviceSelect.innerHTML = audioDevices.map((device, index) =>
+    `<option value="${device}" ${index === defaultIndex ? 'selected' : ''}>${device}</option>`
+  ).join('');
+
+  audioDeviceSelect.disabled = false;
+  updateStreamButtonState();
 }
 
 function selectSpeaker(index) {
   selectedSpeaker = speakers[index];
+  log(`Selected speaker: ${selectedSpeaker.name}`);
 
   // Update UI
   speakerList.querySelectorAll('.speaker-item').forEach((item, i) => {
     item.classList.toggle('selected', i === index);
   });
 
-  // Enable stream button
-  streamBtn.disabled = false;
+  updateStreamButtonState();
+}
+
+function updateStreamButtonState() {
+  const hasAudioDevice = audioDeviceSelect.value && !audioDeviceSelect.disabled;
+  const hasSpeaker = selectedSpeaker !== null;
+  streamBtn.disabled = !hasSpeaker || !hasAudioDevice;
+  pingBtn.disabled = !hasSpeaker; // Ping only requires speaker selection
 }
 
 async function toggleStreaming() {
@@ -146,148 +208,58 @@ async function toggleStreaming() {
   }
 }
 
-/**
- * Get system audio loopback using electron-audio-loopback
- * This captures "what you hear" via WASAPI loopback
- */
-async function getLoopbackAudioStream() {
-  // Tell main process to enable loopback mode
-  await window.api.enableLoopbackAudio();
-
-  // Get a MediaStream with system audio
-  // electron-audio-loopback overrides getDisplayMedia to provide loopback
-  const stream = await navigator.mediaDevices.getDisplayMedia({
-    video: true, // Required by Chromium, but we remove the track
-    audio: true,
-  });
-
-  // Remove video tracks we don't need
-  const videoTracks = stream.getVideoTracks();
-  videoTracks.forEach(track => {
-    track.stop();
-    stream.removeTrack(track);
-  });
-
-  // Restore normal getDisplayMedia behavior
-  await window.api.disableLoopbackAudio();
-
-  return stream;
-}
-
-/**
- * Set up audio processing to send PCM to main process
- */
-function setupAudioProcessing(stream) {
-  audioContext = new AudioContext({
-    sampleRate: 48000,
-    latencyHint: 'interactive',
-  });
-
-  const source = audioContext.createMediaStreamSource(stream);
-
-  // Create a ScriptProcessorNode to get raw audio samples
-  // Note: ScriptProcessorNode is deprecated but still works, AudioWorklet would be better
-  const bufferSize = 4096;
-  audioProcessor = audioContext.createScriptProcessor(bufferSize, 2, 2);
-
-  audioProcessor.onaudioprocess = (e) => {
-    if (!isStreaming) return;
-
-    // Get audio data from both channels
-    const left = e.inputBuffer.getChannelData(0);
-    const right = e.inputBuffer.getChannelData(1);
-
-    // Interleave stereo channels (L R L R L R...)
-    const interleaved = new Float32Array(left.length * 2);
-    for (let i = 0; i < left.length; i++) {
-      interleaved[i * 2] = left[i];
-      interleaved[i * 2 + 1] = right[i];
-    }
-
-    // Send to main process for FFmpeg encoding
-    window.api.sendAudioData(interleaved.buffer);
-  };
-
-  // Connect the pipeline
-  source.connect(audioProcessor);
-  audioProcessor.connect(audioContext.destination);
-}
-
 async function startStreaming() {
   if (!selectedSpeaker) {
+    log('No speaker selected', 'error');
     showError('Please select a speaker first');
     return;
   }
 
+  const selectedAudioDevice = audioDeviceSelect.value;
+  if (!selectedAudioDevice) {
+    log('No audio device selected', 'error');
+    showError('Please select an audio source');
+    return;
+  }
+
+  log(`Starting stream to ${selectedSpeaker.name}...`);
+  log(`Audio source: ${selectedAudioDevice}`);
   showLoading('Starting stream...');
 
   try {
-    // 1. Prepare streaming (start HTTP server and FFmpeg)
-    const prepResult = await window.api.prepareStreaming();
-    if (!prepResult.success) {
-      throw new Error(prepResult.error || 'Failed to prepare streaming');
+    const result = await window.api.startStreaming(selectedSpeaker.name, selectedAudioDevice);
+
+    if (result.success) {
+      setStreamingState(true);
+      log(`Streaming to ${selectedSpeaker.name}!`, 'success');
+    } else {
+      throw new Error(result.error || 'Failed to start streaming');
     }
-    streamUrl = prepResult.url;
-
-    // 2. Get system audio loopback
-    showLoading('Capturing audio...');
-    mediaStream = await getLoopbackAudioStream();
-
-    // 3. Set up audio processing to send PCM to main
-    setupAudioProcessing(mediaStream);
-
-    // 4. Cast to speaker
-    showLoading('Casting to speaker...');
-    const castResult = await window.api.castToSpeaker(selectedSpeaker.name, streamUrl);
-    if (!castResult.success) {
-      throw new Error(castResult.error || 'Failed to cast to speaker');
-    }
-
-    setStreamingState(true);
   } catch (error) {
-    console.error('Start streaming error:', error);
+    log(`Stream failed: ${error.message}`, 'error');
     showError(error.message || 'Failed to start streaming');
-
-    // Cleanup on error
-    await cleanupAudio();
   }
 
   hideLoading();
 }
 
-async function cleanupAudio() {
-  if (audioProcessor) {
-    audioProcessor.disconnect();
-    audioProcessor = null;
-  }
-
-  if (audioContext) {
-    await audioContext.close();
-    audioContext = null;
-  }
-
-  if (mediaStream) {
-    mediaStream.getTracks().forEach(track => track.stop());
-    mediaStream = null;
-  }
-}
-
 async function stopStreaming() {
+  log('Stopping stream...');
   showLoading('Stopping stream...');
 
   try {
-    // Stop audio capture
-    await cleanupAudio();
-
-    // Stop streaming in main process
-    const result = await window.api.stopStreaming();
+    const speakerName = selectedSpeaker?.name;
+    const result = await window.api.stopStreaming(speakerName);
 
     if (result.success) {
       setStreamingState(false);
+      log('Stream stopped', 'success');
     } else {
+      log(`Stop failed: ${result.error}`, 'error');
       showError(result.error || 'Failed to stop streaming');
     }
   } catch (error) {
+    log(`Stop error: ${error.message}`, 'error');
     showError(error.message);
   }
 
@@ -337,4 +309,36 @@ function showError(message) {
       statusIndicator.querySelector('.status-text').textContent = 'Ready';
     }
   }, 5000);
+}
+
+// Test ping - plays a sound on the selected speaker without streaming
+async function pingSelectedSpeaker() {
+  if (!selectedSpeaker) {
+    log('No speaker selected', 'error');
+    showError('Please select a speaker first');
+    return;
+  }
+
+  log(`Pinging ${selectedSpeaker.name}...`);
+  showLoading('Testing speaker...');
+  pingBtn.disabled = true;
+
+  try {
+    const result = await window.api.pingSpeaker(selectedSpeaker.name);
+
+    if (result.success) {
+      log('Ping successful!', 'success');
+      statusIndicator.className = 'status-indicator ready';
+      statusIndicator.querySelector('.status-text').textContent = 'Ping OK!';
+    } else {
+      log(`Ping failed: ${result.error}`, 'error');
+      showError(result.error || 'Ping failed');
+    }
+  } catch (error) {
+    log(`Ping error: ${error.message}`, 'error');
+    showError(error.message);
+  }
+
+  hideLoading();
+  pingBtn.disabled = false;
 }

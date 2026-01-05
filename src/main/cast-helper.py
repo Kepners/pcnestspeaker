@@ -7,6 +7,10 @@ import sys
 import json
 import pychromecast
 
+# Custom Cast receiver App ID (registered with Google Cast SDK)
+# Receiver URL: https://kepners.github.io/pcnestspeaker/receiver.html
+CUSTOM_APP_ID = "FCAA4619"
+
 def discover_speakers(timeout=8):
     """Discover all Chromecast/Nest speakers on the network."""
     try:
@@ -32,13 +36,14 @@ def discover_speakers(timeout=8):
         return {"success": False, "error": str(e)}
 
 def cast_to_speaker(speaker_name, media_url, content_type="application/x-mpegURL"):
-    """Cast media to a speaker using pychromecast."""
+    """Cast media to a speaker using pychromecast with custom low-latency receiver."""
     try:
         print(f"Looking for '{speaker_name}'...", file=sys.stderr)
 
-        # Discover the specific speaker
+        # Discover the specific speaker (timeout=10 to ensure we find it)
         chromecasts, browser = pychromecast.get_listed_chromecasts(
-            friendly_names=[speaker_name]
+            friendly_names=[speaker_name],
+            timeout=10
         )
 
         if not chromecasts:
@@ -67,16 +72,23 @@ def cast_to_speaker(speaker_name, media_url, content_type="application/x-mpegURL
         # Wait for ping to finish
         time.sleep(2)
 
-        # Now play the actual stream
-        print("Starting stream playback...", file=sys.stderr)
+        # Try custom low-latency receiver, fallback to default if fails
+        try:
+            print(f"Launching custom receiver (App ID: {CUSTOM_APP_ID})...", file=sys.stderr)
+            cast.start_app(CUSTOM_APP_ID)
+            time.sleep(3)
+            print("Custom receiver loaded!", file=sys.stderr)
+        except Exception as e:
+            print(f"Custom receiver failed ({e}), using default...", file=sys.stderr)
+
+        print(f"Playing stream: {media_url}", file=sys.stderr)
         mc.play_media(media_url, content_type, stream_type="LIVE")
         mc.block_until_active(timeout=30)
-        # No need for mc.play() - media is already playing after block_until_active
 
         browser.stop_discovery()
-        print("Playback started!", file=sys.stderr)
+        print("Playback started with low-latency receiver!", file=sys.stderr)
 
-        return {"success": True, "state": "PLAYING"}
+        return {"success": True, "state": "PLAYING", "app_id": CUSTOM_APP_ID}
 
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -85,7 +97,8 @@ def stop_cast(speaker_name):
     """Stop casting to a speaker."""
     try:
         chromecasts, browser = pychromecast.get_listed_chromecasts(
-            friendly_names=[speaker_name]
+            friendly_names=[speaker_name],
+            timeout=10
         )
 
         if chromecasts:

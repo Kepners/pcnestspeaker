@@ -195,6 +195,104 @@ pcnestspeaker/
 
 ---
 
+## CRITICAL: Development Environment Issues
+
+### ELECTRON_RUN_AS_NODE Environment Variable
+**MUST unset this before running Electron or `app` will be undefined!**
+
+```bash
+# In Git Bash:
+unset ELECTRON_RUN_AS_NODE && node_modules/.bin/electron . --dev
+
+# In CMD:
+set ELECTRON_RUN_AS_NODE= && npm run dev
+
+# In PowerShell:
+$env:ELECTRON_RUN_AS_NODE = $null; npm run dev
+```
+
+**Symptom:** `TypeError: Cannot read properties of undefined (reading 'commandLine')` or `ipcMain.handle is not a function`
+
+### Launching Electron from Claude Code
+**Use PowerShell Start-Process to launch Electron in a new window:**
+
+```bash
+powershell -Command "Start-Process cmd -ArgumentList '/c cd /d c:\Users\kepne\OneDrive\Documents\GitHub\pcnestspeaker && npm run dev' -WindowStyle Normal"
+```
+
+Direct bash commands won't work because Claude Code's Bash runs in a subprocess that doesn't properly handle GUI windows.
+
+---
+
+## Google Cast SDK Registration
+
+| Item | Value |
+|------|-------|
+| **Application ID** | `FCAA4619` |
+| **Application Name** | PC Nest Speaker |
+| **Application Type** | Custom Receiver |
+| **Receiver URL** | https://kepners.github.io/pcnestspeaker/receiver.html |
+| **GitHub Pages** | https://kepners.github.io/pcnestspeaker/ |
+| **Status** | **Published** (works on all devices) |
+| **Registered** | January 5, 2026 |
+
+### Custom Receiver Features
+- Low-latency playback configuration
+- `autoResumeNumberOfSegments: 1` (start after 1 segment)
+- `autoResumeDuration: 0.5` (resume after 0.5s buffer)
+- `bufferingGoal: 1` (only buffer 1 second ahead)
+- `lowLatencyMode: true` (Shaka player setting)
+
+### Files
+- `cast-receiver/receiver.html` - Source file
+- `docs/receiver.html` - GitHub Pages deployment
+- `docs/index.html` - Redirect to receiver.html
+
+---
+
+## CRITICAL: Chromecast/Nest Casting
+
+### Node.js Libraries DON'T WORK with Nest!
+- `castv2-client` - Gets `NOT_ALLOWED` error on Nest Mini and speaker groups
+- `chromecast-api` - Same issue
+- `electron-chromecast` - Requires native mdns that won't compile on Windows
+
+### SOLUTION: Python pychromecast
+**Python pychromecast is the ONLY library that successfully casts to Nest devices.**
+
+Architecture:
+```
+Electron (UI + FFmpeg streaming) → Python pychromecast (casting)
+```
+
+Files:
+- `src/main/electron-main.js` - Calls Python via `spawn()`
+- `src/main/cast-helper.py` - Python script for discover/cast/stop
+
+### pychromecast API (v13+)
+**API changed! Use `cast_info` for host/port:**
+
+```python
+# OLD (broken):
+cc.host  # AttributeError!
+cc.port
+
+# NEW (correct):
+cc.cast_info.host
+cc.cast_info.port
+cc.cast_info.model_name
+```
+
+### Casting Code Pattern
+```python
+mc = cast.media_controller
+mc.play_media(url, content_type, stream_type="LIVE")
+mc.block_until_active(timeout=30)
+# NO mc.play() needed - media already playing after block_until_active!
+```
+
+---
+
 ## Session Memory
 
 ### January 4, 2026
@@ -216,6 +314,17 @@ pcnestspeaker/
 - Configured electron-builder for Windows/Mac builds
 - **Key insight:** AirParrot uses same WASAPI loopback technique - confirms our approach
 
+### January 4, 2026 (Session 3)
+- **MAJOR DISCOVERY:** Node.js Chromecast libraries (castv2-client, chromecast-api) get `NOT_ALLOWED` on Nest devices
+- Tried multiple approaches: force-stop current app, raw castv2 protocol, electron-chromecast
+- **SOLUTION:** Python pychromecast works! Electron UI + Python backend for casting
+- Created `cast-helper.py` with discover/cast/stop commands
+- Fixed pychromecast v13+ API change: `cc.host` → `cc.cast_info.host`
+- Fixed `mc.play()` timeout - not needed after `block_until_active()`
+- ELECTRON_RUN_AS_NODE env var causes `app` to be undefined - must unset before running
+- **WORKING:** Full pipeline tested - PC audio streams to Den pair successfully!
+- Speakers found: Green TV, DENNIS, Den pair, Back garden speaker, STUDY
+
 ---
 
-*Last Updated: January 2026*
+*Last Updated: January 4, 2026*

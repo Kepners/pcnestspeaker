@@ -23,12 +23,15 @@
   "license": "UNLICENSED",
   "private": true,
   "dependencies": {
+    "castv2": "^0.1.10",
     "castv2-client": "^1.2.0",
-    "electron-audio-loopback": "^1.0.0",
-    "mdns-js": "^1.0.3"
+    "chromecast-api": "^0.4.2",
+    "mdns-js": "^1.0.3",
+    "sudo-prompt": "^9.2.1",
+    "wasapi-audio-capture": "^0.1.7"
   },
   "devDependencies": {
-    "electron": "^31.0.1",
+    "electron": "^31.7.7",
     "electron-builder": "^24.13.3"
   },
   "build": {
@@ -39,17 +42,24 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.ico"
     },
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "assets/icon.icns"
     },
     "directories": {
@@ -60,7 +70,9 @@
       {
         "from": "ffmpeg/",
         "to": "ffmpeg",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "files": [

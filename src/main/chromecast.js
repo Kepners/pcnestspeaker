@@ -1,84 +1,86 @@
 /**
  * Chromecast/Nest Speaker Discovery and Casting
+ * Uses castv2-client with Python pychromecast fallback for Nest devices
  */
 
 const Client = require('castv2-client').Client;
 const DefaultMediaReceiver = require('castv2-client').DefaultMediaReceiver;
+const mdns = require('mdns-js');
+const { spawn } = require('child_process');
+const path = require('path');
 
 class ChromecastManager {
   constructor() {
     this.speakers = new Map();
-    this.activeConnections = new Map();
-    this.mdns = null;
+    this.activeClient = null;
+    this.activePlayer = null;
+    this.logCallback = null;
+    this.usedPython = false;
+    this.pythonSpeaker = null;
+  }
+
+  setLogCallback(callback) {
+    this.logCallback = callback;
+  }
+
+  _log(message, type = 'info') {
+    console.log(`[Chromecast] ${message}`);
+    if (this.logCallback) {
+      this.logCallback(message, type);
+    }
   }
 
   /**
    * Discover Chromecast/Nest speakers on the network
-   * @returns {Promise<Array>} List of discovered speakers
    */
   async discoverSpeakers(timeout = 10000) {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const speakers = [];
 
-      try {
-        // Use mdns-js for discovery
-        const mdns = require('mdns-js');
-        this.mdns = mdns;
+      this._log('Starting mDNS discovery...');
 
-        const browser = mdns.createBrowser(mdns.tcp('googlecast'));
+      const browser = mdns.createBrowser(mdns.tcp('googlecast'));
 
-        browser.on('ready', () => {
-          browser.discover();
-        });
+      browser.on('ready', () => {
+        browser.discover();
+      });
 
-        browser.on('update', (service) => {
-          if (service.addresses && service.addresses.length > 0) {
-            const name = service.txt?.find(t => t.startsWith('fn='))?.replace('fn=', '') ||
-                         service.fullname?.split('.')[0] ||
-                         'Unknown Device';
+      browser.on('update', (service) => {
+        if (service.addresses && service.addresses.length > 0) {
+          const name = service.txt?.find(t => t.startsWith('fn='))?.replace('fn=', '') ||
+                       service.fullname?.split('.')[0] ||
+                       'Unknown Device';
 
-            const model = service.txt?.find(t => t.startsWith('md='))?.replace('md=', '') || 'Chromecast';
+          const model = service.txt?.find(t => t.startsWith('md='))?.replace('md=', '') || 'Chromecast';
+
+          if (!this.speakers.has(name)) {
+            this._log(`Found: ${name} (${service.addresses[0]})`);
 
             const speaker = {
               name,
               model,
               ip: service.addresses[0],
               port: service.port || 8009,
-              id: service.txt?.find(t => t.startsWith('id='))?.replace('id=', '') || name,
             };
 
-            // Avoid duplicates
-            if (!speakers.find(s => s.ip === speaker.ip)) {
-              speakers.push(speaker);
-              this.speakers.set(speaker.name, speaker);
-            }
+            speakers.push(speaker);
+            this.speakers.set(name, speaker);
           }
-        });
+        }
+      });
 
-        // Stop discovery after timeout
-        setTimeout(() => {
-          browser.stop();
-          resolve(speakers);
-        }, timeout);
-
-      } catch (error) {
-        reject(error);
-      }
+      setTimeout(() => {
+        browser.stop();
+        this._log(`Discovery complete. Found ${speakers.length} devices.`);
+        resolve(speakers);
+      }, timeout);
     });
   }
 
-  /**
-   * Stop mDNS discovery
-   */
-  stopDiscovery() {
-    // mdns-js doesn't have a global stop, browsers are stopped individually
-  }
+  stopDiscovery() {}
 
   /**
-   * Cast audio to a speaker
-   * @param {string} speakerName - Name of the speaker
-   * @param {string} streamUrl - URL of the audio stream
-   * @param {string} contentType - MIME type (default: audio/mpeg for MP3 streaming)
+   * Cast audio to a speaker - simple approach like pychromecast
    */
   async castToSpeaker(speakerName, streamUrl, contentType = 'audio/mpeg') {
     const speaker = this.speakers.get(speakerName);
@@ -86,16 +88,85 @@ class ChromecastManager {
       throw new Error(`Speaker "${speakerName}" not found`);
     }
 
+    // Close any existing connection
+    if (this.activeClient) {
+      try {
+        this.activeClient.close();
+      } catch (e) {}
+      this.activeClient = null;
+      this.activePlayer = null;
+    }
+
     return new Promise((resolve, reject) => {
       const client = new Client();
+      let resolved = false;
+
+      const cleanup = (err) => {
+        if (!resolved) {
+          resolved = true;
+          client.close();
+          reject(err);
+        }
+      };
+
+      // Set a timeout for the whole operation
+      const timeout = setTimeout(() => {
+        cleanup(new Error('Cast operation timed out after 30 seconds'));
+      }, 30000);
+
+      this._log(`Connecting to ${speakerName} (${speaker.ip})...`);
 
       client.connect(speaker.ip, () => {
+        this._log('Connected!', 'success');
+
+        // Like pychromecast: just launch and play, don't check status first
+        this._log('Launching media receiver...');
+
         client.launch(DefaultMediaReceiver, (err, player) => {
           if (err) {
-            client.close();
-            return reject(err);
+            clearTimeout(timeout);
+            this._log(`Launch failed: ${err.message}`, 'error');
+
+            // Check if it's a Nest restriction - try Python fallback
+            if (err.message.includes('NOT_ALLOWED')) {
+              this._log('Node.js blocked, trying Python pychromecast...', 'warn');
+
+              // Try Python fallback
+              this.castWithPython(speakerName, streamUrl, contentType)
+                .then((result) => {
+                  clearTimeout(timeout);
+                  resolved = true;
+                  this.usedPython = true;
+                  this.pythonSpeaker = speakerName;
+                  resolve(result);
+                })
+                .catch((pyErr) => {
+                  clearTimeout(timeout);
+                  cleanup(new Error(
+                    `Node.js: ${err.message}. Python fallback: ${pyErr.message}`
+                  ));
+                });
+              return;
+            } else {
+              cleanup(err);
+            }
+            return;
           }
 
+          this._log('Media receiver launched!', 'success');
+
+          // Set up player event handlers
+          player.on('status', (status) => {
+            if (status && status.playerState) {
+              this._log(`Player: ${status.playerState}`);
+            }
+          });
+
+          player.on('error', (playerErr) => {
+            this._log(`Player error: ${playerErr.message}`, 'error');
+          });
+
+          // Load the media
           const media = {
             contentId: streamUrl,
             contentType: contentType,
@@ -104,54 +175,135 @@ class ChromecastManager {
               type: 0,
               metadataType: 0,
               title: 'PC Audio',
-              subtitle: 'Streaming from PC',
-            },
+              subtitle: 'Streaming from PC'
+            }
           };
 
-          player.load(media, { autoplay: true }, (err, status) => {
-            if (err) {
-              client.close();
-              return reject(err);
+          this._log(`Loading: ${streamUrl}`);
+
+          player.load(media, { autoplay: true }, (loadErr, status) => {
+            clearTimeout(timeout);
+
+            if (loadErr) {
+              this._log(`Load failed: ${loadErr.message}`, 'error');
+              cleanup(loadErr);
+              return;
             }
 
-            // Store connection for later control
-            this.activeConnections.set(speakerName, { client, player });
-            resolve(status);
+            resolved = true;
+            this._log(`Playing! State: ${status.playerState}`, 'success');
+
+            this.activeClient = client;
+            this.activePlayer = player;
+
+            resolve({ playerState: status.playerState });
           });
         });
       });
 
       client.on('error', (err) => {
-        client.close();
-        reject(err);
+        clearTimeout(timeout);
+        this._log(`Connection error: ${err.message}`, 'error');
+        cleanup(err);
+      });
+    });
+  }
+
+  async stopCasting() {
+    // If we used Python, stop via Python
+    if (this.usedPython && this.pythonSpeaker) {
+      await this.stopWithPython(this.pythonSpeaker);
+      this.usedPython = false;
+      this.pythonSpeaker = null;
+    }
+
+    // Also try to stop Node.js connection
+    if (this.activePlayer) {
+      try {
+        this.activePlayer.stop();
+      } catch (e) {}
+    }
+    if (this.activeClient) {
+      try {
+        this.activeClient.close();
+      } catch (e) {}
+    }
+    this.activeClient = null;
+    this.activePlayer = null;
+    this._log('Stopped');
+  }
+
+  async stopAll() {
+    await this.stopCasting();
+  }
+
+  /**
+   * Cast using Python pychromecast (fallback for Nest devices)
+   */
+  async castWithPython(speakerName, streamUrl, contentType = 'audio/mpeg') {
+    return new Promise((resolve, reject) => {
+      this._log('Trying Python pychromecast fallback...', 'warn');
+
+      const pythonScript = path.join(__dirname, 'cast-helper.py');
+      const python = spawn('python', [pythonScript, 'cast', speakerName, streamUrl, contentType]);
+
+      let stdout = '';
+      let stderr = '';
+
+      python.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      python.stderr.on('data', (data) => {
+        stderr += data.toString();
+        this._log(`Python: ${data.toString().trim()}`);
+      });
+
+      python.on('close', (code) => {
+        if (code === 0 && stdout) {
+          try {
+            const result = JSON.parse(stdout.trim());
+            if (result.success) {
+              this._log('Python cast successful!', 'success');
+              resolve(result);
+            } else {
+              this._log(`Python cast failed: ${result.error}`, 'error');
+              reject(new Error(result.error));
+            }
+          } catch (e) {
+            this._log(`Python output parse error: ${stdout}`, 'error');
+            reject(new Error('Failed to parse Python output'));
+          }
+        } else {
+          this._log(`Python exited with code ${code}: ${stderr}`, 'error');
+          reject(new Error(stderr || `Python exited with code ${code}`));
+        }
+      });
+
+      python.on('error', (err) => {
+        this._log(`Python spawn error: ${err.message}`, 'error');
+        reject(new Error(`Python not available: ${err.message}`));
       });
     });
   }
 
   /**
-   * Stop casting to a speaker
-   * @param {string} speakerName - Name of the speaker
+   * Stop casting using Python
    */
-  async stopCasting(speakerName) {
-    const connection = this.activeConnections.get(speakerName);
-    if (connection) {
-      try {
-        connection.player.stop();
-        connection.client.close();
-      } catch (e) {
-        // Ignore errors during cleanup
-      }
-      this.activeConnections.delete(speakerName);
-    }
-  }
+  async stopWithPython(speakerName) {
+    return new Promise((resolve) => {
+      const pythonScript = path.join(__dirname, 'cast-helper.py');
+      const python = spawn('python', [pythonScript, 'stop', speakerName]);
 
-  /**
-   * Stop all active casts
-   */
-  async stopAll() {
-    for (const [name] of this.activeConnections) {
-      await this.stopCasting(name);
-    }
+      python.on('close', () => {
+        this._log('Python stop complete');
+        resolve();
+      });
+
+      python.on('error', () => {
+        resolve(); // Ignore errors on stop
+      });
+    });
   }
 }
 

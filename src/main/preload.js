@@ -1,25 +1,21 @@
 /**
  * Preload script - Exposes safe IPC to renderer
+ * Uses Python pychromecast for reliable Nest casting
  */
 
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
-  // Speaker discovery
-  discoverSpeakers: () => ipcRenderer.invoke('discover-speakers'),
+  // Discover audio devices AND Chromecast speakers
+  discoverDevices: () => ipcRenderer.invoke('discover-devices'),
 
   // Streaming controls
-  prepareStreaming: () => ipcRenderer.invoke('prepare-streaming'),
-  castToSpeaker: (speakerName, streamUrl) => ipcRenderer.invoke('cast-to-speaker', speakerName, streamUrl),
-  stopStreaming: () => ipcRenderer.invoke('stop-streaming'),
+  startStreaming: (speakerName, audioDevice) => ipcRenderer.invoke('start-streaming', speakerName, audioDevice),
+  stopStreaming: (speakerName) => ipcRenderer.invoke('stop-streaming', speakerName),
   getStatus: () => ipcRenderer.invoke('get-status'),
 
-  // Send audio data to main process for FFmpeg
-  sendAudioData: (buffer) => ipcRenderer.send('audio-data', buffer),
-
-  // Audio loopback control (handled by electron-audio-loopback)
-  enableLoopbackAudio: () => ipcRenderer.invoke('enable-loopback-audio'),
-  disableLoopbackAudio: () => ipcRenderer.invoke('disable-loopback-audio'),
+  // Test ping (plays sound on speaker without streaming)
+  pingSpeaker: (speakerName) => ipcRenderer.invoke('ping-speaker', speakerName),
 
   // Utilities
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
@@ -30,5 +26,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   onError: (callback) => {
     ipcRenderer.on('error', (event, error) => callback(error));
+  },
+  onLog: (callback) => {
+    ipcRenderer.on('log', (event, message, type) => callback(message, type));
   },
 });

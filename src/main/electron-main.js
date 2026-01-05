@@ -150,7 +150,7 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice) => {
       audioStreamer = new AudioStreamer();
     }
 
-    // Start FFmpeg HTTP stream (HLS mode for lower latency)
+    // Start FFmpeg HTTP stream (HLS for lowest latency with custom receiver)
     sendLog(`Audio source: ${audioDevice}`);
     const streamUrl = await audioStreamer.start(audioDevice, 'hls');
     sendLog(`Stream URL: ${streamUrl}`, 'success');

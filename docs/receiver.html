@@ -26,42 +26,44 @@
     const context = cast.framework.CastReceiverContext.getInstance();
     const playerManager = context.getPlayerManager();
 
-    // Configure for MINIMAL latency
+    // Configure for MINIMAL latency - optimized for MP3 progressive streams
     const playbackConfig = new cast.framework.PlaybackConfig();
 
-    // Start playback after just 1 segment (0.5s with our HLS config)
-    playbackConfig.autoResumeNumberOfSegments = 1;
+    // Start playback with minimal buffer (works for MP3)
+    playbackConfig.autoResumeDuration = 0.1;  // Start after just 0.1s of buffer
+    playbackConfig.autoPauseDuration = 0.05;  // Only pause if buffer drops to 50ms
 
-    // Resume after only 0.5 seconds of buffer
-    playbackConfig.autoResumeDuration = 0.5;
+    // High bandwidth estimate = no bandwidth probing delay
+    playbackConfig.initialBandwidth = 10000000; // 10 Mbps
 
-    // Pause if buffer drops below 0.2 seconds
-    playbackConfig.autoPauseDuration = 0.2;
+    // Disable preloading to reduce startup delay
+    playbackConfig.disablePreload = true;
 
-    // Initial bandwidth estimate (higher = faster start)
-    playbackConfig.initialBandwidth = 5000000; // 5 Mbps
-
-    // Shaka player config for live streams
+    // For HLS streams (if used), also set Shaka config
     playbackConfig.shakaConfig = {
       streaming: {
-        // Minimal buffer sizes
-        bufferingGoal: 1,           // Only buffer 1 second ahead
-        rebufferingGoal: 0.5,       // Resume after 0.5s buffered
-        bufferBehind: 2,            // Keep 2s behind (for seeking)
-        // Live stream settings
+        bufferingGoal: 0.5,        // Only buffer 0.5 seconds ahead
+        rebufferingGoal: 0.1,      // Resume after 0.1s buffered
+        bufferBehind: 1,           // Keep 1s behind
         lowLatencyMode: true,
-        inaccurateManifestTolerance: 0,
-        segmentPrefetchLimit: 1,
-      },
-      manifest: {
-        // Faster manifest updates
-        defaultPresentationDelay: 0.5,
-        availabilityWindowOverride: 5,
+        segmentPrefetchLimit: 0,   // Don't prefetch
       }
     };
 
+    // Intercept load requests to force LIVE stream type for minimal buffering
+    playerManager.setMessageInterceptor(
+      cast.framework.messages.MessageType.LOAD,
+      (loadRequestData) => {
+        console.log('Load intercepted, forcing LIVE mode');
+        if (loadRequestData.media) {
+          loadRequestData.media.streamType = cast.framework.messages.StreamType.LIVE;
+        }
+        return loadRequestData;
+      }
+    );
+
     // Set the playback config
-    context.getPlayerManager().setPlaybackConfig(playbackConfig);
+    playerManager.setPlaybackConfig(playbackConfig);
 
     // Log events for debugging
     playerManager.addEventListener(
@@ -79,14 +81,19 @@
       (event) => console.log('Playing!')
     );
 
-    // Start the receiver
+    playerManager.addEventListener(
+      cast.framework.events.EventType.ERROR,
+      (event) => console.log('Error:', event.detailedErrorCode)
+    );
+
+    // Start the receiver with minimal options
     context.start({
       playbackConfig: playbackConfig,
-      // Support audio-only devices (Nest speakers)
+      skipPlayersLoad: false,
       supportedCommands: cast.framework.messages.Command.ALL_BASIC_MEDIA
     });
 
-    console.log('PC Nest Speaker receiver started with low-latency config');
+    console.log('PC Nest Speaker receiver started - MP3 low-latency mode');
   </script>
 </body>
 </html>

@@ -31,14 +31,32 @@
         <div class="speaker-list" id="speaker-list">
           <div class="empty-state">
             <p>No speakers discovered</p>
-            <button class="btn btn-secondary" id="discover-btn">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-              </svg>
-              Discover Speakers
-            </button>
           </div>
         </div>
+      </div>
+
+      <!-- Audio Source Selection -->
+      <div class="card">
+        <h2 class="card-title">Audio Source</h2>
+        <select class="select" id="audio-device-select" disabled>
+          <option value="">Click "Discover" to find devices</option>
+        </select>
+      </div>
+
+      <!-- Discover & Test Buttons -->
+      <div class="card">
+        <button class="btn btn-secondary btn-large" id="discover-btn">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+          Discover Devices
+        </button>
+        <button class="btn btn-secondary" id="ping-btn" style="margin-top: 8px;" disabled>
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M5.636 18.364a9 9 0 010-12.728M8.464 15.536a5 5 0 010-7.072"/>
+          </svg>
+          Test Ping
+        </button>
       </div>
 
       <!-- Controls -->
@@ -51,15 +69,11 @@
         </button>
       </div>
 
-      <!-- Info -->
-      <div class="card info-card">
-        <h3>How it works</h3>
-        <ol>
-          <li>Click "Discover Speakers" to find Nest devices</li>
-          <li>Select your speaker from the list</li>
-          <li>Click "Start Streaming" to begin</li>
-          <li>Play any audio on your PC - it will play on the Nest!</li>
-        </ol>
+      <!-- Debug Log -->
+      <div class="card debug-card">
+        <h2 class="card-title">Debug Log</h2>
+        <div class="debug-log" id="debug-log"></div>
+        <button class="btn btn-secondary" id="clear-log-btn" style="margin-top: 8px;">Clear Log</button>
       </div>
     </main>
 
