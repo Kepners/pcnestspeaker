@@ -169,11 +169,29 @@
       log('Created offer');
 
       // Call webrtc-streamer API
-      // Use the named stream configured on the server (e.g., "pcaudio")
-      // This uses whatever audio device webrtc-streamer was started with
+      // Query the server to get the audio URL for the named stream, then use audiourl= parameter
       try {
+        // First, get the stream configuration to find the audio device
+        let audioUrl = 'audiocap://1'; // Default fallback
+        try {
+          const mediaListResp = await fetch(serverUrl + '/api/getMediaList', {
+            headers: { 'bypass-tunnel-reminder': 'true' }
+          });
+          if (mediaListResp.ok) {
+            const mediaList = await mediaListResp.json();
+            log('Media list: ' + JSON.stringify(mediaList));
+            // Check if our stream has a configured audio URL
+            if (mediaList[streamName] && mediaList[streamName].audio) {
+              audioUrl = mediaList[streamName].audio;
+              log('Using configured audio: ' + audioUrl);
+            }
+          }
+        } catch (e) {
+          log('Using default audio device');
+        }
+
         const callUrl = serverUrl + '/api/call?peerid=' + encodeURIComponent(currentPeerId) +
-                        '&url=' + encodeURIComponent(streamName) +
+                        '&audiourl=' + encodeURIComponent(audioUrl) +
                         '&options=' + encodeURIComponent('rtptransport=tcp&timeout=60');
 
         log('Calling ' + callUrl);
