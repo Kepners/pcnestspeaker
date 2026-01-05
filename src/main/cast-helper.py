@@ -2,14 +2,52 @@
 """
 Cast helper - uses pychromecast which actually works with Nest devices
 Called by the Electron app for speaker discovery and casting
+
+Supports:
+- discover: Find Chromecast/Nest speakers
+- cast: HTTP streaming (MP3/HLS)
+- webrtc: Launch custom receiver and relay signaling messages
+- stop: Stop casting
 """
 import sys
 import json
+import time
+import threading
 import pychromecast
+from pychromecast.controllers import BaseController
 
-# Custom Cast receiver App ID (registered with Google Cast SDK)
-# Receiver URL: https://kepners.github.io/pcnestspeaker/receiver.html
+# Custom receiver for WebRTC low-latency streaming
 CUSTOM_APP_ID = "FCAA4619"
+WEBRTC_NAMESPACE = "urn:x-cast:com.pcnestspeaker.webrtc"
+
+
+class WebRTCController(BaseController):
+    """Controller for WebRTC signaling messages."""
+
+    def __init__(self):
+        super().__init__(WEBRTC_NAMESPACE, "pcnestspeaker.webrtc")
+        self.messages = []
+        self.message_event = threading.Event()
+
+    def receive_message(self, _message, data):
+        """Called when we receive a message from the Cast device."""
+        print(f"[WebRTC] Received: {json.dumps(data)}", file=sys.stderr)
+        self.messages.append(data)
+        self.message_event.set()
+        return True
+
+    def send_message(self, data):
+        """Send a message to the Cast device."""
+        print(f"[WebRTC] Sending: {json.dumps(data)}", file=sys.stderr)
+        self.send_message_nocheck(data)
+
+    def wait_for_message(self, timeout=10):
+        """Wait for a message from the Cast device."""
+        self.message_event.clear()
+        if self.message_event.wait(timeout):
+            if self.messages:
+                return self.messages.pop(0)
+        return None
 
 def discover_speakers(timeout=8):
     """Discover all Chromecast/Nest speakers on the network."""
@@ -36,11 +74,10 @@ def discover_speakers(timeout=8):
         return {"success": False, "error": str(e)}
 
 def cast_to_speaker(speaker_name, media_url, content_type="application/x-mpegURL"):
-    """Cast media to a speaker using pychromecast with custom low-latency receiver."""
+    """Cast media to a speaker using pychromecast (HTTP streaming mode)."""
     try:
         print(f"Looking for '{speaker_name}'...", file=sys.stderr)
 
-        # Discover the specific speaker (timeout=10 to ensure we find it)
         chromecasts, browser = pychromecast.get_listed_chromecasts(
             friendly_names=[speaker_name],
             timeout=10
@@ -51,21 +88,15 @@ def cast_to_speaker(speaker_name, media_url, content_type="application/x-mpegURL
             return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
 
         cast = chromecasts[0]
-        # Use cast_info for host (pychromecast 13+)
         host = cast.cast_info.host if hasattr(cast, 'cast_info') else 'unknown'
         print(f"Connecting to {host}...", file=sys.stderr)
         cast.wait()
 
-        import time
         mc = cast.media_controller
 
-        # Launch custom receiver
-        print(f"Launching custom receiver (App ID: {CUSTOM_APP_ID})...", file=sys.stderr)
-        cast.start_app(CUSTOM_APP_ID)
-        time.sleep(1)
-        print("Custom receiver loaded!", file=sys.stderr)
+        # Use default media receiver for HTTP streaming (more reliable)
+        print("Using default media receiver for HTTP streaming...", file=sys.stderr)
 
-        # Play stream with aggressive settings
         print(f"Playing stream: {media_url}", file=sys.stderr)
         mc.play_media(
             media_url,
@@ -77,9 +108,175 @@ def cast_to_speaker(speaker_name, media_url, content_type="application/x-mpegURL
         mc.block_until_active(timeout=30)
 
         browser.stop_discovery()
-        print("Playback started with low-latency receiver!", file=sys.stderr)
+        print("Playback started!", file=sys.stderr)
 
-        return {"success": True, "state": "PLAYING", "app_id": CUSTOM_APP_ID}
+        return {"success": True, "state": "PLAYING", "mode": "http"}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def get_local_ip():
+    """Get the local IP address that can reach the network."""
+    import socket
+    try:
+        # Connect to a public DNS to determine local IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
+def webrtc_connect(speaker_name, webrtc_server_port=8080):
+    """Launch custom receiver and tell it to connect to webrtc-streamer.
+
+    This is the new simpler approach:
+    1. Launch custom receiver on Cast device
+    2. Send 'connect' message with webrtc-streamer URL
+    3. Receiver connects directly to webrtc-streamer (no SDP relay needed)
+    """
+    try:
+        print(f"[WebRTC] Looking for '{speaker_name}'...", file=sys.stderr)
+
+        chromecasts, browser = pychromecast.get_listed_chromecasts(
+            friendly_names=[speaker_name],
+            timeout=10
+        )
+
+        if not chromecasts:
+            browser.stop_discovery()
+            return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
+
+        cast = chromecasts[0]
+        host = cast.cast_info.host if hasattr(cast, 'cast_info') else 'unknown'
+        print(f"[WebRTC] Connecting to {host}...", file=sys.stderr)
+        cast.wait()
+
+        # Register WebRTC controller
+        webrtc = WebRTCController()
+        cast.register_handler(webrtc)
+
+        # Launch custom receiver
+        print(f"[WebRTC] Launching receiver (App ID: {CUSTOM_APP_ID})...", file=sys.stderr)
+        cast.start_app(CUSTOM_APP_ID)
+        time.sleep(3)  # Wait for receiver to load
+        print("[WebRTC] Receiver launched!", file=sys.stderr)
+
+        # Get local IP for webrtc-streamer URL
+        local_ip = get_local_ip()
+        webrtc_url = f"http://{local_ip}:{webrtc_server_port}"
+        print(f"[WebRTC] Sending connect message: {webrtc_url}", file=sys.stderr)
+
+        # Send connect message to receiver
+        webrtc.send_message({
+            "type": "connect",
+            "url": webrtc_url,
+            "stream": "pcaudio"
+        })
+
+        # Wait a moment for the connection to establish
+        time.sleep(2)
+
+        browser.stop_discovery()
+        return {
+            "success": True,
+            "mode": "webrtc",
+            "url": webrtc_url,
+            "message": "Connect message sent to receiver"
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def webrtc_launch(speaker_name):
+    """Launch custom receiver for WebRTC and return connection for signaling."""
+    try:
+        print(f"[WebRTC] Looking for '{speaker_name}'...", file=sys.stderr)
+
+        chromecasts, browser = pychromecast.get_listed_chromecasts(
+            friendly_names=[speaker_name],
+            timeout=10
+        )
+
+        if not chromecasts:
+            browser.stop_discovery()
+            return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
+
+        cast = chromecasts[0]
+        host = cast.cast_info.host if hasattr(cast, 'cast_info') else 'unknown'
+        print(f"[WebRTC] Connecting to {host}...", file=sys.stderr)
+        cast.wait()
+
+        # Register WebRTC controller
+        webrtc = WebRTCController()
+        cast.register_handler(webrtc)
+
+        # Launch custom receiver
+        print(f"[WebRTC] Launching receiver (App ID: {CUSTOM_APP_ID})...", file=sys.stderr)
+        cast.start_app(CUSTOM_APP_ID)
+        time.sleep(2)  # Wait for receiver to load
+        print("[WebRTC] Receiver launched!", file=sys.stderr)
+
+        # Return success - signaling will be handled via stdin/stdout
+        return {
+            "success": True,
+            "mode": "webrtc",
+            "message": "Receiver ready for signaling"
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def webrtc_signal(speaker_name, message_json):
+    """Send a signaling message to the Cast receiver and wait for response."""
+    try:
+        message = json.loads(message_json)
+        print(f"[WebRTC] Signaling to '{speaker_name}': {message.get('type')}", file=sys.stderr)
+
+        chromecasts, browser = pychromecast.get_listed_chromecasts(
+            friendly_names=[speaker_name],
+            timeout=10
+        )
+
+        if not chromecasts:
+            browser.stop_discovery()
+            return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
+
+        cast = chromecasts[0]
+        cast.wait()
+
+        # Register WebRTC controller
+        webrtc = WebRTCController()
+        cast.register_handler(webrtc)
+
+        # Ensure custom app is running
+        if cast.app_id != CUSTOM_APP_ID:
+            print(f"[WebRTC] Launching receiver...", file=sys.stderr)
+            cast.start_app(CUSTOM_APP_ID)
+            time.sleep(2)
+
+        # Send the signaling message
+        webrtc.send_message(message)
+
+        # Wait for response (for offer, expect answer)
+        if message.get('type') == 'offer':
+            print("[WebRTC] Waiting for answer...", file=sys.stderr)
+            response = webrtc.wait_for_message(timeout=15)
+            if response:
+                browser.stop_discovery()
+                return {"success": True, "response": response}
+            else:
+                browser.stop_discovery()
+                return {"success": False, "error": "Timeout waiting for answer"}
+
+        # ICE candidates don't need response
+        browser.stop_discovery()
+        return {"success": True}
 
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -161,6 +358,26 @@ if __name__ == "__main__":
         url = sys.argv[3]
         content_type = sys.argv[4] if len(sys.argv) > 4 else "audio/mpeg"
         result = cast_to_speaker(speaker, url, content_type)
+        print(json.dumps(result))
+
+    elif command == "webrtc-connect" and len(sys.argv) >= 3:
+        # Launch receiver and send webrtc-streamer URL (new simpler approach)
+        speaker = sys.argv[2]
+        port = int(sys.argv[3]) if len(sys.argv) > 3 else 8080
+        result = webrtc_connect(speaker, port)
+        print(json.dumps(result))
+
+    elif command == "webrtc-launch" and len(sys.argv) >= 3:
+        # Launch custom receiver for WebRTC streaming (old signaling approach)
+        speaker = sys.argv[2]
+        result = webrtc_launch(speaker)
+        print(json.dumps(result))
+
+    elif command == "webrtc-signal" and len(sys.argv) >= 4:
+        # Send signaling message (SDP offer, ICE candidate, etc.)
+        speaker = sys.argv[2]
+        message_json = sys.argv[3]
+        result = webrtc_signal(speaker, message_json)
         print(json.dumps(result))
 
     elif command == "stop" and len(sys.argv) >= 3:

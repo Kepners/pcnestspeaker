@@ -58,9 +58,11 @@
     playerManager.setPlaybackConfig(playbackConfig);
 
     // ===================
-    // WebRTC SUPPORT
+    // WebRTC via webrtc-streamer
     // ===================
     let peerConnection = null;
+    let webrtcStreamerUrl = null;
+    let iceCandidates = [];
     const audioElement = document.getElementById('webrtc-audio');
 
     function log(msg) {
@@ -68,101 +70,140 @@
       document.getElementById('status').textContent = msg;
     }
 
-    function createPeerConnection() {
+    /**
+     * Connect to webrtc-streamer server
+     * Flow: Create offer → POST to /api/call → Get answer → Connect
+     */
+    async function connectToWebRTCStreamer(serverUrl, streamName = 'pcaudio') {
+      webrtcStreamerUrl = serverUrl;
+      log('Connecting to ' + serverUrl);
+
+      // Create PeerConnection
       const config = {
         iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
+          { urls: 'stun:stun.l.google.com:19302' }
         ]
       };
 
       peerConnection = new RTCPeerConnection(config);
       log('PeerConnection created');
 
+      // Collect ICE candidates to send with offer
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          log('Sending ICE candidate');
-          sendMessage({ type: 'ice', candidate: event.candidate });
+          iceCandidates.push(event.candidate);
         }
       };
 
+      // Handle incoming audio track
       peerConnection.ontrack = (event) => {
-        log('Received audio track!');
+        log('Audio track received!');
         if (event.streams && event.streams[0]) {
           audioElement.srcObject = event.streams[0];
-          audioElement.play().catch(e => log('Play error: ' + e));
-          log('Playing WebRTC audio');
+          audioElement.play().then(() => {
+            log('Playing - Low Latency!');
+          }).catch(e => log('Play error: ' + e.message));
         }
       };
 
       peerConnection.onconnectionstatechange = () => {
-        log('Connection: ' + peerConnection.connectionState);
+        const state = peerConnection.connectionState;
+        log('Connection: ' + state);
+        if (state === 'connected') {
+          log('Streaming - Sub-1s Latency!');
+        } else if (state === 'failed') {
+          log('Connection failed');
+        }
       };
 
-      return peerConnection;
-    }
+      peerConnection.oniceconnectionstatechange = () => {
+        log('ICE: ' + peerConnection.iceConnectionState);
+      };
 
-    function sendMessage(data) {
-      context.sendCustomMessage(WEBRTC_NAMESPACE, undefined, data);
-    }
+      // Add transceiver to receive audio (recvonly)
+      peerConnection.addTransceiver('audio', { direction: 'recvonly' });
 
-    async function handleOffer(offer) {
-      log('Received SDP offer');
+      // Create SDP offer
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      log('Created offer');
 
-      if (!peerConnection) {
-        createPeerConnection();
-      }
+      // Wait a moment for ICE gathering
+      await new Promise(resolve => setTimeout(resolve, 500));
 
+      // Call webrtc-streamer API
       try {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        const callUrl = serverUrl + '/api/call?peerid=' + encodeURIComponent(streamName) +
+                        '&url=' + encodeURIComponent('audiocap://0');
+
+        log('Calling ' + callUrl);
+        const response = await fetch(callUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(offer)
+        });
+
+        if (!response.ok) {
+          throw new Error('Server returned ' + response.status);
+        }
+
+        const answer = await response.json();
+        log('Got answer from server');
+
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
         log('Set remote description');
 
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        log('Created answer');
-
-        sendMessage({ type: 'answer', sdp: answer });
-        log('Sent SDP answer');
-      } catch (e) {
-        log('Offer error: ' + e.message);
-      }
-    }
-
-    async function handleIce(candidate) {
-      if (peerConnection && candidate) {
-        try {
-          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-          log('Added ICE candidate');
-        } catch (e) {
-          log('ICE error: ' + e.message);
+        // Send gathered ICE candidates
+        for (const candidate of iceCandidates) {
+          const iceUrl = serverUrl + '/api/addIceCandidate?peerid=' + encodeURIComponent(streamName);
+          await fetch(iceUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(candidate)
+          });
         }
+        log('Sent ICE candidates');
+
+      } catch (e) {
+        log('Connection error: ' + e.message);
+        console.error('WebRTC error:', e);
       }
     }
 
+    function disconnect() {
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+        audioElement.srcObject = null;
+        log('Disconnected');
+      }
+    }
+
+    // Handle Cast messages (for starting/stopping WebRTC)
     function handleMessage(event) {
-      log('Message received: ' + event.data.type);
+      log('Message: ' + JSON.stringify(event.data));
       const data = event.data;
 
       switch (data.type) {
-        case 'offer':
-          handleOffer(data.sdp);
-          break;
-        case 'ice':
-          handleIce(data.candidate);
-          break;
-        case 'close':
-          if (peerConnection) {
-            peerConnection.close();
-            peerConnection = null;
-            log('Connection closed');
+        case 'connect':
+          // Connect to webrtc-streamer server
+          // data.url = "http://192.168.x.x:8080"
+          if (data.url) {
+            connectToWebRTCStreamer(data.url, data.stream || 'pcaudio');
+          } else {
+            log('Error: No URL provided');
           }
           break;
+        case 'disconnect':
+        case 'close':
+          disconnect();
+          break;
         default:
-          log('Unknown message type: ' + data.type);
+          log('Unknown: ' + data.type);
       }
     }
 
-    // Register custom message handler for WebRTC signaling
+    // Register custom message handler
     context.addCustomMessageListener(WEBRTC_NAMESPACE, handleMessage);
 
     // Start receiver
@@ -176,7 +217,7 @@
       }
     });
 
-    log('WebRTC receiver ready');
+    log('Ready - Awaiting connect');
   </script>
 </body>
 </html>
