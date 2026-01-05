@@ -1,36 +1,35 @@
 /**
  * PC Nest Speaker - Main Process
- * Handles window creation, IPC, and system integration
+ * Nice Electron UI + Python pychromecast for actual casting (it works with Nest!)
  */
 
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
-const { initMain } = require('electron-audio-loopback');
-const { ChromecastManager } = require('./chromecast');
+const { spawn } = require('child_process');
 const { AudioStreamer } = require('./audio-streamer');
-
-// IMPORTANT: Initialize audio loopback BEFORE app is ready
-initMain();
 
 // Keep global references
 let mainWindow = null;
-let chromecastManager = null;
 let audioStreamer = null;
+let pythonCastProcess = null;
 
-// Settings
-const settings = {
-  selectedSpeaker: null,
-};
+// Send log to renderer
+function sendLog(message, type = 'info') {
+  console.log(`[Main] ${message}`);
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.send('log', message, type);
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 480,
-    height: 640,
+    height: 700,
     minWidth: 400,
     minHeight: 500,
     resizable: true,
     frame: true,
-    backgroundColor: '#334E58', // Charcoal Blue
+    backgroundColor: '#334E58',
     icon: path.join(__dirname, '../../assets/icon.ico'),
     webPreferences: {
       nodeIntegration: false,
@@ -41,7 +40,6 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
 
-  // Open DevTools in dev mode
   if (process.argv.includes('--dev')) {
     mainWindow.webContents.openDevTools();
   }
@@ -57,93 +55,181 @@ function cleanup() {
     audioStreamer.stop();
     audioStreamer = null;
   }
-  if (chromecastManager) {
-    chromecastManager.stopDiscovery();
-    chromecastManager = null;
+  if (pythonCastProcess) {
+    pythonCastProcess.kill();
+    pythonCastProcess = null;
   }
+}
+
+// Run Python cast-helper script
+function runPython(args) {
+  return new Promise((resolve, reject) => {
+    const scriptPath = path.join(__dirname, 'cast-helper.py');
+    const python = spawn('python', [scriptPath, ...args]);
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    python.stderr.on('data', (data) => {
+      stderr += data.toString();
+      // Log Python's progress messages
+      const msg = data.toString().trim();
+      if (msg) sendLog(`[Python] ${msg}`);
+    });
+
+    python.on('close', (code) => {
+      if (code === 0 && stdout.trim()) {
+        try {
+          resolve(JSON.parse(stdout.trim()));
+        } catch (e) {
+          reject(new Error(`Invalid JSON: ${stdout}`));
+        }
+      } else {
+        reject(new Error(stderr || `Python exited with code ${code}`));
+      }
+    });
+
+    python.on('error', (err) => {
+      reject(new Error(`Python not found: ${err.message}`));
+    });
+  });
 }
 
 // IPC Handlers
 
-// Discover speakers
-ipcMain.handle('discover-speakers', async () => {
+// Discover both audio devices AND Chromecast speakers
+ipcMain.handle('discover-devices', async () => {
   try {
-    if (!chromecastManager) {
-      chromecastManager = new ChromecastManager();
-    }
-    const speakers = await chromecastManager.discoverSpeakers();
-    return { success: true, speakers };
-  } catch (error) {
-    console.error('Discovery error:', error);
-    return { success: false, error: error.message };
-  }
-});
+    sendLog('Starting discovery...');
 
-// Prepare streaming (start HTTP server and FFmpeg, return URL)
-ipcMain.handle('prepare-streaming', async () => {
-  try {
-    // Initialize audio streamer
     if (!audioStreamer) {
       audioStreamer = new AudioStreamer();
     }
 
-    // Start the HTTP server and FFmpeg
-    const streamUrl = await audioStreamer.start();
+    // Get audio devices from FFmpeg
+    sendLog('Finding audio devices...');
+    const audioDevices = await audioStreamer.getAudioDevices();
+    sendLog(`Found ${audioDevices.length} audio devices`, 'success');
 
-    return { success: true, url: streamUrl };
+    // Get speakers from Python pychromecast
+    sendLog('Scanning for Chromecast/Nest speakers...');
+    const result = await runPython(['discover']);
+
+    if (result.success) {
+      sendLog(`Found ${result.speakers.length} speakers`, 'success');
+      return {
+        success: true,
+        audioDevices,
+        speakers: result.speakers
+      };
+    } else {
+      sendLog(`Speaker discovery failed: ${result.error}`, 'error');
+      return {
+        success: true,
+        audioDevices,
+        speakers: [],
+        warning: result.error
+      };
+    }
   } catch (error) {
-    console.error('Prepare streaming error:', error);
+    sendLog(`Discovery failed: ${error.message}`, 'error');
     return { success: false, error: error.message };
   }
 });
 
-// Receive audio data from renderer process
-ipcMain.on('audio-data', (event, buffer) => {
-  if (audioStreamer) {
-    audioStreamer.writeAudioData(buffer);
-  }
-});
-
-// Cast to speaker
-ipcMain.handle('cast-to-speaker', async (event, speakerName, streamUrl) => {
+// Start streaming to a speaker
+ipcMain.handle('start-streaming', async (event, speakerName, audioDevice) => {
   try {
-    if (!chromecastManager) {
-      return { success: false, error: 'No speakers discovered' };
+    sendLog(`Starting stream to "${speakerName}"...`);
+
+    if (!audioStreamer) {
+      audioStreamer = new AudioStreamer();
     }
 
-    // Cast to speaker
-    await chromecastManager.castToSpeaker(speakerName, streamUrl);
-    settings.selectedSpeaker = speakerName;
+    // Start FFmpeg HTTP stream (HLS mode for lower latency)
+    sendLog(`Audio source: ${audioDevice}`);
+    const streamUrl = await audioStreamer.start(audioDevice, 'hls');
+    sendLog(`Stream URL: ${streamUrl}`, 'success');
 
-    return { success: true };
+    // Determine content type based on stream URL
+    const contentType = streamUrl.endsWith('.m3u8')
+      ? 'application/x-mpegURL'
+      : 'audio/mpeg';
+
+    // Cast to speaker using Python
+    sendLog(`Casting to ${speakerName}...`);
+    const result = await runPython(['cast', speakerName, streamUrl, contentType]);
+
+    if (result.success) {
+      sendLog('Streaming started!', 'success');
+      return { success: true, url: streamUrl };
+    } else {
+      // Stop the stream if casting failed
+      await audioStreamer.stop();
+      throw new Error(result.error);
+    }
   } catch (error) {
-    console.error('Cast error:', error);
+    sendLog(`Stream failed: ${error.message}`, 'error');
     return { success: false, error: error.message };
   }
 });
 
 // Stop streaming
-ipcMain.handle('stop-streaming', async () => {
+ipcMain.handle('stop-streaming', async (event, speakerName) => {
   try {
+    sendLog('Stopping...');
+
+    // Stop Python cast
+    if (speakerName) {
+      try {
+        await runPython(['stop', speakerName]);
+      } catch (e) {
+        // Ignore stop errors
+      }
+    }
+
+    // Stop FFmpeg stream
     if (audioStreamer) {
       await audioStreamer.stop();
     }
-    if (chromecastManager && settings.selectedSpeaker) {
-      await chromecastManager.stopCasting(settings.selectedSpeaker);
-    }
+
+    sendLog('Stopped', 'success');
     return { success: true };
   } catch (error) {
-    console.error('Stop error:', error);
+    sendLog(`Stop error: ${error.message}`, 'error');
     return { success: false, error: error.message };
   }
 });
 
-// Get streaming status
+// Get status
 ipcMain.handle('get-status', () => {
   return {
     isStreaming: audioStreamer?.isStreaming || false,
-    selectedSpeaker: settings.selectedSpeaker,
+    streamUrl: audioStreamer?.streamUrl || null,
   };
+});
+
+// Test ping to speaker (isolated test - no streaming)
+ipcMain.handle('ping-speaker', async (event, speakerName) => {
+  try {
+    sendLog(`Pinging "${speakerName}"...`);
+    const result = await runPython(['ping', speakerName]);
+
+    if (result.success) {
+      sendLog('Ping sent!', 'success');
+      return { success: true };
+    } else {
+      sendLog(`Ping failed: ${result.error}`, 'error');
+      return { success: false, error: result.error };
+    }
+  } catch (error) {
+    sendLog(`Ping failed: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
 });
 
 // Open external link
