@@ -250,17 +250,51 @@
       }
     );
 
-    // Also intercept LOAD to check customData before playback
+    // Also intercept LOAD to check for WebRTC URL
     playerManager.setMessageInterceptor(
       cast.framework.messages.MessageType.LOAD,
       (request) => {
-        if (request.media && request.media.customData && request.media.customData.webrtcUrl) {
-          log('WebRTC mode - URL: ' + request.media.customData.webrtcUrl);
+        log('LOAD intercepted');
+
+        // Method 1: Check contentId for webrtc:// prefix (most reliable)
+        // Format: webrtc://actual-https-url/path
+        if (request.media && request.media.contentId) {
+          const contentId = request.media.contentId;
+          log('contentId: ' + contentId);
+
+          if (contentId.startsWith('webrtc://')) {
+            // Extract the actual HTTPS URL from webrtc://https://example.com/path
+            const httpsUrl = contentId.replace('webrtc://', '');
+            log('WebRTC mode (contentId) - URL: ' + httpsUrl);
+            setTimeout(() => {
+              connectToMediaMTX(httpsUrl, 'pcaudio');
+            }, 500);
+            return null;
+          }
+        }
+
+        // Method 2: Check media.customData
+        if (request.media && request.media.customData) {
+          log('media.customData: ' + JSON.stringify(request.media.customData));
+          if (request.media.customData.webrtcUrl) {
+            log('WebRTC mode (media.customData) - URL: ' + request.media.customData.webrtcUrl);
+            setTimeout(() => {
+              connectToMediaMTX(request.media.customData.webrtcUrl, request.media.customData.stream || 'pcaudio');
+            }, 500);
+            return null;
+          }
+        }
+
+        // Method 3: Check root-level customData
+        if (request.customData && request.customData.webrtcUrl) {
+          log('WebRTC mode (request.customData) - URL: ' + request.customData.webrtcUrl);
           setTimeout(() => {
-            connectToMediaMTX(request.media.customData.webrtcUrl, request.media.customData.stream || 'pcaudio');
+            connectToMediaMTX(request.customData.webrtcUrl, request.customData.stream || 'pcaudio');
           }, 500);
           return null;
         }
+
+        // Not WebRTC - handle as regular media
         if (request.media) {
           request.media.streamType = cast.framework.messages.StreamType.LIVE;
           request.autoplay = true;
