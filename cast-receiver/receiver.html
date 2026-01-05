@@ -254,13 +254,34 @@
     playerManager.setMessageInterceptor(
       cast.framework.messages.MessageType.LOAD,
       (request) => {
+        // DEBUG: Log everything about the request
+        log('LOAD intercepted');
+        log('request.media: ' + (request.media ? 'exists' : 'null'));
+        if (request.media) {
+          log('contentId: ' + request.media.contentId);
+          log('customData: ' + JSON.stringify(request.media.customData));
+        }
+        // Also check root-level customData (some implementations put it there)
+        log('request.customData: ' + JSON.stringify(request.customData));
+
+        // Check media.customData first (standard location)
         if (request.media && request.media.customData && request.media.customData.webrtcUrl) {
-          log('WebRTC mode - URL: ' + request.media.customData.webrtcUrl);
+          log('WebRTC mode (media.customData) - URL: ' + request.media.customData.webrtcUrl);
           setTimeout(() => {
             connectToMediaMTX(request.media.customData.webrtcUrl, request.media.customData.stream || 'pcaudio');
           }, 500);
           return null;
         }
+
+        // Also check root-level customData (pychromecast might put it here)
+        if (request.customData && request.customData.webrtcUrl) {
+          log('WebRTC mode (request.customData) - URL: ' + request.customData.webrtcUrl);
+          setTimeout(() => {
+            connectToMediaMTX(request.customData.webrtcUrl, request.customData.stream || 'pcaudio');
+          }, 500);
+          return null;
+        }
+
         if (request.media) {
           request.media.streamType = cast.framework.messages.StreamType.LIVE;
           request.autoplay = true;
