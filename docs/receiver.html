@@ -121,10 +121,9 @@
 
       // Call webrtc-streamer API
       try {
-        // Use audiourl (not url) for audio-only streams
-        // url is for video, audiourl is for audio
-        const callUrl = serverUrl + '/api/call?peerid=' + encodeURIComponent(streamName) +
-                        '&url=&audiourl=' + encodeURIComponent('audiocap://0');
+        // Use the pre-configured stream name (server started with -n pcaudio -U audiocap://1)
+        // Just reference the stream, don't specify audio source (already configured)
+        const callUrl = serverUrl + '/api/call?peerid=' + encodeURIComponent(streamName);
 
         log('Calling ' + callUrl);
         const response = await fetch(callUrl, {
@@ -220,7 +219,7 @@
       log('Testing HTTPS connection...');
 
       // Use localtunnel HTTPS URL to avoid mixed content blocking
-      const httpsUrl = 'https://strong-chairs-throw.loca.lt';
+      const httpsUrl = 'https://sad-rabbits-lead.loca.lt';
 
       fetch(httpsUrl + '/api/getMediaList', {
         headers: { 'bypass-tunnel-reminder': 'true' }
