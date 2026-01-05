@@ -10,13 +10,18 @@ contextBridge.exposeInMainWorld('api', {
   // Discover audio devices AND Chromecast speakers
   discoverDevices: () => ipcRenderer.invoke('discover-devices'),
 
-  // HTTP Streaming controls (8 second latency)
-  startStreaming: (speakerName, audioDevice) => ipcRenderer.invoke('start-streaming', speakerName, audioDevice),
+  // Streaming controls (supports 3 modes: http, webrtc-system, webrtc-vbcable)
+  startStreaming: (speakerName, audioDevice, streamingMode = 'http') =>
+    ipcRenderer.invoke('start-streaming', speakerName, audioDevice, streamingMode),
   stopStreaming: (speakerName) => ipcRenderer.invoke('stop-streaming', speakerName),
   getStatus: () => ipcRenderer.invoke('get-status'),
 
   // Test ping (plays sound on speaker without streaming)
   pingSpeaker: (speakerName) => ipcRenderer.invoke('ping-speaker', speakerName),
+
+  // Dependency management
+  checkDependencies: () => ipcRenderer.invoke('check-dependencies'),
+  installDependency: (dep) => ipcRenderer.invoke('install-dependency', dep),
 
   // Utilities
   openExternal: (url) => ipcRenderer.invoke('open-external', url),

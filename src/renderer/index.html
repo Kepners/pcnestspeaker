@@ -42,17 +42,38 @@
           <label class="mode-option">
             <input type="radio" name="stream-mode" value="http" checked>
             <span class="mode-label">
-              <strong>HTTP (Reliable)</strong>
-              <small>~8 second latency</small>
+              <strong>HTTP MP3</strong>
+              <small>~8 sec latency • Most reliable</small>
+            </span>
+            <span class="mode-deps" id="http-deps">
+              <span class="dep-item dep-checking">VB-CABLE</span>
             </span>
           </label>
           <label class="mode-option">
-            <input type="radio" name="stream-mode" value="webrtc">
+            <input type="radio" name="stream-mode" value="webrtc-system">
             <span class="mode-label">
-              <strong>WebRTC (Low Latency)</strong>
-              <small>~500ms latency (experimental)</small>
+              <strong>WebRTC System Audio</strong>
+              <small>&lt;1 sec latency • Captures any audio</small>
+            </span>
+            <span class="mode-deps" id="webrtc-system-deps">
+              <span class="dep-item dep-checking">screen-capture-recorder</span>
+              <span class="dep-item dep-checking">webrtc-streamer</span>
             </span>
           </label>
+          <label class="mode-option">
+            <input type="radio" name="stream-mode" value="webrtc-vbcable">
+            <span class="mode-label">
+              <strong>WebRTC VB-CABLE</strong>
+              <small>&lt;1 sec latency • Manual audio routing</small>
+            </span>
+            <span class="mode-deps" id="webrtc-vbcable-deps">
+              <span class="dep-item dep-checking">VB-CABLE</span>
+              <span class="dep-item dep-checking">webrtc-streamer</span>
+            </span>
+          </label>
+        </div>
+        <div class="mode-info" id="mode-info">
+          <p id="mode-description">HTTP streaming is the most reliable option with ~8 second latency.</p>
         </div>
       </div>
 

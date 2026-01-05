@@ -61,7 +61,9 @@
       "Bash(cmd //c \"taskkill /F /PID 181724\")",
       "Bash(cmd //c \"taskkill /F /IM webrtc-streamer.exe\")",
       "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/webrtc-streamer-v0.8.14-dirty-Windows-AMD64-Release/bin/webrtc-streamer.exe\" -v -n \"pcaudio\" -U \"audiocap://3\" -H 0.0.0.0:8443)",
-      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/webrtc-streamer-v0.8.14-dirty-Windows-AMD64-Release/bin/webrtc-streamer.exe\" -v -n \"pcaudio\" -U \"audiocap://3\" -a -H 0.0.0.0:8443)"
+      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/webrtc-streamer-v0.8.14-dirty-Windows-AMD64-Release/bin/webrtc-streamer.exe\" -v -n \"pcaudio\" -U \"audiocap://3\" -a -H 0.0.0.0:8443)",
+      "Bash(cmd /c \"start cmd /k cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && set ELECTRON_RUN_AS_NODE= && npm run dev\")",
+      "Bash(cmd /c \"start \"\" c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\start-app.bat\")"
     ]
   }
 }

@@ -285,40 +285,95 @@ def webrtc_connect(speaker_name, webrtc_server_port=8080):
         return {"success": False, "error": str(e)}
 
 
-def webrtc_launch(speaker_name):
-    """Launch custom receiver for WebRTC and return connection for signaling."""
+def webrtc_launch(speaker_name, https_url=None, speaker_ip=None):
+    """Launch custom receiver for WebRTC streaming.
+
+    If https_url is provided, sends it to the receiver via play_media customData.
+    The receiver will then connect to the webrtc-streamer via HTTPS.
+
+    If speaker_ip is provided, connects directly without discovery (faster, more reliable).
+    """
     try:
-        print(f"[WebRTC] Looking for '{speaker_name}'...", file=sys.stderr)
+        browser = None
 
-        chromecasts, browser = pychromecast.get_listed_chromecasts(
-            friendly_names=[speaker_name],
-            timeout=10
-        )
+        if speaker_ip:
+            # Connect directly to IP - much faster and more reliable for groups
+            print(f"[WebRTC] Connecting directly to {speaker_ip}...", file=sys.stderr)
+            # Use get_listed_chromecasts with known_hosts for direct IP connection
+            chromecasts, browser = pychromecast.get_listed_chromecasts(
+                friendly_names=[speaker_name],
+                known_hosts=[speaker_ip],
+                timeout=5
+            )
+            if chromecasts:
+                cast = chromecasts[0]
+                browser.stop_discovery()
+            else:
+                # Fallback: try discovery without IP hint
+                print(f"[WebRTC] Direct connection failed, trying discovery...", file=sys.stderr)
+                chromecasts, browser = pychromecast.get_listed_chromecasts(
+                    friendly_names=[speaker_name],
+                    timeout=10
+                )
+                if not chromecasts:
+                    browser.stop_discovery()
+                    return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
+                cast = chromecasts[0]
+                browser.stop_discovery()
+        else:
+            # Fall back to discovery if no IP provided
+            print(f"[WebRTC] Looking for '{speaker_name}'...", file=sys.stderr)
 
-        if not chromecasts:
+            chromecasts, browser = pychromecast.get_listed_chromecasts(
+                friendly_names=[speaker_name],
+                timeout=10
+            )
+
+            if not chromecasts:
+                browser.stop_discovery()
+                return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
+
+            cast = chromecasts[0]
             browser.stop_discovery()
-            return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
 
-        cast = chromecasts[0]
-        host = cast.cast_info.host if hasattr(cast, 'cast_info') else 'unknown'
-        print(f"[WebRTC] Connecting to {host}...", file=sys.stderr)
-        cast.wait()
-
-        # Register WebRTC controller
-        webrtc = WebRTCController()
-        cast.register_handler(webrtc)
+        host = cast.cast_info.host if hasattr(cast, 'cast_info') else speaker_ip or 'unknown'
+        print(f"[WebRTC] Connected to {host}, waiting for ready...", file=sys.stderr)
+        cast.wait(timeout=10)
 
         # Launch custom receiver
         print(f"[WebRTC] Launching receiver (App ID: {CUSTOM_APP_ID})...", file=sys.stderr)
         cast.start_app(CUSTOM_APP_ID)
-        time.sleep(2)  # Wait for receiver to load
+        time.sleep(3)  # Wait for receiver to load
         print("[WebRTC] Receiver launched!", file=sys.stderr)
 
-        # Return success - signaling will be handled via stdin/stdout
+        # If HTTPS URL provided, send it to receiver via play_media customData
+        if https_url:
+            print(f"[WebRTC] Sending WebRTC URL to receiver: {https_url}", file=sys.stderr)
+            mc = cast.media_controller
+
+            # The receiver intercepts LOAD messages and checks customData.webrtcUrl
+            mc.play_media(
+                "https://placeholder.webrtc/audio.mp3",  # Placeholder - receiver ignores this
+                "audio/mpeg",
+                stream_type="LIVE",
+                autoplay=True,
+                media_info={
+                    "customData": {
+                        "webrtcUrl": https_url,
+                        "stream": "pcaudio",
+                        "mode": "webrtc"
+                    }
+                }
+            )
+            time.sleep(2)  # Wait for receiver to process
+            print("[WebRTC] WebRTC URL sent to receiver!", file=sys.stderr)
+
+        # Browser already stopped above
         return {
             "success": True,
             "mode": "webrtc",
-            "message": "Receiver ready for signaling"
+            "url": https_url or "none",
+            "message": "Receiver launched with WebRTC URL"
         }
 
     except Exception as e:
@@ -468,9 +523,12 @@ if __name__ == "__main__":
         print(json.dumps(result))
 
     elif command == "webrtc-launch" and len(sys.argv) >= 3:
-        # Launch custom receiver for WebRTC streaming (old signaling approach)
+        # Launch custom receiver for WebRTC streaming with HTTPS tunnel URL
+        # Args: webrtc-launch <speaker_name> [https_url] [speaker_ip]
         speaker = sys.argv[2]
-        result = webrtc_launch(speaker)
+        https_url = sys.argv[3] if len(sys.argv) > 3 else None
+        speaker_ip = sys.argv[4] if len(sys.argv) > 4 else None
+        result = webrtc_launch(speaker, https_url, speaker_ip)
         print(json.dumps(result))
 
     elif command == "webrtc-signal" and len(sys.argv) >= 4:

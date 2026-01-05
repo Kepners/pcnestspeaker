@@ -317,6 +317,64 @@ body {
   color: var(--color-grey);
 }
 
+/* Mode Dependencies */
+.mode-deps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.dep-item {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(107, 109, 118, 0.3);
+  color: var(--color-grey);
+  white-space: nowrap;
+}
+
+.dep-item.dep-checking {
+  background: rgba(255, 183, 77, 0.2);
+  color: var(--color-warning);
+}
+
+.dep-item.dep-ok {
+  background: rgba(76, 175, 80, 0.2);
+  color: var(--color-success);
+}
+
+.dep-item.dep-missing {
+  background: rgba(229, 115, 115, 0.2);
+  color: var(--color-error);
+}
+
+.dep-item.dep-installing {
+  background: rgba(252, 191, 183, 0.2);
+  color: var(--color-blush);
+  animation: pulse 1s infinite;
+}
+
+/* Mode Info */
+.mode-info {
+  margin-top: 12px;
+  padding: 10px;
+  background: rgba(51, 78, 88, 0.3);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: var(--color-grey);
+}
+
+.mode-info p {
+  margin: 0;
+}
+
+.mode-info .install-btn {
+  margin-top: 8px;
+  font-size: 0.75rem;
+  padding: 6px 12px;
+}
+
 /* Select Dropdown */
 .select {
   width: 100%;
