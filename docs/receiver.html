@@ -163,9 +163,10 @@
 
       // Call webrtc-streamer API
       try {
-        // Build URL like official lib: /api/call?peerid=xxx&audiourl=streamname
+        // Build URL: /api/call?peerid=xxx&audiourl=audiocap://1
+        // Use the actual audio device URL, not the stream name
         const callUrl = serverUrl + '/api/call?peerid=' + encodeURIComponent(currentPeerId) +
-                        '&audiourl=' + encodeURIComponent(streamName);
+                        '&audiourl=' + encodeURIComponent('audiocap://1');
 
         log('Calling ' + callUrl);
         const response = await fetch(callUrl, {
