@@ -182,6 +182,7 @@ async function startWebRTCStreamer(audioDeviceIndex = 1) {
   sendLog(`Starting webrtc-streamer with audio device ${audioDeviceIndex}...`);
 
   return new Promise((resolve, reject) => {
+    // Spawn through shell to ensure proper Windows audio API access
     webrtcStreamerProcess = spawn(WEBRTC_STREAMER_PATH, [
       '-v',
       '-n', 'pcaudio',
@@ -189,7 +190,9 @@ async function startWebRTCStreamer(audioDeviceIndex = 1) {
       '-a',  // Enable audio capture layer
       '-H', '0.0.0.0:8443'
     ], {
-      cwd: path.dirname(WEBRTC_STREAMER_PATH)
+      cwd: path.dirname(WEBRTC_STREAMER_PATH),
+      shell: true,
+      env: { ...process.env }  // Explicitly inherit environment
     });
 
     let started = false;
