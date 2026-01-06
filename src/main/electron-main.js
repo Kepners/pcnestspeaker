@@ -1005,6 +1005,40 @@ ipcMain.handle('ping-speaker', async (event, speakerName) => {
   }
 });
 
+// Get speaker volume
+ipcMain.handle('get-volume', async (event, speakerName) => {
+  try {
+    const result = await runPython(['get-volume', speakerName]);
+
+    if (result.success) {
+      return {
+        success: true,
+        volume: result.volume,
+        muted: result.muted
+      };
+    } else {
+      return { success: false, error: result.error };
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Set speaker volume (0.0 - 1.0)
+ipcMain.handle('set-volume', async (event, speakerName, volume) => {
+  try {
+    const result = await runPython(['set-volume', speakerName, volume.toString()]);
+
+    if (result.success) {
+      return { success: true, volume: result.volume };
+    } else {
+      return { success: false, error: result.error };
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // Open external link
 ipcMain.handle('open-external', async (event, url) => {
   await shell.openExternal(url);

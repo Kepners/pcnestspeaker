@@ -623,6 +623,59 @@ def stop_cast(speaker_name):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+def get_volume(speaker_name):
+    """
+    Get current volume and mute state from speaker
+    Returns: { success: true, volume: 0.0-1.0, muted: bool }
+    """
+    try:
+        chromecasts, browser = pychromecast.get_listed_chromecasts(friendly_names=[speaker_name])
+
+        if not chromecasts:
+            browser.stop_discovery()
+            return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
+
+        cast = chromecasts[0]
+        cast.wait()
+
+        # Get volume status
+        volume_level = cast.status.volume_level  # 0.0 - 1.0
+        is_muted = cast.status.volume_muted
+
+        browser.stop_discovery()
+        return {
+            "success": True,
+            "volume": volume_level,
+            "muted": is_muted
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def set_volume(speaker_name, volume):
+    """
+    Set speaker volume
+    Args: speaker_name (str), volume (float 0.0-1.0)
+    """
+    try:
+        chromecasts, browser = pychromecast.get_listed_chromecasts(friendly_names=[speaker_name])
+
+        if not chromecasts:
+            browser.stop_discovery()
+            return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
+
+        cast = chromecasts[0]
+        cast.wait()
+
+        # Set volume (0.0 - 1.0)
+        cast.set_volume(volume)
+
+        browser.stop_discovery()
+        return {"success": True, "volume": volume}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(json.dumps({"success": False, "error": "No command specified"}))
@@ -717,6 +770,17 @@ if __name__ == "__main__":
     elif command == "stop" and len(sys.argv) >= 3:
         speaker = sys.argv[2]
         result = stop_cast(speaker)
+        print(json.dumps(result))
+
+    elif command == "get-volume" and len(sys.argv) >= 3:
+        speaker = sys.argv[2]
+        result = get_volume(speaker)
+        print(json.dumps(result))
+
+    elif command == "set-volume" and len(sys.argv) >= 4:
+        speaker = sys.argv[2]
+        volume = float(sys.argv[3])  # 0.0 - 1.0
+        result = set_volume(speaker, volume)
         print(json.dumps(result))
 
     elif command == "device-info" and len(sys.argv) >= 3:

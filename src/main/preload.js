@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld('api', {
   stopStereoStreaming: (leftSpeaker, rightSpeaker) =>
     ipcRenderer.invoke('stop-stereo-streaming', leftSpeaker, rightSpeaker),
 
-  // Volume control
+  // Volume control (0.0 - 1.0 for pychromecast)
   setVolume: (speakerName, volume) =>
     ipcRenderer.invoke('set-volume', speakerName, volume),
   getVolume: (speakerName) =>

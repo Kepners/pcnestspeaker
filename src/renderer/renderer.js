@@ -15,6 +15,12 @@ const clearLogBtn = document.getElementById('clear-log-btn');
 const autoConnectToggle = document.getElementById('auto-connect-toggle');
 const autoStartToggle = document.getElementById('auto-start-toggle');
 
+// Volume control elements
+const volumeCard = document.getElementById('volume-card');
+const volumeSlider = document.getElementById('volume-slider');
+const volumePercentage = document.getElementById('volume-percentage');
+const muteBtn = document.getElementById('mute-btn');
+
 // State
 let speakers = [];
 let selectedSpeaker = null;
@@ -25,6 +31,11 @@ let dependencies = {
   mediamtx: null,
   ffmpeg: null
 };
+
+// Volume state
+let currentVolume = 50; // 0-100
+let isMuted = false;
+let previousVolume = 50; // Store volume before muting
 
 // Stereo separation state
 let stereoMode = {
@@ -187,6 +198,30 @@ function setupEventListeners() {
       await stopStreaming();
     }
   });
+
+  // Volume control event listeners
+  if (volumeSlider) {
+    volumeSlider.addEventListener('input', async (e) => {
+      const volume = parseInt(e.target.value);
+      currentVolume = volume;
+      updateVolumeDisplay();
+
+      // Set volume on speaker
+      if (selectedSpeaker) {
+        try {
+          await window.api.setVolume(selectedSpeaker.name, volume / 100); // pychromecast uses 0.0-1.0
+        } catch (error) {
+          log(`Volume set failed: ${error.message}`, 'warning');
+        }
+      }
+    });
+  }
+
+  if (muteBtn) {
+    muteBtn.addEventListener('click', async () => {
+      await toggleMute();
+    });
+  }
 }
 
 // Check all dependencies
@@ -615,6 +650,27 @@ async function selectSpeaker(index) {
     item.classList.toggle('selected', i === index);
   });
 
+  // Show volume control and get current volume
+  if (volumeCard) {
+    volumeCard.style.display = 'block';
+
+    // Get current volume from speaker
+    try {
+      const result = await window.api.getVolume(selectedSpeaker.name);
+      if (result.success) {
+        currentVolume = Math.round(result.volume * 100); // Convert 0.0-1.0 to 0-100
+        isMuted = result.muted || false;
+        updateVolumeDisplay();
+        log(`Volume: ${currentVolume}%${isMuted ? ' (muted)' : ''}`, 'info');
+      }
+    } catch (error) {
+      log(`Failed to get volume: ${error.message}`, 'warning');
+      // Use default volume if we can't get it
+      currentVolume = 50;
+      updateVolumeDisplay();
+    }
+  }
+
   // If already streaming, stop current stream first
   if (isStreaming) {
     log('Stopping stream...');
@@ -665,6 +721,49 @@ async function selectSpeaker(index) {
   } catch (error) {
     log(`Stream failed: ${error.message}`, 'error');
     showError(error.message || 'Failed to start streaming');
+  }
+}
+
+// Volume control functions
+function updateVolumeDisplay() {
+  if (!volumeSlider || !volumePercentage || !muteBtn) return;
+
+  volumeSlider.value = currentVolume;
+  volumePercentage.textContent = `${currentVolume}%`;
+
+  if (isMuted) {
+    muteBtn.textContent = '🔇';
+    muteBtn.classList.add('muted');
+    muteBtn.title = 'Unmute';
+  } else {
+    muteBtn.textContent = '🔊';
+    muteBtn.classList.remove('muted');
+    muteBtn.title = 'Mute';
+  }
+}
+
+async function toggleMute() {
+  if (!selectedSpeaker) return;
+
+  try {
+    if (isMuted) {
+      // Unmute - restore previous volume
+      currentVolume = previousVolume || 50;
+      await window.api.setVolume(selectedSpeaker.name, currentVolume / 100);
+      isMuted = false;
+      log(`Unmuted: ${currentVolume}%`, 'success');
+    } else {
+      // Mute - save current volume and set to 0
+      previousVolume = currentVolume;
+      currentVolume = 0;
+      await window.api.setVolume(selectedSpeaker.name, 0);
+      isMuted = true;
+      log('Muted', 'success');
+    }
+
+    updateVolumeDisplay();
+  } catch (error) {
+    log(`Mute toggle failed: ${error.message}`, 'error');
   }
 }
 
