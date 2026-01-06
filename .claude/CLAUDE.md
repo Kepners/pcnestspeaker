@@ -723,7 +723,7 @@ Extracts: bitrate=128.0, size=1024kB
 #### Next Steps (From Priority List)
 1. ~~Fix Audio Routing - Windows Audio Device Auto-Switch~~ ✅ DONE
 2. ~~Add Stream Monitor (audio visualizer, bitrate, data counter)~~ ✅ DONE
-3. Auto-Start on Windows Boot
+3. ~~Auto-Start on Windows Boot~~ ✅ DONE
 4. Document Device Compatibility
 5. System Tray Icon
 6. Volume Control Integration
@@ -731,6 +731,128 @@ Extracts: bitrate=128.0, size=1024kB
 8. Trial & Usage Timer (10 hours)
 9. License Verification & Purchase Flow
 10. Match DeleteMyTweets Styling
+
+### January 6, 2026 (Session 9 - Continuation) - Auto-Start & Settings Complete
+**Session Goal:** Complete Task #3 - Auto-Start on Windows Boot
+
+#### What Was Completed
+- ✅ Created `auto-start-manager.js` - Windows Registry manipulation
+- ✅ Created `settings-manager.js` - Persistent JSON settings storage
+- ✅ Added settings UI with 2 checkboxes (auto-connect, auto-start)
+- ✅ Implemented auto-connect logic (5s delay after app startup)
+- ✅ Settings persist in `app.getPath('userData')/settings.json`
+- ✅ Registry integration for Windows startup
+- ✅ Checkbox event handlers sync with actual state
+- ✅ Save last speaker on selection for auto-connect
+- ✅ Committed and pushed: `daa3619` - feat: Add auto-start and settings
+
+#### Implementation Details
+
+**auto-start-manager.js:**
+- `isAutoStartEnabled()` - Checks Windows Registry Run key
+- `enableAutoStart()` - Adds app to Registry with full path
+- `disableAutoStart()` - Removes app from Registry
+- `toggleAutoStart()` - Toggles and returns new state
+- Registry path: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
+- Registry key name: `PCNestSpeaker`
+
+**settings-manager.js:**
+- `loadSettings()` - Loads from JSON, merges with defaults
+- `saveSettings()` - Writes settings to JSON file
+- `updateSettings()` - Partial update (merges with existing)
+- `saveLastSpeaker()` - Saves speaker object for auto-connect
+- Settings cached in memory to avoid repeated file reads
+
+**Auto-Connect Flow:**
+```
+1. App starts → loads settings
+2. Wait 5s for WebRTC pipeline to initialize
+3. Check if autoConnect enabled + lastSpeaker exists
+4. Send 'auto-connect' IPC event to renderer
+5. Renderer finds speaker in list and calls selectSpeaker()
+6. Streaming begins automatically
+```
+
+**Settings Schema:**
+```json
+{
+  "lastSpeaker": { "name": "Den pair", "model": "Google Cast Group" },
+  "autoConnect": true,
+  "autoStart": false,
+  "streamingMode": "webrtc-system",
+  "version": "1.0.0"
+}
+```
+
+#### Files Created/Modified
+- `src/main/auto-start-manager.js` - NEW: Windows Registry auto-start
+- `src/main/settings-manager.js` - NEW: JSON settings persistence
+- `src/main/electron-main.js` - MODIFIED: Settings/auto-start IPC handlers
+- `src/main/preload.js` - MODIFIED: Expose settings APIs
+- `src/renderer/index.html` - MODIFIED: Settings UI with checkboxes
+- `src/renderer/renderer.js` - MODIFIED: loadSettings(), checkbox handlers
+- `src/renderer/styles.css` - MODIFIED: Settings section styling
+
+#### Git Commit
+- `daa3619` - feat: Add auto-start on Windows boot and auto-connect settings
+
+#### User Experience
+**Settings UI:**
+```
+┌─ SETTINGS ──────────────────┐
+│ ☑ Auto-connect to last      │
+│   speaker                    │
+│   Automatically connect when │
+│   app starts                 │
+│                              │
+│ ☐ Start with Windows         │
+│   Launch app when Windows    │
+│   starts                     │
+└──────────────────────────────┘
+```
+
+**Behavior:**
+- Check "Auto-connect" → Next startup connects to last speaker automatically
+- Check "Start with Windows" → App launches on boot, then auto-connects
+- Uncheck either → Disables that feature immediately
+- Settings persist across app restarts
+
+#### Lessons Learned
+1. **Research before assuming** - Made assumptions about Nest microphone without research
+2. **FFmpeg stderr parsing** - Progress info goes to stderr, not stdout
+3. **Windows Registry auto-start** - Simple `reg add` command, very reliable
+4. **Settings merge pattern** - Always merge with defaults to handle new settings in updates
+5. **IPC event timing** - Need delays for dependent startup tasks (discovery → pipeline → auto-connect)
+
+#### Future Research Tasks
+**NEW: Phone Mic → Nest Speakers (Separate Project)**
+- Android app captures phone microphone
+- Streams to PC or directly to Nest speakers via WebRTC
+- Use cases: Wireless mic, baby monitor, intercom
+- Estimated effort: 30-50 hours for full Android app
+
+**NEW: Research Nest Microphone → PC Input**
+- Explore if Google Cast SDK allows mic access from Nest devices
+- Goal: Use Nest Mini/Hub mic as PC input for Discord/WhatsApp
+- Challenges: Cast protocol is one-way (TO devices only)
+- Likely outcome: Not possible with current Google APIs
+- **Status:** Needs research, possibly blocked by Google
+
+#### Next Steps (From Priority List)
+1. ~~Fix Audio Routing - Windows Audio Device Auto-Switch~~ ✅ DONE
+2. ~~Add Stream Monitor (audio visualizer, bitrate, data counter)~~ ✅ DONE
+3. ~~Auto-Start on Windows Boot~~ ✅ DONE
+4. Document Device Compatibility
+5. System Tray Icon
+6. Volume Control Integration
+7. Multi-Speaker Streaming
+8. Trial & Usage Timer (10 hours)
+9. License Verification & Purchase Flow
+10. Match DeleteMyTweets Styling
+
+**Research Tasks:**
+- Research Nest Microphone → PC input feasibility
+- Phone Mic → Nest Speakers (future separate project)
 
 ---
 
