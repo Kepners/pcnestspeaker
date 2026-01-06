@@ -944,13 +944,109 @@ mainWindow.on('close', (event) => {
 3. ~~Auto-Start on Windows Boot~~ ✅ DONE
 4. ~~Document Device Compatibility~~ ✅ DONE
 5. ~~System Tray Icon~~ ✅ DONE
-6. Volume Control Integration
+~~6. Volume Control Integration~~ ✅ DONE
 7. Multi-Speaker Streaming (7.1: Multi-casting PRO, 7.2: Phone/PC mic → Nest PRO)
 8. Trial & Usage Timer (10 hours)
 9. License Verification & Purchase Flow
 10. Match DeleteMyTweets Styling
 
-**Progress: 5 out of 10 tasks completed (50%)**
+**Progress: 6 out of 10 tasks completed (60%)**
+
+### January 6, 2026 (Session 11 - Continuation) - Volume Control Integration
+
+**Session Goal:** Implement Task #6 - Volume Control Integration
+
+#### What Was Completed
+- ✅ Created volume slider UI with percentage display (0-100%)
+- ✅ Added mute button with icon toggling (🔊 vs 🔇)
+- ✅ Real-time volume updates via slider input
+- ✅ Volume state management (currentVolume, isMuted, previousVolume)
+- ✅ Python volume control via pychromecast
+- ✅ IPC integration for get-volume and set-volume
+- ✅ Auto-show volume card when speaker selected
+- ✅ Volume restoration after unmute
+- ✅ Warm Neutral styling with smooth animations
+- ✅ Committed: `ca77cd3` - feat: Add volume control integration
+
+#### Implementation Details
+
+**UI Components** (index.html):
+```html
+<div class="card volume-card" id="volume-card" style="display: none;">
+  <h2 class="card-title">VOLUME</h2>
+  <div class="volume-controls">
+    <button class="volume-btn" id="mute-btn">🔇</button>
+    <input type="range" min="0" max="100" value="50" id="volume-slider">
+    <span class="volume-percentage" id="volume-percentage">50%</span>
+  </div>
+</div>
+```
+
+**Volume State**:
+- `currentVolume` (0-100) - Current volume level
+- `isMuted` (boolean) - Mute state
+- `previousVolume` (0-100) - Volume before muting
+
+**Frontend Functions** (renderer.js):
+- `updateVolumeDisplay()` - Updates UI (slider, percentage, button icon)
+- `toggleMute()` - Mutes/unmutes speaker with volume restoration
+- Event listeners for slider input and mute button click
+
+**Python Functions** (cast-helper.py):
+- `get_volume(speaker_name)` - Returns { success, volume: 0.0-1.0, muted }
+- `set_volume(speaker_name, volume)` - Sets speaker volume (0.0-1.0)
+- Uses `cast.status.volume_level` and `cast.set_volume()`
+
+**IPC Handlers** (electron-main.js):
+- `get-volume` → Calls Python `get-volume` command
+- `set-volume` → Calls Python `set-volume` command with volume parameter
+
+**Volume Control Flow**:
+1. User selects speaker → Volume card appears
+2. Get current volume from speaker via Python
+3. Update UI with current volume and mute state
+4. User adjusts slider → Set volume via Python in real-time
+5. User clicks mute → Save volume, set to 0, update icon
+6. User clicks unmute → Restore previous volume, update icon
+
+#### User Experience
+**Visual Feedback:**
+- Volume slider with custom thumb styling (Powder Blush)
+- Percentage display updates instantly
+- Mute button icon changes: 🔊 (unmuted) vs 🔇 (muted)
+- Muted button has reduced opacity and gray color
+- Slider thumb scales and glows on hover
+
+**Interaction:**
+- Drag slider → Volume updates in real-time
+- Click mute → Volume goes to 0%, icon changes
+- Click unmute → Volume restores to previous level
+- Volume changes apply immediately to speaker
+
+#### Files Created/Modified
+- `src/renderer/index.html` - MODIFIED: Volume card UI
+- `src/renderer/styles.css` - MODIFIED: Volume control styling (89 lines)
+- `src/renderer/renderer.js` - MODIFIED: Volume state, functions, event listeners
+- `src/main/preload.js` - MODIFIED: Added comment for volume APIs (already exposed)
+- `src/main/cast-helper.py` - MODIFIED: get_volume() and set_volume() functions
+- `src/main/electron-main.js` - MODIFIED: get-volume and set-volume IPC handlers
+
+#### Git Commit
+- `ca77cd3` - feat: Add volume control integration
+
+#### Next Steps (From Priority List)
+1. ~~Fix Audio Routing - Windows Audio Device Auto-Switch~~ ✅ DONE
+2. ~~Add Stream Monitor (audio visualizer, bitrate, data counter)~~ ✅ DONE
+3. ~~Auto-Start on Windows Boot~~ ✅ DONE
+4. ~~Document Device Compatibility~~ ✅ DONE
+5. ~~System Tray Icon~~ ✅ DONE
+6. ~~Volume Control Integration~~ ✅ DONE
+7. Multi-Speaker Streaming (7.1: Multi-casting PRO, 7.2: Phone/PC mic → Nest PRO)
+8. Trial & Usage Timer (10 hours)
+9. License Verification & Purchase Flow
+10. Match DeleteMyTweets Styling
+
+**Progress: 6 out of 10 tasks completed (60%)**
 
 ---
 
