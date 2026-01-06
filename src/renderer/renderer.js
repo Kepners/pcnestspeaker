@@ -297,8 +297,13 @@ function renderSpeakers() {
     return;
   }
 
-  speakerList.innerHTML = speakers.map((speaker, index) => `
-    <div class="speaker-item" data-index="${index}">
+  speakerList.innerHTML = speakers.map((speaker, index) => {
+    const isLeft = stereoMode.leftSpeaker === index;
+    const isRight = stereoMode.rightSpeaker === index;
+    const isSelected = selectedSpeaker === index;
+
+    return `
+    <div class="speaker-item ${isSelected ? 'selected' : ''} ${isLeft ? 'speaker-left' : ''} ${isRight ? 'speaker-right' : ''}" data-index="${index}">
       <div class="speaker-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="4" y="2" width="16" height="20" rx="2"/>
@@ -310,16 +315,153 @@ function renderSpeakers() {
         <div class="speaker-name">${speaker.name}</div>
         <div class="speaker-model">${speaker.model || 'Chromecast'}</div>
       </div>
+      <div class="stereo-toggles">
+        <button class="stereo-toggle ${isLeft ? 'active' : ''}" data-index="${index}" data-channel="left">L</button>
+        <button class="stereo-toggle ${isRight ? 'active' : ''}" data-index="${index}" data-channel="right">R</button>
+      </div>
       <svg class="speaker-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
         <polyline points="20 6 9 17 4 12"/>
       </svg>
     </div>
-  `).join('');
+  `}).join('');
 
-  // Add click handlers
+  // Add click handlers for speaker selection (main area, not toggles)
   speakerList.querySelectorAll('.speaker-item').forEach((item) => {
-    item.addEventListener('click', () => selectSpeaker(parseInt(item.dataset.index)));
+    item.addEventListener('click', (e) => {
+      // Don't select speaker if clicking on stereo toggles
+      if (e.target.classList.contains('stereo-toggle')) return;
+      selectSpeaker(parseInt(item.dataset.index));
+    });
   });
+
+  // Add click handlers for stereo toggles
+  speakerList.querySelectorAll('.stereo-toggle').forEach((toggle) => {
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation(); // Prevent speaker selection
+      const index = parseInt(toggle.dataset.index);
+      const channel = toggle.dataset.channel;
+      toggleStereoChannel(index, channel);
+    });
+  });
+}
+
+/**
+ * Toggle stereo channel assignment (L or R) for a speaker
+ * Auto-starts streaming when both L and R are selected
+ */
+async function toggleStereoChannel(index, channel) {
+  const speaker = speakers[index];
+  log(`Toggle ${channel.toUpperCase()} for "${speaker.name}"`);
+
+  if (channel === 'left') {
+    // Toggle left channel
+    if (stereoMode.leftSpeaker === index) {
+      // Unassign
+      stereoMode.leftSpeaker = null;
+      log(`Unassigned left channel from "${speaker.name}"`, 'info');
+    } else {
+      // Assign left, unassign from other speaker if needed
+      if (stereoMode.leftSpeaker !== null) {
+        log(`Moving left channel from "${speakers[stereoMode.leftSpeaker].name}" to "${speaker.name}"`, 'info');
+      }
+      stereoMode.leftSpeaker = index;
+
+      // Can't be both L and R
+      if (stereoMode.rightSpeaker === index) {
+        stereoMode.rightSpeaker = null;
+      }
+
+      log(`Assigned left channel to "${speaker.name}"`, 'success');
+    }
+  } else {
+    // Toggle right channel
+    if (stereoMode.rightSpeaker === index) {
+      // Unassign
+      stereoMode.rightSpeaker = null;
+      log(`Unassigned right channel from "${speaker.name}"`, 'info');
+    } else {
+      // Assign right, unassign from other speaker if needed
+      if (stereoMode.rightSpeaker !== null) {
+        log(`Moving right channel from "${speakers[stereoMode.rightSpeaker].name}" to "${speaker.name}"`, 'info');
+      }
+      stereoMode.rightSpeaker = index;
+
+      // Can't be both L and R
+      if (stereoMode.leftSpeaker === index) {
+        stereoMode.leftSpeaker = null;
+      }
+
+      log(`Assigned right channel to "${speaker.name}"`, 'success');
+    }
+  }
+
+  // Update UI
+  renderSpeakers();
+
+  // Auto-start if both L and R are assigned
+  if (stereoMode.leftSpeaker !== null && stereoMode.rightSpeaker !== null) {
+    if (!stereoMode.streaming) {
+      log('Both speakers assigned - auto-starting stereo streaming...', 'success');
+      await startStereoStreaming();
+    } else {
+      // Already streaming - just swap channels dynamically
+      log('Swapping channels...', 'info');
+      await startStereoStreaming(); // Restart with new assignment
+    }
+  } else if (stereoMode.streaming) {
+    // One speaker unassigned while streaming - stop streaming
+    log('Speaker unassigned - stopping stereo streaming...', 'warning');
+    await stopStereoStreaming();
+  }
+}
+
+/**
+ * Start stereo separation streaming
+ */
+async function startStereoStreaming() {
+  if (stereoMode.leftSpeaker === null || stereoMode.rightSpeaker === null) {
+    log('Error: Both left and right speakers must be assigned', 'error');
+    return;
+  }
+
+  const leftSpeaker = speakers[stereoMode.leftSpeaker];
+  const rightSpeaker = speakers[stereoMode.rightSpeaker];
+
+  log(`Starting stereo streaming: L="${leftSpeaker.name}", R="${rightSpeaker.name}"`, 'info');
+
+  try {
+    // TODO: Start MediaMTX + FFmpeg with stereo separation
+    // TODO: Cast to both speakers with left/right streams
+    // For now, just mark as streaming
+    stereoMode.streaming = true;
+    stereoMode.enabled = true;
+
+    log('Stereo streaming started!', 'success');
+    renderSpeakers();
+  } catch (error) {
+    log(`Stereo streaming failed: ${error.message}`, 'error');
+    stereoMode.streaming = false;
+  }
+}
+
+/**
+ * Stop stereo separation streaming
+ */
+async function stopStereoStreaming() {
+  if (!stereoMode.streaming) return;
+
+  log('Stopping stereo streaming...', 'info');
+
+  try {
+    // TODO: Stop FFmpeg processes
+    // TODO: Stop casting to both speakers
+    stereoMode.streaming = false;
+
+    log('Stereo streaming stopped', 'info');
+    renderSpeakers();
+  } catch (error) {
+    log(`Stop failed: ${error.message}`, 'error');
+  }
 }
 
 function renderAudioDevices() {
