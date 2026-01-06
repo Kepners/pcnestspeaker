@@ -90,7 +90,14 @@ pathDefaults:
   overridePublisher: yes
   record: no
 
-# Define pcaudio path for our stream
+# Define paths for our streams
 paths:
   pcaudio:
+    source: publisher
+
+  # Stereo separation paths
+  left:
+    source: publisher
+
+  right:
     source: publisher

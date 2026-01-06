@@ -336,13 +336,15 @@ def webrtc_connect(speaker_name, webrtc_server_port=8080):
         return {"success": False, "error": str(e)}
 
 
-def webrtc_launch(speaker_name, https_url=None, speaker_ip=None):
+def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pcaudio"):
     """Launch custom receiver for WebRTC streaming.
 
     If https_url is provided, sends it to the receiver via play_media customData.
     The receiver will then connect to the webrtc-streamer via HTTPS.
 
     If speaker_ip is provided, connects directly without discovery (faster, more reliable).
+
+    stream_name: MediaMTX stream path (default: "pcaudio", or "left"/"right" for stereo split)
     """
     try:
         browser = None
@@ -457,11 +459,11 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None):
             webrtc_controller = WebRTCController()
             cast.register_handler(webrtc_controller)
 
-            # Send connect message with URL
+            # Send connect message with URL and custom stream name
             message = {
                 "type": "connect",
                 "url": https_url,
-                "stream": "pcaudio"
+                "stream": stream_name
             }
             print(f"[WebRTC] Sending message: {message}", file=sys.stderr)
             webrtc_controller.send_message(message)
@@ -624,11 +626,12 @@ if __name__ == "__main__":
 
     elif command == "webrtc-launch" and len(sys.argv) >= 3:
         # Launch custom receiver for WebRTC streaming with HTTPS tunnel URL
-        # Args: webrtc-launch <speaker_name> [https_url] [speaker_ip]
+        # Args: webrtc-launch <speaker_name> [https_url] [speaker_ip] [stream_name]
         speaker = sys.argv[2]
         https_url = sys.argv[3] if len(sys.argv) > 3 else None
         speaker_ip = sys.argv[4] if len(sys.argv) > 4 else None
-        result = webrtc_launch(speaker, https_url, speaker_ip)
+        stream_name = sys.argv[5] if len(sys.argv) > 5 else "pcaudio"
+        result = webrtc_launch(speaker, https_url, speaker_ip, stream_name)
         print(json.dumps(result))
 
     elif command == "webrtc-signal" and len(sys.argv) >= 4:
