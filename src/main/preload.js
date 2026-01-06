@@ -31,6 +31,15 @@ contextBridge.exposeInMainWorld('api', {
   getVolume: (speakerName) =>
     ipcRenderer.invoke('get-volume', speakerName),
 
+  // Settings management
+  getSettings: () => ipcRenderer.invoke('get-settings'),
+  updateSettings: (updates) => ipcRenderer.invoke('update-settings', updates),
+  saveLastSpeaker: (speaker) => ipcRenderer.invoke('save-last-speaker', speaker),
+
+  // Auto-start on Windows boot
+  isAutoStartEnabled: () => ipcRenderer.invoke('is-auto-start-enabled'),
+  toggleAutoStart: () => ipcRenderer.invoke('toggle-auto-start'),
+
   // Dependency management
   checkDependencies: () => ipcRenderer.invoke('check-dependencies'),
   installDependency: (dep) => ipcRenderer.invoke('install-dependency', dep),
@@ -50,6 +59,9 @@ contextBridge.exposeInMainWorld('api', {
   },
   onStreamStats: (callback) => {
     ipcRenderer.on('stream-stats', (event, stats) => callback(stats));
+  },
+  onAutoConnect: (callback) => {
+    ipcRenderer.on('auto-connect', (event, speaker) => callback(speaker));
   },
 
   // Auto-discovery events (fired on app startup)

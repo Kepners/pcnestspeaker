@@ -10,6 +10,8 @@ const { spawn, execSync } = require('child_process');
 const { AudioStreamer } = require('./audio-streamer');
 const audioDeviceManager = require('./audio-device-manager');
 const { StreamStats } = require('./stream-stats');
+const settingsManager = require('./settings-manager');
+const autoStartManager = require('./auto-start-manager');
 
 // Keep global references
 let mainWindow = null;
@@ -1288,6 +1290,43 @@ ipcMain.handle('get-volume', async (event, speakerName) => {
   }
 });
 
+// Settings management
+ipcMain.handle('get-settings', () => {
+  return settingsManager.getAllSettings();
+});
+
+ipcMain.handle('update-settings', (event, updates) => {
+  settingsManager.updateSettings(updates);
+  return { success: true };
+});
+
+ipcMain.handle('save-last-speaker', (event, speaker) => {
+  settingsManager.saveLastSpeaker(speaker);
+  return { success: true };
+});
+
+// Auto-start on Windows boot
+ipcMain.handle('is-auto-start-enabled', async () => {
+  try {
+    const enabled = await autoStartManager.isAutoStartEnabled();
+    return { success: true, enabled };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('toggle-auto-start', async () => {
+  try {
+    const enabled = await autoStartManager.toggleAutoStart();
+    // Update settings
+    settingsManager.setSetting('autoStart', enabled);
+    return { success: true, enabled };
+  } catch (error) {
+    sendLog(`Auto-start toggle failed: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
 // App lifecycle
 app.whenReady().then(() => {
   // Kill any leftover processes from previous runs (port conflicts, etc.)
@@ -1309,6 +1348,21 @@ app.whenReady().then(() => {
       console.log('[Main] Background pipeline failed:', err.message);
     });
   }, 3000); // Wait 3s (after discovery)
+
+  // Auto-connect to last speaker if enabled (wait for pipeline to be ready)
+  setTimeout(() => {
+    const settings = settingsManager.getAllSettings();
+    if (settings.autoConnect && settings.lastSpeaker) {
+      console.log('[Main] Auto-connecting to last speaker:', settings.lastSpeaker.name);
+      sendLog(`Auto-connecting to ${settings.lastSpeaker.name}...`, 'info');
+
+      // Auto-start streaming to last speaker
+      // We'll send a message to the renderer to trigger this
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('auto-connect', settings.lastSpeaker);
+      }
+    }
+  }, 5000); // Wait 5s (after pipeline is ready)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

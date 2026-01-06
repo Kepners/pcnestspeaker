@@ -12,6 +12,8 @@ const speakerList = document.getElementById('speaker-list');
 const businessLink = document.getElementById('business-link');
 const debugLog = document.getElementById('debug-log');
 const clearLogBtn = document.getElementById('clear-log-btn');
+const autoConnectToggle = document.getElementById('auto-connect-toggle');
+const autoStartToggle = document.getElementById('auto-start-toggle');
 
 // State
 let speakers = [];
@@ -43,9 +45,33 @@ function log(message, type = 'info') {
   console.log(`[${type}] ${message}`);
 }
 
+// Load and apply settings
+async function loadSettings() {
+  try {
+    const settings = await window.api.getSettings();
+    log('Settings loaded');
+
+    // Apply auto-connect checkbox state
+    if (autoConnectToggle) {
+      autoConnectToggle.checked = settings.autoConnect || false;
+    }
+
+    // Apply auto-start checkbox state
+    if (autoStartToggle) {
+      const autoStartResult = await window.api.isAutoStartEnabled();
+      autoStartToggle.checked = autoStartResult.enabled || false;
+    }
+  } catch (error) {
+    log(`Failed to load settings: ${error.message}`, 'error');
+  }
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
   log('App initialized');
+
+  // Load and apply settings
+  await loadSettings();
 
   // Check dependencies first
   await checkDependencies();
@@ -105,6 +131,53 @@ function setupEventListeners() {
   window.api.onAudioDevicesDiscovered((devices) => {
     log(`Auto-discovered ${devices.length} audio devices`);
     devices.forEach(d => log(`  - ${d}`));
+  });
+
+  // Settings: Auto-connect toggle
+  if (autoConnectToggle) {
+    autoConnectToggle.addEventListener('change', async (e) => {
+      const enabled = e.target.checked;
+      log(`Auto-connect ${enabled ? 'enabled' : 'disabled'}`);
+      await window.api.updateSettings({ autoConnect: enabled });
+    });
+  }
+
+  // Settings: Auto-start toggle
+  if (autoStartToggle) {
+    autoStartToggle.addEventListener('change', async (e) => {
+      const enabled = e.target.checked;
+      log(`Toggling auto-start...`);
+
+      try {
+        const result = await window.api.toggleAutoStart();
+        if (result.success) {
+          log(`Auto-start ${result.enabled ? 'enabled' : 'disabled'}`, 'success');
+          // Update checkbox to match actual state
+          autoStartToggle.checked = result.enabled;
+        } else {
+          log(`Auto-start toggle failed: ${result.error}`, 'error');
+          // Revert checkbox
+          autoStartToggle.checked = !enabled;
+        }
+      } catch (error) {
+        log(`Auto-start error: ${error.message}`, 'error');
+        // Revert checkbox
+        autoStartToggle.checked = !enabled;
+      }
+    });
+  }
+
+  // Listen for auto-connect event from main process
+  window.api.onAutoConnect(async (speaker) => {
+    log(`Auto-connecting to ${speaker.name}...`, 'info');
+
+    // Find speaker in list
+    const speakerIndex = speakers.findIndex(s => s.name === speaker.name);
+    if (speakerIndex !== -1) {
+      await selectSpeaker(speakerIndex);
+    } else {
+      log(`Speaker "${speaker.name}" not found`, 'error');
+    }
   });
 }
 
@@ -521,6 +594,13 @@ function renderAudioDevices() {
 async function selectSpeaker(index) {
   selectedSpeaker = speakers[index];
   log(`Selected speaker: ${selectedSpeaker.name}`);
+
+  // Save as last speaker for auto-connect
+  try {
+    await window.api.saveLastSpeaker(selectedSpeaker);
+  } catch (error) {
+    log(`Failed to save speaker: ${error.message}`, 'warning');
+  }
 
   // Update UI
   speakerList.querySelectorAll('.speaker-item').forEach((item, i) => {
