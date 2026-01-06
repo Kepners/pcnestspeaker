@@ -990,6 +990,186 @@ ipcMain.handle('webrtc-signal', async (event, speakerName, message) => {
   }
 });
 
+// Stereo separation streaming
+let stereoFFmpegProcesses = { left: null, right: null };
+let stereoCloudflared = null;
+
+ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker) => {
+  try {
+    sendLog(`Starting stereo separation: L="${leftSpeaker.name}", R="${rightSpeaker.name}"`);
+
+    // 1. Start MediaMTX (if not already running)
+    if (!mediamtxProcess) {
+      await startMediaMTX();
+      await new Promise(r => setTimeout(r, 3000)); // Wait for MediaMTX to be ready
+    }
+
+    // 2. Start FFmpeg for LEFT channel
+    sendLog('Starting FFmpeg LEFT channel...');
+    const ffmpegPath = getFFmpegPath();
+
+    stereoFFmpegProcesses.left = spawn(ffmpegPath, [
+      '-hide_banner', '-loglevel', 'error',
+      '-f', 'dshow',
+      '-i', 'audio=virtual-audio-capturer',
+      '-af', 'pan=mono|c0=c0',  // Extract left channel
+      '-c:a', 'libopus',
+      '-b:a', '128k',
+      '-ar', '48000',
+      '-ac', '1',
+      '-f', 'rtsp',
+      '-rtsp_transport', 'tcp',
+      'rtsp://localhost:8554/left'
+    ], { stdio: 'pipe' });
+
+    stereoFFmpegProcesses.left.stderr.on('data', (data) => {
+      const msg = data.toString();
+      if (msg.includes('Error') || msg.includes('error')) {
+        sendLog(`FFmpeg LEFT: ${msg}`, 'error');
+      }
+    });
+
+    await new Promise(r => setTimeout(r, 2000));
+    sendLog('LEFT channel streaming', 'success');
+
+    // 3. Start FFmpeg for RIGHT channel
+    sendLog('Starting FFmpeg RIGHT channel...');
+
+    stereoFFmpegProcesses.right = spawn(ffmpegPath, [
+      '-hide_banner', '-loglevel', 'error',
+      '-f', 'dshow',
+      '-i', 'audio=virtual-audio-capturer',
+      '-af', 'pan=mono|c0=c1',  // Extract right channel
+      '-c:a', 'libopus',
+      '-b:a', '128k',
+      '-ar', '48000',
+      '-ac', '1',
+      '-f', 'rtsp',
+      '-rtsp_transport', 'tcp',
+      'rtsp://localhost:8554/right'
+    ], { stdio: 'pipe' });
+
+    stereoFFmpegProcesses.right.stderr.on('data', (data) => {
+      const msg = data.toString();
+      if (msg.includes('Error') || msg.includes('error')) {
+        sendLog(`FFmpeg RIGHT: ${msg}`, 'error');
+      }
+    });
+
+    await new Promise(r => setTimeout(r, 2000));
+    sendLog('RIGHT channel streaming', 'success');
+
+    // 4. Get local IP
+    const localIp = getLocalIp();
+    const webrtcUrl = `http://${localIp}:8889`;
+
+    // 5. Cast to LEFT speaker
+    sendLog(`Casting to LEFT speaker: "${leftSpeaker.name}"`);
+    const leftResult = await runPython([
+      'webrtc-launch',
+      leftSpeaker.name,
+      webrtcUrl,
+      '', // No speaker_ip (use discovery)
+      'left' // Stream name
+    ]);
+
+    if (!leftResult.success) {
+      throw new Error(`Left speaker cast failed: ${leftResult.error}`);
+    }
+    sendLog(`LEFT speaker connected`, 'success');
+
+    // 6. Cast to RIGHT speaker
+    sendLog(`Casting to RIGHT speaker: "${rightSpeaker.name}"`);
+    const rightResult = await runPython([
+      'webrtc-launch',
+      rightSpeaker.name,
+      webrtcUrl,
+      '', // No speaker_ip (use discovery)
+      'right' // Stream name
+    ]);
+
+    if (!rightResult.success) {
+      throw new Error(`Right speaker cast failed: ${rightResult.error}`);
+    }
+    sendLog(`RIGHT speaker connected`, 'success');
+
+    sendLog('Stereo separation streaming active!', 'success');
+    return { success: true };
+
+  } catch (error) {
+    sendLog(`Stereo streaming failed: ${error.message}`, 'error');
+    // Clean up on error
+    if (stereoFFmpegProcesses.left) {
+      stereoFFmpegProcesses.left.kill();
+      stereoFFmpegProcesses.left = null;
+    }
+    if (stereoFFmpegProcesses.right) {
+      stereoFFmpegProcesses.right.kill();
+      stereoFFmpegProcesses.right = null;
+    }
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('stop-stereo-streaming', async (event, leftSpeaker, rightSpeaker) => {
+  try {
+    sendLog('Stopping stereo streaming...');
+
+    // Stop FFmpeg processes
+    if (stereoFFmpegProcesses.left) {
+      stereoFFmpegProcesses.left.kill();
+      stereoFFmpegProcesses.left = null;
+      sendLog('LEFT channel stopped');
+    }
+
+    if (stereoFFmpegProcesses.right) {
+      stereoFFmpegProcesses.right.kill();
+      stereoFFmpegProcesses.right = null;
+      sendLog('RIGHT channel stopped');
+    }
+
+    // Stop casting to both speakers
+    if (leftSpeaker) {
+      await runPython(['stop', leftSpeaker.name]).catch(() => {});
+    }
+    if (rightSpeaker) {
+      await runPython(['stop', rightSpeaker.name]).catch(() => {});
+    }
+
+    sendLog('Stereo streaming stopped', 'success');
+    return { success: true };
+
+  } catch (error) {
+    sendLog(`Stop failed: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+// Volume control
+ipcMain.handle('set-volume', async (event, speakerName, volume) => {
+  try {
+    const result = await runPython(['set-volume', speakerName, String(volume)]);
+    if (result.success) {
+      sendLog(`Volume set to ${Math.round(volume * 100)}% on "${speakerName}"`, 'success');
+    } else {
+      sendLog(`Volume set failed: ${result.error}`, 'error');
+    }
+    return result;
+  } catch (error) {
+    sendLog(`Volume control error: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-volume', async (event, speakerName) => {
+  try {
+    const result = await runPython(['get-volume', speakerName]);
+    return result;
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // App lifecycle
 app.whenReady().then(() => {
   // Kill any leftover processes from previous runs (port conflicts, etc.)

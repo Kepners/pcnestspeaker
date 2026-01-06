@@ -19,6 +19,18 @@ contextBridge.exposeInMainWorld('api', {
   // Test ping (plays sound on speaker without streaming)
   pingSpeaker: (speakerName) => ipcRenderer.invoke('ping-speaker', speakerName),
 
+  // Stereo separation streaming
+  startStereoStreaming: (leftSpeaker, rightSpeaker) =>
+    ipcRenderer.invoke('start-stereo-streaming', leftSpeaker, rightSpeaker),
+  stopStereoStreaming: (leftSpeaker, rightSpeaker) =>
+    ipcRenderer.invoke('stop-stereo-streaming', leftSpeaker, rightSpeaker),
+
+  // Volume control
+  setVolume: (speakerName, volume) =>
+    ipcRenderer.invoke('set-volume', speakerName, volume),
+  getVolume: (speakerName) =>
+    ipcRenderer.invoke('get-volume', speakerName),
+
   // Dependency management
   checkDependencies: () => ipcRenderer.invoke('check-dependencies'),
   installDependency: (dep) => ipcRenderer.invoke('install-dependency', dep),

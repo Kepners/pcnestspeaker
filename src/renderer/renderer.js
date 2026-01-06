@@ -430,17 +430,21 @@ async function startStereoStreaming() {
   log(`Starting stereo streaming: L="${leftSpeaker.name}", R="${rightSpeaker.name}"`, 'info');
 
   try {
-    // TODO: Start MediaMTX + FFmpeg with stereo separation
-    // TODO: Cast to both speakers with left/right streams
-    // For now, just mark as streaming
-    stereoMode.streaming = true;
-    stereoMode.enabled = true;
+    // Call the IPC handler to start stereo streaming
+    const result = await window.api.startStereoStreaming(leftSpeaker, rightSpeaker);
 
-    log('Stereo streaming started!', 'success');
-    renderSpeakers();
+    if (result.success) {
+      stereoMode.streaming = true;
+      stereoMode.enabled = true;
+      log('Stereo streaming started!', 'success');
+      renderSpeakers();
+    } else {
+      throw new Error(result.error || 'Unknown error');
+    }
   } catch (error) {
     log(`Stereo streaming failed: ${error.message}`, 'error');
     stereoMode.streaming = false;
+    renderSpeakers();
   }
 }
 
@@ -452,15 +456,25 @@ async function stopStereoStreaming() {
 
   log('Stopping stereo streaming...', 'info');
 
-  try {
-    // TODO: Stop FFmpeg processes
-    // TODO: Stop casting to both speakers
-    stereoMode.streaming = false;
+  const leftSpeaker = stereoMode.leftSpeaker !== null ? speakers[stereoMode.leftSpeaker] : null;
+  const rightSpeaker = stereoMode.rightSpeaker !== null ? speakers[stereoMode.rightSpeaker] : null;
 
-    log('Stereo streaming stopped', 'info');
-    renderSpeakers();
+  try {
+    // Call the IPC handler to stop stereo streaming
+    const result = await window.api.stopStereoStreaming(leftSpeaker, rightSpeaker);
+
+    if (result.success) {
+      stereoMode.streaming = false;
+      log('Stereo streaming stopped', 'success');
+      renderSpeakers();
+    } else {
+      throw new Error(result.error || 'Unknown error');
+    }
   } catch (error) {
     log(`Stop failed: ${error.message}`, 'error');
+    // Mark as stopped anyway to avoid stuck state
+    stereoMode.streaming = false;
+    renderSpeakers();
   }
 }
 
