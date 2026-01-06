@@ -13,6 +13,7 @@ const { StreamStats } = require('./stream-stats');
 const settingsManager = require('./settings-manager');
 const autoStartManager = require('./auto-start-manager');
 const trayManager = require('./tray-manager');
+const usageTracker = require('./usage-tracker');
 
 // Keep global references
 let mainWindow = null;
@@ -177,6 +178,7 @@ function createWindow() {
 function cleanup() {
   sendLog('Cleaning up all processes...');
   trayManager.updateTrayState(false); // Update tray to idle state
+  usageTracker.stopTracking(); // Stop tracking usage time
 
   // Stop audio streamer (HTTP mode)
   if (audioStreamer) {
@@ -780,6 +782,17 @@ ipcMain.handle('discover-devices', async () => {
 // Start streaming to a speaker
 ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, streamingMode = 'http') => {
   try {
+    // Check if trial has expired
+    if (usageTracker.isTrialExpired()) {
+      const usage = usageTracker.getUsage();
+      return {
+        success: false,
+        error: 'Trial expired',
+        trialExpired: true,
+        usageInfo: usage
+      };
+    }
+
     sendLog(`Starting ${streamingMode} stream to "${speakerName}"...`);
     currentStreamingMode = streamingMode;
 
@@ -810,6 +823,7 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       if (result.success) {
         sendLog('HTTP streaming started!', 'success');
         trayManager.updateTrayState(true); // Update tray to streaming state
+        usageTracker.startTracking(); // Start tracking usage time
         return { success: true, url: streamUrl };
       } else {
         await audioStreamer.stop();
@@ -883,6 +897,7 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       if (result.success) {
         sendLog('WebRTC streaming started! (via MediaMTX)', 'success');
         trayManager.updateTrayState(true); // Update tray to streaming state
+        usageTracker.startTracking(); // Start tracking usage time
         return { success: true, url: httpsUrl, mode: streamingMode };
       } else if (result.error_code === 'CUSTOM_RECEIVER_NOT_SUPPORTED') {
         // Custom receiver not supported - automatically fallback to HTTP streaming
@@ -912,6 +927,7 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           sendLog('HTTP streaming started! (automatic fallback)', 'success');
           currentStreamingMode = 'http';
           trayManager.updateTrayState(true); // Update tray to streaming state
+          usageTracker.startTracking(); // Start tracking usage time
           return { success: true, url: streamUrl, mode: 'http', fallback: true };
         } else {
           cleanup();
@@ -970,10 +986,12 @@ ipcMain.handle('stop-streaming', async (event, speakerName) => {
 
     sendLog('Stopped', 'success');
     trayManager.updateTrayState(false); // Update tray to idle state
+    usageTracker.stopTracking(); // Stop tracking usage time
     return { success: true };
   } catch (error) {
     sendLog(`Stop error: ${error.message}`, 'error');
     trayManager.updateTrayState(false); // Update tray to idle state
+    usageTracker.stopTracking(); // Stop tracking usage time
     return { success: false, error: error.message };
   }
 });
@@ -1037,6 +1055,11 @@ ipcMain.handle('set-volume', async (event, speakerName, volume) => {
   } catch (error) {
     return { success: false, error: error.message };
   }
+});
+
+// Get usage statistics (trial tracking)
+ipcMain.handle('get-usage', () => {
+  return usageTracker.getUsage();
 });
 
 // Open external link

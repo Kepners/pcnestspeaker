@@ -21,6 +21,11 @@ const volumeSlider = document.getElementById('volume-slider');
 const volumePercentage = document.getElementById('volume-percentage');
 const muteBtn = document.getElementById('mute-btn');
 
+// Trial info elements
+const trialCard = document.getElementById('trial-card');
+const trialTime = document.getElementById('trial-time');
+const purchaseBtn = document.getElementById('purchase-btn');
+
 // State
 let speakers = [];
 let selectedSpeaker = null;
@@ -83,6 +88,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Load and apply settings
   await loadSettings();
+
+  // Update trial display
+  await updateTrialDisplay();
+
+  // Update trial display every 30 seconds
+  setInterval(updateTrialDisplay, 30000);
 
   // Check dependencies first
   await checkDependencies();
@@ -220,6 +231,14 @@ function setupEventListeners() {
   if (muteBtn) {
     muteBtn.addEventListener('click', async () => {
       await toggleMute();
+    });
+  }
+
+  // Purchase button
+  if (purchaseBtn) {
+    purchaseBtn.addEventListener('click', () => {
+      log('Opening purchase page...');
+      window.api.openExternal('https://pcnestspeaker.app/purchase'); // TODO: Update with actual URL
     });
   }
 }
@@ -716,6 +735,14 @@ async function selectSpeaker(index) {
 
       log(`Streaming to ${selectedSpeaker.name} ${modeText}!`, 'success');
     } else {
+      // Check if trial expired
+      if (result.trialExpired) {
+        log('Trial expired! Please purchase a license to continue.', 'error');
+        showError('Your 10-hour trial has expired. Click "Purchase License" to continue using PC Nest Speaker.');
+        await updateTrialDisplay(); // Force update trial display
+        return;
+      }
+
       throw new Error(result.error || 'Failed to start streaming');
     }
   } catch (error) {
@@ -764,6 +791,46 @@ async function toggleMute() {
     updateVolumeDisplay();
   } catch (error) {
     log(`Mute toggle failed: ${error.message}`, 'error');
+  }
+}
+
+// Trial tracking functions
+async function updateTrialDisplay() {
+  if (!trialCard || !trialTime) return;
+
+  try {
+    const usage = await window.api.getUsage();
+
+    // Don't show trial card if user has license
+    if (usage.hasLicense) {
+      trialCard.style.display = 'none';
+      return;
+    }
+
+    // Show trial card
+    trialCard.style.display = 'block';
+
+    // Update time display
+    trialTime.textContent = usage.formattedRemaining;
+
+    // Show purchase button if trial expired or low on time (<1 hour)
+    if (usage.trialExpired || usage.remainingSeconds < 3600) {
+      if (purchaseBtn) {
+        purchaseBtn.style.display = 'block';
+      }
+    }
+
+    // Change color to warning if low on time
+    if (usage.remainingSeconds < 3600 && !usage.trialExpired) {
+      trialTime.style.color = '#FF2A6D'; // Warning color
+    } else if (usage.trialExpired) {
+      trialTime.textContent = 'Trial Expired';
+      trialTime.style.color = '#FF2A6D';
+    } else {
+      trialTime.style.color = 'var(--color-blush)';
+    }
+  } catch (error) {
+    log(`Failed to update trial display: ${error.message}`, 'warning');
   }
 }
 

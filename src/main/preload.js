@@ -44,6 +44,9 @@ contextBridge.exposeInMainWorld('api', {
   checkDependencies: () => ipcRenderer.invoke('check-dependencies'),
   installDependency: (dep) => ipcRenderer.invoke('install-dependency', dep),
 
+  // Trial & Usage
+  getUsage: () => ipcRenderer.invoke('get-usage'),
+
   // Utilities
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 

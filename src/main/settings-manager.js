@@ -22,7 +22,14 @@ const DEFAULT_SETTINGS = {
   autoConnect: false,          // Auto-connect to last speaker on startup
   autoStart: false,            // Start app on Windows boot
   streamingMode: 'webrtc-system',  // Default streaming mode
-  version: '1.0.0'
+  version: '1.0.0',
+
+  // Trial & License
+  usageSeconds: 0,             // Total streaming seconds used
+  firstUsedAt: null,           // Timestamp of first use
+  lastUsedAt: null,            // Timestamp of last use
+  trialExpired: false,         // Trial expiration flag
+  licenseKey: null             // Purchased license key
 };
 
 let cachedSettings = null;

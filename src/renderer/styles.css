@@ -693,6 +693,53 @@ body {
   text-align: right;
 }
 
+/* Trial Info */
+.trial-card {
+  background: rgba(252, 191, 183, 0.1);
+  border: 1px solid var(--color-blush);
+}
+
+.trial-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trial-text {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.trial-label {
+  font-size: 0.9rem;
+  color: var(--color-beige);
+}
+
+.trial-time {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-blush);
+}
+
+.btn-purchase {
+  background: linear-gradient(135deg, var(--color-blush), var(--color-beige));
+  border: none;
+  padding: 10px 20px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-coffee);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn-purchase:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(252, 191, 183, 0.4);
+}
+
 /* Stream Monitor */
 .stream-monitor {
   background: rgba(166, 152, 136, 0.2);
