@@ -125,8 +125,19 @@ body {
 }
 
 .status-indicator.connecting .status-dot {
-  background: var(--color-warning);
-  animation: pulse 1s infinite;
+  /* Hide dot, show timer icon instead */
+  display: none;
+}
+
+.status-indicator.connecting::before {
+  content: '';
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  background: url('../assets/timer.gif') no-repeat center;
+  background-size: contain;
+  /* Tint to match Powder Blush color */
+  filter: brightness(0) saturate(100%) invert(86%) sepia(15%) saturate(674%) hue-rotate(313deg) brightness(101%) contrast(97%);
 }
 
 @keyframes pulse {
