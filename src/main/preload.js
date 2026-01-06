@@ -48,6 +48,9 @@ contextBridge.exposeInMainWorld('api', {
   onLog: (callback) => {
     ipcRenderer.on('log', (event, message, type) => callback(message, type));
   },
+  onStreamStats: (callback) => {
+    ipcRenderer.on('stream-stats', (event, stats) => callback(stats));
+  },
 
   // Auto-discovery events (fired on app startup)
   onSpeakersDiscovered: (callback) => {

@@ -9,10 +9,12 @@ const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { AudioStreamer } = require('./audio-streamer');
 const audioDeviceManager = require('./audio-device-manager');
+const { StreamStats } = require('./stream-stats');
 
 // Keep global references
 let mainWindow = null;
 let audioStreamer = null;
+let streamStats = null;
 let pythonCastProcess = null;
 let webrtcStreamerProcess = null;
 let localTunnelProcess = null;
@@ -134,6 +136,16 @@ function createWindow() {
   if (process.argv.includes('--dev')) {
     mainWindow.webContents.openDevTools();
   }
+
+  // Initialize stream stats
+  streamStats = new StreamStats();
+
+  // Send stats updates to renderer every 100ms
+  streamStats.addListener((stats) => {
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('stream-stats', stats);
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -373,6 +385,11 @@ async function startFFmpegWebRTC(audioDevice) {
     ffmpegWebrtcProcess.stderr.on('data', (data) => {
       const msg = data.toString().trim();
       // FFmpeg outputs progress to stderr
+      // Parse for stream stats
+      if (streamStats) {
+        streamStats.parseFfmpegOutput(msg);
+      }
+      // Only log non-progress messages
       if (msg && !msg.includes('frame=') && !msg.includes('size=')) {
         sendLog(`[FFmpeg] ${msg}`);
       }
@@ -819,6 +836,11 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         await startFFmpegWebRTC(audioDeviceName);
         sendLog('FFmpeg publishing to MediaMTX', 'success');
 
+        // Start stream stats monitoring
+        if (streamStats) {
+          streamStats.start();
+        }
+
         // Step 3: Start localtunnel for HTTPS (Cast requires HTTPS)
         // MediaMTX WebRTC endpoint is on port 8889
         httpsUrl = await startLocalTunnel(8889);
@@ -904,6 +926,11 @@ ipcMain.handle('stop-streaming', async (event, speakerName) => {
     // Stop FFmpeg stream
     if (audioStreamer) {
       await audioStreamer.stop();
+    }
+
+    // Stop stream stats
+    if (streamStats) {
+      streamStats.stop();
     }
 
     // Restore original Windows audio device
@@ -1087,6 +1114,10 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
 
     stereoFFmpegProcesses.left.stderr.on('data', (data) => {
       const msg = data.toString();
+      // Parse for stream stats
+      if (streamStats) {
+        streamStats.parseFfmpegOutput(msg);
+      }
       if (msg.includes('Error') || msg.includes('error')) {
         sendLog(`FFmpeg LEFT: ${msg}`, 'error');
       }
@@ -1114,6 +1145,10 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
 
     stereoFFmpegProcesses.right.stderr.on('data', (data) => {
       const msg = data.toString();
+      // Parse for stream stats (right channel contributes to total)
+      if (streamStats) {
+        streamStats.parseFfmpegOutput(msg);
+      }
       if (msg.includes('Error') || msg.includes('error')) {
         sendLog(`FFmpeg RIGHT: ${msg}`, 'error');
       }
@@ -1121,6 +1156,11 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
 
     await new Promise(r => setTimeout(r, 2000));
     sendLog('RIGHT channel streaming', 'success');
+
+    // Start stream stats monitoring (for stereo mode)
+    if (streamStats) {
+      streamStats.start();
+    }
 
     // 4. Get local IP
     const localIp = getLocalIp();
@@ -1197,6 +1237,11 @@ ipcMain.handle('stop-stereo-streaming', async (event, leftSpeaker, rightSpeaker)
     }
     if (rightSpeaker) {
       await runPython(['stop', rightSpeaker.name]).catch(() => {});
+    }
+
+    // Stop stream stats
+    if (streamStats) {
+      streamStats.stop();
     }
 
     // Restore original Windows audio device

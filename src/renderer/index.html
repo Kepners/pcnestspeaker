@@ -25,17 +25,40 @@
         </div>
       </div>
 
-      <!-- Speaker Selection -->
-      <div class="card">
-        <h2 class="card-title">Select Speaker</h2>
-        <div class="speaker-list" id="speaker-list">
-          <div class="empty-state">
-            <p>No speakers discovered</p>
+      <!-- Stream Monitor (hidden by default) -->
+      <div class="card stream-monitor" id="stream-monitor" style="display: none;">
+        <h2 class="card-title">Stream Monitor</h2>
+
+        <!-- Audio Visualizer -->
+        <div class="audio-visualizer">
+          <div class="visualizer-bar" data-bar="1"></div>
+          <div class="visualizer-bar" data-bar="2"></div>
+          <div class="visualizer-bar" data-bar="3"></div>
+          <div class="visualizer-bar" data-bar="4"></div>
+          <div class="visualizer-bar" data-bar="5"></div>
+          <div class="visualizer-bar" data-bar="6"></div>
+          <div class="visualizer-bar" data-bar="7"></div>
+          <div class="visualizer-bar" data-bar="8"></div>
+        </div>
+
+        <!-- Stream Stats -->
+        <div class="stream-stats">
+          <div class="stat-item">
+            <span class="stat-label">Bitrate</span>
+            <span class="stat-value" id="stat-bitrate">0 kbps</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Data Sent</span>
+            <span class="stat-value" id="stat-data">0 MB</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Connection</span>
+            <span class="stat-value" id="stat-connection">Active</span>
           </div>
         </div>
       </div>
 
-      <!-- Speaker List (Auto-discovered) -->
+      <!-- Speaker Selection -->
       <div class="card">
         <h2 class="card-title">SELECT SPEAKER</h2>
         <div id="speaker-list" class="speaker-list">

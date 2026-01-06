@@ -771,3 +771,73 @@ async function pingSelectedSpeaker() {
   hideLoading();
   pingBtn.disabled = false;
 }
+
+// ===================
+// Stream Monitor
+// ===================
+
+const streamMonitor = document.getElementById('stream-monitor');
+const statBitrate = document.getElementById('stat-bitrate');
+const statData = document.getElementById('stat-data');
+const statConnection = document.getElementById('stat-connection');
+const visualizerBars = document.querySelectorAll('.visualizer-bar');
+
+/**
+ * Update stream monitor with new stats
+ */
+function updateStreamMonitor(stats) {
+  if (!stats.isActive) {
+    // Hide monitor when not streaming
+    if (streamMonitor) {
+      streamMonitor.style.display = 'none';
+    }
+    return;
+  }
+
+  // Show monitor when streaming
+  if (streamMonitor) {
+    streamMonitor.style.display = 'block';
+  }
+
+  // Update bitrate
+  if (statBitrate) {
+    statBitrate.textContent = `${stats.bitrate} kbps`;
+  }
+
+  // Update data sent
+  if (statData) {
+    statData.textContent = `${stats.data} MB`;
+  }
+
+  // Update connection status with color coding
+  if (statConnection) {
+    statConnection.textContent = stats.connection;
+    statConnection.className = 'stat-value';
+
+    if (stats.connection === 'Active') {
+      statConnection.classList.add('good');
+    } else if (stats.connection === 'Inactive') {
+      statConnection.classList.add('error');
+    }
+  }
+
+  // Update audio visualizer bars
+  if (stats.audioLevels && visualizerBars.length > 0) {
+    stats.audioLevels.forEach((level, index) => {
+      if (visualizerBars[index]) {
+        // Set bar height (level is 0-100)
+        visualizerBars[index].style.height = `${level}%`;
+
+        // Add active class if level is significant
+        if (level > 30) {
+          visualizerBars[index].classList.add('active');
+        } else {
+          visualizerBars[index].classList.remove('active');
+        }
+      }
+    });
+  }
+}
+
+// Listen for stream stats updates from main process
+window.api.onStreamStats(updateStreamMonitor);
