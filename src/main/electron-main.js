@@ -48,6 +48,9 @@ let ffmpegWebrtcProcess = null;
 let webrtcPipelineReady = false;
 let webrtcPipelineError = null;
 
+// TEST: Disable CloudFlare to see if local IP works
+const DISABLE_CLOUDFLARE = true;
+
 // Kill any leftover processes from previous runs (called on startup)
 function killLeftoverProcesses() {
   console.log('[Main] Killing any leftover processes...');
@@ -584,12 +587,33 @@ async function preStartWebRTCPipeline() {
     await startFFmpegWebRTC(audioDevice);
     sendLog('[Background] FFmpeg publishing', 'success');
 
-    // Step 3: Start localtunnel
-    const url = await startLocalTunnel(8889);
-    sendLog(`[Background] Tunnel ready: ${url}`, 'success');
+    // Step 3: Start tunnel (or use local IP if disabled)
+    let url;
+    if (DISABLE_CLOUDFLARE) {
+      // Get local IP address
+      const os = require('os');
+      const networkInterfaces = os.networkInterfaces();
+      let localIP = 'localhost';
+
+      for (const interfaceName in networkInterfaces) {
+        for (const iface of networkInterfaces[interfaceName]) {
+          if (iface.family === 'IPv4' && !iface.internal && iface.address.startsWith('192.168.')) {
+            localIP = iface.address;
+            break;
+          }
+        }
+      }
+
+      url = `http://${localIP}:8889`;
+      sendLog(`[Background] Using local IP: ${url} (CloudFlare disabled)`, 'success');
+    } else {
+      url = await startLocalTunnel(8889);
+      sendLog(`[Background] Tunnel ready: ${url}`, 'success');
+    }
 
     webrtcPipelineReady = true;
     webrtcPipelineError = null;
+    tunnelUrl = url;
     sendLog('WebRTC pipeline ready! Select a speaker and click "Start".', 'success');
 
   } catch (error) {
