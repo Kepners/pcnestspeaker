@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { AudioStreamer } = require('./audio-streamer');
+const audioDeviceManager = require('./audio-device-manager');
 
 // Keep global references
 let mainWindow = null;
@@ -50,6 +51,29 @@ let webrtcPipelineError = null;
 
 // TEST: Disable CloudFlare to see if local IP works
 const DISABLE_CLOUDFLARE = true;
+
+// Helper: Get local IP address
+function getLocalIp() {
+  const os = require('os');
+  const networkInterfaces = os.networkInterfaces();
+
+  for (const interfaceName in networkInterfaces) {
+    for (const iface of networkInterfaces[interfaceName]) {
+      if (iface.family === 'IPv4' && !iface.internal && iface.address.startsWith('192.168.')) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
+// Helper: Get FFmpeg path from AudioStreamer
+function getFFmpegPath() {
+  if (!audioStreamer) {
+    audioStreamer = new AudioStreamer();
+  }
+  return audioStreamer.getFFmpegPath();
+}
 
 // Kill any leftover processes from previous runs (called on startup)
 function killLeftoverProcesses() {
@@ -172,6 +196,15 @@ function cleanup() {
     }
     localTunnelProcess = null;
     tunnelUrl = null;
+  }
+
+  // Restore original Windows audio device
+  try {
+    audioDeviceManager.restoreOriginalDevice().catch(() => {
+      // Ignore errors on cleanup
+    });
+  } catch (e) {
+    // Ignore errors on cleanup
   }
 
   currentStreamingMode = null;
@@ -711,6 +744,16 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
     sendLog(`Starting ${streamingMode} stream to "${speakerName}"...`);
     currentStreamingMode = streamingMode;
 
+    // Switch Windows default audio to virtual device
+    try {
+      sendLog('Switching Windows audio to virtual device...');
+      await audioDeviceManager.switchToStreamingDevice();
+      sendLog('Audio device switched', 'success');
+    } catch (err) {
+      sendLog(`Audio switch failed: ${err.message}`, 'warning');
+      // Continue anyway - user may have already set it manually
+    }
+
     if (streamingMode === 'http') {
       // HTTP MP3 streaming mode
       if (!audioStreamer) {
@@ -863,6 +906,16 @@ ipcMain.handle('stop-streaming', async (event, speakerName) => {
       await audioStreamer.stop();
     }
 
+    // Restore original Windows audio device
+    try {
+      sendLog('Restoring original audio device...');
+      await audioDeviceManager.restoreOriginalDevice();
+      sendLog('Audio device restored', 'success');
+    } catch (err) {
+      sendLog(`Audio restore failed: ${err.message}`, 'warning');
+      // Continue anyway
+    }
+
     sendLog('Stopped', 'success');
     return { success: true };
   } catch (error) {
@@ -997,6 +1050,16 @@ let stereoCloudflared = null;
 ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker) => {
   try {
     sendLog(`Starting stereo separation: L="${leftSpeaker.name}", R="${rightSpeaker.name}"`);
+
+    // Switch Windows default audio to virtual device
+    try {
+      sendLog('Switching Windows audio to virtual device...');
+      await audioDeviceManager.switchToStreamingDevice();
+      sendLog('Audio device switched', 'success');
+    } catch (err) {
+      sendLog(`Audio switch failed: ${err.message}`, 'warning');
+      // Continue anyway - user may have already set it manually
+    }
 
     // 1. Start MediaMTX (if not already running)
     if (!mediamtxProcess) {
@@ -1134,6 +1197,16 @@ ipcMain.handle('stop-stereo-streaming', async (event, leftSpeaker, rightSpeaker)
     }
     if (rightSpeaker) {
       await runPython(['stop', rightSpeaker.name]).catch(() => {});
+    }
+
+    // Restore original Windows audio device
+    try {
+      sendLog('Restoring original audio device...');
+      await audioDeviceManager.restoreOriginalDevice();
+      sendLog('Audio device restored', 'success');
+    } catch (err) {
+      sendLog(`Audio restore failed: ${err.message}`, 'warning');
+      // Continue anyway
     }
 
     sendLog('Stereo streaming stopped', 'success');
