@@ -13,8 +13,10 @@ const { app } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-// Settings file path (in user data directory)
-const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
+// Settings file path (in user data directory) - lazy initialization
+function getSettingsFilePath() {
+  return path.join(app.getPath('userData'), 'settings.json');
+}
 
 // Default settings
 const DEFAULT_SETTINGS = {
@@ -39,13 +41,14 @@ let cachedSettings = null;
  */
 function loadSettings() {
   try {
-    if (!fs.existsSync(SETTINGS_FILE)) {
+    const settingsFile = getSettingsFilePath();
+    if (!fs.existsSync(settingsFile)) {
       console.log('[Settings] File not found, using defaults');
       cachedSettings = { ...DEFAULT_SETTINGS };
       return cachedSettings;
     }
 
-    const data = fs.readFileSync(SETTINGS_FILE, 'utf8');
+    const data = fs.readFileSync(settingsFile, 'utf8');
     const settings = JSON.parse(data);
 
     // Merge with defaults (in case new settings are added in updates)
@@ -72,8 +75,9 @@ function saveSettings(settings) {
     }
 
     // Write settings to file
+    const settingsFile = getSettingsFilePath();
     const data = JSON.stringify(settings, null, 2);
-    fs.writeFileSync(SETTINGS_FILE, data, 'utf8');
+    fs.writeFileSync(settingsFile, data, 'utf8');
 
     // Update cache
     cachedSettings = settings;

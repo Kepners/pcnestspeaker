@@ -1412,7 +1412,9 @@ ipcMain.handle('toggle-auto-start', async () => {
 // ═══════════════════════════════════════════════════════════
 // LICENSE KEY VALIDATION
 // ═══════════════════════════════════════════════════════════
-const licensePath = path.join(app.getPath('userData'), 'license.json');
+function getLicensePath() {
+  return path.join(app.getPath('userData'), 'license.json');
+}
 
 // License validation API URL (will be set up later)
 const LICENSE_API_URL = 'https://pcnestspeaker.app/api/validate-license';
@@ -1426,6 +1428,7 @@ function validateLicenseFormat(key) {
 
 function getLicenseData() {
   try {
+    const licensePath = getLicensePath();
     if (fs.existsSync(licensePath)) {
       return JSON.parse(fs.readFileSync(licensePath, 'utf8'));
     }
@@ -1441,6 +1444,7 @@ function saveLicenseData(licenseKey) {
     activatedAt: new Date().toISOString()
   };
   try {
+    const licensePath = getLicensePath();
     fs.writeFileSync(licensePath, JSON.stringify(data, null, 2));
     return data;
   } catch (err) {
@@ -1451,6 +1455,7 @@ function saveLicenseData(licenseKey) {
 
 function deleteLicenseData() {
   try {
+    const licensePath = getLicensePath();
     if (fs.existsSync(licensePath)) {
       fs.unlinkSync(licensePath);
       return true;
