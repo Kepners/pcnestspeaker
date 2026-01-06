@@ -89,6 +89,38 @@
         </div>
       </div>
 
+      <!-- License Card (Collapsible) -->
+      <div class="card license-card license-collapsible" id="license-card" onclick="toggleLicenseDetails(event)">
+        <!-- Collapsed view (default) -->
+        <div class="license-collapsed" id="license-collapsed">
+          <div class="license-row">
+            <span class="license-label">LICENSE STATUS</span>
+            <span id="license-status" class="license-status-value">Checking...</span>
+          </div>
+        </div>
+        <!-- Expanded view (on click) -->
+        <div class="license-expanded" id="license-expanded">
+          <div class="license-row">
+            <span class="license-label">LICENSE STATUS</span>
+            <span id="license-status-expanded" class="license-status-value">Checking...</span>
+          </div>
+          <div class="license-row">
+            <span class="license-label">LICENSE KEY</span>
+            <span id="license-key-display" class="license-key-text">PNS-****-****-****-****</span>
+          </div>
+          <div class="license-row" style="border: none;">
+            <span class="license-terms">
+              Personal use on up to 2 devices.<br>
+              Lifetime access to all updates.
+            </span>
+          </div>
+          <div class="license-buttons">
+            <button class="btn btn-secondary" onclick="showLicenseModal(); event.stopPropagation();">Change Key</button>
+            <button class="btn btn-danger" onclick="deactivateLicense(); event.stopPropagation();">Deactivate</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Settings -->
       <div class="card">
         <h2 class="card-title">SETTINGS</h2>
@@ -123,6 +155,25 @@
       <p>&copy; 2026 <a href="#" id="business-link">ChoppedOnions.xyz</a></p>
     </footer>
 
+  </div>
+
+  <!-- License Modal -->
+  <div class="modal-overlay" id="license-modal" style="display: none;">
+    <div class="modal-box">
+      <h2 class="modal-title">Enter License Key</h2>
+      <p class="modal-description">
+        Check your email for your license key after purchase
+      </p>
+      <input type="text" class="modal-input" id="license-input" placeholder="PNS-XXXX-XXXX-XXXX-XXXX">
+      <div class="modal-error" id="license-error" style="display: none;"></div>
+      <div class="modal-buttons">
+        <button class="btn btn-secondary" onclick="openPurchaseLink()">Buy License</button>
+        <button class="btn btn-primary" onclick="activateLicense()">Activate</button>
+      </div>
+      <p class="modal-footer">
+        Lost your key? <a href="#" onclick="openSupportLink(); return false;" class="modal-link">Contact support</a>
+      </p>
+    </div>
   </div>
 
   <script src="webrtc-client.js"></script>

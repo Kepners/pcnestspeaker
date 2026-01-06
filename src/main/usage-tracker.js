@@ -158,6 +158,20 @@ function activateLicense(licenseKey) {
 }
 
 /**
+ * Deactivate license (re-enables trial limits)
+ */
+function deactivateLicense() {
+  settingsManager.setSetting('licenseKey', null);
+  console.log('[UsageTracker] License deactivated');
+
+  // Check if trial should be marked as expired
+  const usageSeconds = settingsManager.getSetting('usageSeconds') || 0;
+  if (usageSeconds >= TRIAL_SECONDS) {
+    settingsManager.setSetting('trialExpired', true);
+  }
+}
+
+/**
  * Format seconds to human-readable time (e.g., "2h 30m")
  */
 function formatTime(seconds) {
@@ -181,5 +195,6 @@ module.exports = {
   isTrialExpired,
   resetUsage,
   activateLicense,
+  deactivateLicense,
   formatTime
 };

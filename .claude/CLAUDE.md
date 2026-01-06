@@ -1042,11 +1042,132 @@ mainWindow.on('close', (event) => {
 5. ~~System Tray Icon~~ ✅ DONE
 6. ~~Volume Control Integration~~ ✅ DONE
 7. Multi-Speaker Streaming (7.1: Multi-casting PRO, 7.2: Phone/PC mic → Nest PRO)
-8. Trial & Usage Timer (10 hours)
+~~8. Trial & Usage Timer (10 hours)~~ ✅ DONE
 9. License Verification & Purchase Flow
 10. Match DeleteMyTweets Styling
 
-**Progress: 6 out of 10 tasks completed (60%)**
+**Progress: 7 out of 10 tasks completed (70%)**
+
+### January 6, 2026 (Session 12 - Continuation) - Trial & Usage Timer
+
+**Session Goal:** Implement Task #8 - Trial & Usage Timer (10 hours)
+
+#### What Was Completed
+- ✅ Created usage-tracker.js module (200 lines) - Core trial tracking logic
+- ✅ Track streaming time (only while actively streaming)
+- ✅ 10-hour trial limit enforcement
+- ✅ Settings persistence (usageSeconds, firstUsedAt, lastUsedAt, trialExpired, licenseKey)
+- ✅ Backend integration (start/stop tracking on stream events)
+- ✅ IPC handler for usage statistics
+- ✅ Trial UI card with remaining time display
+- ✅ Purchase button and trial expired handling
+- ✅ Auto-update every 30 seconds
+- ✅ Warning indicators (<1 hour remaining)
+- ✅ Committed: `f5881db` - feat: Add 10-hour trial tracking system
+
+#### Implementation Details
+
+**UsageTracker Module** (usage-tracker.js):
+- `startTracking()` - Begin counting usage time
+- `stopTracking()` - Stop counting and save final usage
+- `updateUsage()` - Update usage every 10 seconds (while streaming)
+- `getUsage()` - Returns statistics (used, remaining, percent, expired)
+- `isTrialExpired()` - Check if trial limit reached
+- `activateLicense(key)` - Activate license (removes trial limits)
+- `formatTime(seconds)` - Convert to "Xh Ym" format
+
+**Trial Tracking Flow**:
+1. User starts streaming → `startTracking()` called
+2. Every 10 seconds → `updateUsage()` increments usageSeconds
+3. User stops streaming → `stopTracking()` saves final usage
+4. Trial expires at 36000 seconds (10 hours)
+5. Expired trials block streaming until license purchased
+
+**Settings Data**:
+```javascript
+{
+  usageSeconds: 0,        // Total seconds streamed
+  firstUsedAt: null,      // Timestamp of first use
+  lastUsedAt: null,       // Timestamp of last use
+  trialExpired: false,    // Expiration flag
+  licenseKey: null        // Purchased license (bypasses trial)
+}
+```
+
+**Backend Integration Points** (electron-main.js):
+- Start-streaming handler → Check trial expired first, start tracking on success
+- Stop-streaming handler → Stop tracking
+- Cleanup function → Stop tracking
+- IPC handler: get-usage → Returns usage statistics
+
+**Frontend UI** (index.html):
+```html
+<div class="card trial-card">
+  <div class="trial-text">
+    <span class="trial-label">Trial Time Remaining:</span>
+    <span class="trial-time">10h 0m</span>
+  </div>
+  <button class="btn-purchase">Purchase License</button>
+</div>
+```
+
+**Trial Display Logic** (renderer.js):
+- `updateTrialDisplay()` - Updates remaining time display
+- Runs on app startup and every 30 seconds
+- Hides card if user has license
+- Shows purchase button when trial expired or <1 hour left
+- Warning color when <1 hour remaining
+
+**Trial Expired Handling**:
+- Stream start blocks with error: "Trial expired"
+- Error message: "Your 10-hour trial has expired. Click 'Purchase License' to continue."
+- Purchase button opens purchase URL
+- Forces trial display update to show "Trial Expired"
+
+#### User Experience
+**Trial Behavior:**
+- Trial starts automatically on first streaming session
+- Only counts time while actively streaming (not idle time)
+- Persistent across app restarts
+- Clear display of remaining time
+- Warning when approaching limit
+
+**Visual Feedback:**
+- Green time remaining (normal)
+- Orange/red time remaining (<1 hour warning)
+- "Trial Expired" message when limit reached
+- Purchase button appears with clear gradient styling
+
+**Purchase Flow:**
+- Click "Purchase License" → Opens purchase page
+- After purchase → Enter license key (Task #9)
+- Licensed users → No trial restrictions
+
+#### Files Created/Modified
+- `src/main/usage-tracker.js` - NEW: Trial tracking core module
+- `src/main/settings-manager.js` - MODIFIED: Added trial fields to defaults
+- `src/main/electron-main.js` - MODIFIED: Tracking integration, trial check, IPC handler
+- `src/main/preload.js` - MODIFIED: Exposed getUsage API
+- `src/renderer/index.html` - MODIFIED: Trial card UI
+- `src/renderer/styles.css` - MODIFIED: Trial card styling (48 lines)
+- `src/renderer/renderer.js` - MODIFIED: Trial display logic, expired handling, purchase button
+
+#### Git Commit
+- `f5881db` - feat: Add 10-hour trial tracking system
+
+#### Next Steps (From Priority List)
+1. ~~Fix Audio Routing - Windows Audio Device Auto-Switch~~ ✅ DONE
+2. ~~Add Stream Monitor (audio visualizer, bitrate, data counter)~~ ✅ DONE
+3. ~~Auto-Start on Windows Boot~~ ✅ DONE
+4. ~~Document Device Compatibility~~ ✅ DONE
+5. ~~System Tray Icon~~ ✅ DONE
+6. ~~Volume Control Integration~~ ✅ DONE
+7. Multi-Speaker Streaming (7.1: Multi-casting PRO, 7.2: Phone/PC mic → Nest PRO)
+8. ~~Trial & Usage Timer (10 hours)~~ ✅ DONE
+9. License Verification & Purchase Flow
+10. Match DeleteMyTweets Styling
+
+**Progress: 7 out of 10 tasks completed (70%)**
 
 ---
 

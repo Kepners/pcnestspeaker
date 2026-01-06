@@ -47,6 +47,11 @@ contextBridge.exposeInMainWorld('api', {
   // Trial & Usage
   getUsage: () => ipcRenderer.invoke('get-usage'),
 
+  // License Management
+  getLicense: () => ipcRenderer.invoke('get-license'),
+  activateLicense: (licenseKey) => ipcRenderer.invoke('activate-license', licenseKey),
+  deactivateLicense: () => ipcRenderer.invoke('deactivate-license'),
+
   // Utilities
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 

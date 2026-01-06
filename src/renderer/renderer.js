@@ -89,6 +89,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load and apply settings
   await loadSettings();
 
+  // Load license status
+  await loadLicenseStatus();
+
   // Update trial display
   await updateTrialDisplay();
 
@@ -234,11 +237,11 @@ function setupEventListeners() {
     });
   }
 
-  // Purchase button
+  // Purchase button - opens license modal
   if (purchaseBtn) {
     purchaseBtn.addEventListener('click', () => {
-      log('Opening purchase page...');
-      window.api.openExternal('https://pcnestspeaker.app/purchase'); // TODO: Update with actual URL
+      log('Opening license activation...');
+      showLicenseModal();
     });
   }
 }
@@ -1091,6 +1094,261 @@ function updateStreamMonitor(stats) {
       }
     });
   }
+}
+
+// ===================
+// License Management
+// ===================
+
+// DOM Elements
+const licenseCard = document.getElementById('license-card');
+const licenseStatus = document.getElementById('license-status');
+const licenseStatusExpanded = document.getElementById('license-status-expanded');
+const licenseKeyDisplay = document.getElementById('license-key-display');
+const licenseModal = document.getElementById('license-modal');
+const licenseInput = document.getElementById('license-input');
+const licenseError = document.getElementById('license-error');
+
+// State
+let hasValidLicense = false;
+
+/**
+ * Format license input as user types: PNS-XXXX-XXXX-XXXX-XXXX
+ */
+function formatLicenseInput(input) {
+  // Remove everything except alphanumeric
+  let clean = input.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+  // Remove PNS prefix if user typed it (we'll add it back)
+  if (clean.startsWith('PNS')) {
+    clean = clean.slice(3);
+  }
+
+  // Split into groups of 4 characters
+  const parts = clean.match(/.{1,4}/g) || [];
+  const limited = parts.slice(0, 4);
+
+  return 'PNS-' + limited.join('-');
+}
+
+/**
+ * Mask license key for display: PNS-XXXX-****-****-XXXX
+ */
+function maskLicenseKey(key) {
+  if (!key || key.length < 23) return 'PNS-****-****-****-****';
+  // Show: PNS-XXXX-****-****-XXXX
+  return key.slice(0, 9) + '-****-****-' + key.slice(-4);
+}
+
+/**
+ * Show license modal
+ */
+function showLicenseModal() {
+  if (licenseModal) {
+    licenseModal.style.display = 'flex';
+    if (licenseInput) {
+      licenseInput.value = '';
+      licenseInput.focus();
+    }
+    if (licenseError) {
+      licenseError.style.display = 'none';
+    }
+  }
+}
+
+/**
+ * Hide license modal
+ */
+function hideLicenseModal() {
+  if (licenseModal) {
+    licenseModal.style.display = 'none';
+  }
+}
+
+/**
+ * Open purchase link (Stripe payment - will be set up later)
+ */
+function openPurchaseLink() {
+  log('Opening purchase page...');
+  window.api.openExternal('https://pcnestspeaker.app/purchase'); // TODO: Update with actual Stripe link
+}
+
+/**
+ * Open support link
+ */
+function openSupportLink() {
+  window.api.openExternal('mailto:support@choppedonions.xyz?subject=Lost%20License%20Key');
+}
+
+/**
+ * Activate license key
+ */
+async function activateLicense() {
+  const input = licenseInput ? licenseInput.value.trim() : '';
+
+  if (!input) {
+    if (licenseError) {
+      licenseError.textContent = 'Please enter a license key';
+      licenseError.style.display = 'block';
+    }
+    return;
+  }
+
+  // Format the input
+  const formatted = formatLicenseInput(input);
+
+  // Basic client-side validation
+  if (formatted.length !== 23) {
+    if (licenseError) {
+      licenseError.textContent = 'License key is incomplete. Format: PNS-XXXX-XXXX-XXXX-XXXX';
+      licenseError.style.display = 'block';
+    }
+    return;
+  }
+
+  // Hide error
+  if (licenseError) {
+    licenseError.style.display = 'none';
+  }
+
+  // Send to main process for validation
+  try {
+    const result = await window.api.activateLicense(formatted);
+
+    if (result.success) {
+      hideLicenseModal();
+      updateLicenseDisplay(result.license);
+      log('License activated! Enjoy PC Nest Speaker', 'success');
+
+      // Refresh trial display (will hide if licensed)
+      await updateTrialDisplay();
+    } else {
+      if (licenseError) {
+        licenseError.textContent = result.error || 'Invalid license key';
+        licenseError.style.display = 'block';
+      }
+      log(`License activation failed: ${result.error}`, 'error');
+    }
+  } catch (error) {
+    if (licenseError) {
+      licenseError.textContent = 'Failed to activate license. Please try again.';
+      licenseError.style.display = 'block';
+    }
+    log(`License error: ${error.message}`, 'error');
+  }
+}
+
+/**
+ * Deactivate license
+ */
+async function deactivateLicense() {
+  if (confirm('Deactivate your license? You will need to enter a license key to continue using PC Nest Speaker after the trial.')) {
+    try {
+      await window.api.deactivateLicense();
+      log('License deactivated', 'info');
+
+      // Update UI
+      hasValidLicense = false;
+      updateLicenseDisplay(null);
+
+      // Refresh trial display
+      await updateTrialDisplay();
+    } catch (error) {
+      log(`Deactivation failed: ${error.message}`, 'error');
+    }
+  }
+}
+
+/**
+ * Update license display
+ */
+function updateLicenseDisplay(license) {
+  if (license && license.licenseKey) {
+    hasValidLicense = true;
+
+    // Update collapsed view
+    if (licenseStatus) {
+      licenseStatus.textContent = 'Active ✓';
+      licenseStatus.style.color = 'var(--color-blush)';
+    }
+
+    // Update expanded view
+    if (licenseStatusExpanded) {
+      licenseStatusExpanded.textContent = 'Active ✓';
+      licenseStatusExpanded.style.color = 'var(--color-blush)';
+    }
+
+    if (licenseKeyDisplay) {
+      licenseKeyDisplay.textContent = maskLicenseKey(license.licenseKey);
+    }
+  } else {
+    hasValidLicense = false;
+
+    // Update collapsed view
+    if (licenseStatus) {
+      licenseStatus.textContent = 'Not Active';
+      licenseStatus.style.color = '#FF2A6D';
+    }
+
+    // Update expanded view
+    if (licenseStatusExpanded) {
+      licenseStatusExpanded.textContent = 'Not Active';
+      licenseStatusExpanded.style.color = '#FF2A6D';
+    }
+
+    if (licenseKeyDisplay) {
+      licenseKeyDisplay.textContent = 'No license';
+    }
+  }
+}
+
+/**
+ * Toggle license card expansion
+ */
+function toggleLicenseDetails(event) {
+  // Don't toggle if clicking buttons
+  if (event.target.tagName === 'BUTTON') return;
+
+  if (licenseCard) {
+    licenseCard.classList.toggle('expanded');
+  }
+}
+
+/**
+ * Load license status on startup
+ */
+async function loadLicenseStatus() {
+  try {
+    const license = await window.api.getLicense();
+    updateLicenseDisplay(license);
+
+    // If no license, show the license modal (user must activate before using)
+    // But only if trial is also expired
+    const usage = await window.api.getUsage();
+    if (!license && usage.trialExpired) {
+      showLicenseModal();
+    }
+  } catch (error) {
+    log(`Failed to load license: ${error.message}`, 'error');
+    updateLicenseDisplay(null);
+  }
+}
+
+// License input auto-formatting
+if (licenseInput) {
+  licenseInput.addEventListener('input', (e) => {
+    const cursorPos = e.target.selectionStart;
+    const oldLen = e.target.value.length;
+    e.target.value = formatLicenseInput(e.target.value);
+    const newLen = e.target.value.length;
+
+    // Adjust cursor position
+    e.target.setSelectionRange(cursorPos + (newLen - oldLen), cursorPos + (newLen - oldLen));
+  });
+
+  licenseInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') activateLicense();
+  });
 }
 
 // Listen for stream stats updates from main process

@@ -740,6 +740,204 @@ body {
   box-shadow: 0 4px 12px rgba(252, 191, 183, 0.4);
 }
 
+/* License Card (Collapsible) */
+.license-card {
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: rgba(166, 152, 136, 0.1);
+  border: 1px solid var(--color-beige);
+}
+
+.license-card:hover {
+  border-color: var(--color-blush);
+  background: rgba(166, 152, 136, 0.15);
+}
+
+.license-collapsible .license-expanded {
+  display: none;
+}
+
+.license-collapsible .license-collapsed {
+  display: block;
+}
+
+.license-collapsible.expanded .license-expanded {
+  display: block;
+}
+
+.license-collapsible.expanded .license-collapsed {
+  display: none;
+}
+
+.license-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(166, 152, 136, 0.2);
+}
+
+.license-row:last-child {
+  border-bottom: none;
+}
+
+.license-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--color-beige);
+}
+
+.license-status-value {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.license-key-text {
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: var(--color-blush);
+  letter-spacing: 1px;
+}
+
+.license-terms {
+  font-size: 0.75rem;
+  color: rgba(166, 152, 136, 0.8);
+  line-height: 1.5;
+}
+
+.license-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.license-buttons .btn {
+  flex: 1;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+}
+
+.btn-danger {
+  background: rgba(255, 42, 109, 0.15);
+  border: 1px solid #FF2A6D;
+  color: #FF2A6D;
+}
+
+.btn-danger:hover {
+  background: rgba(255, 42, 109, 0.3);
+  box-shadow: 0 2px 8px rgba(255, 42, 109, 0.3);
+}
+
+/* License Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(13, 6, 32, 0.85);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-box {
+  background: var(--color-coffee);
+  border: 1px solid var(--color-blush);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.modal-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-blush);
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.modal-description {
+  font-size: 0.85rem;
+  color: var(--color-beige);
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.modal-input {
+  width: 100%;
+  padding: 12px;
+  background: rgba(166, 152, 136, 0.1);
+  border: 1px solid var(--color-beige);
+  border-radius: 8px;
+  color: var(--color-blush);
+  font-size: 1rem;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 2px;
+  text-align: center;
+  margin-bottom: 12px;
+  transition: all 0.2s ease;
+}
+
+.modal-input:focus {
+  outline: none;
+  border-color: var(--color-blush);
+  background: rgba(166, 152, 136, 0.15);
+  box-shadow: 0 0 12px rgba(252, 191, 183, 0.3);
+}
+
+.modal-input::placeholder {
+  color: rgba(166, 152, 136, 0.5);
+}
+
+.modal-error {
+  color: #FF2A6D;
+  font-size: 0.85rem;
+  text-align: center;
+  margin: -8px 0 16px;
+  padding: 8px;
+  background: rgba(255, 42, 109, 0.1);
+  border-radius: 6px;
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.modal-buttons .btn {
+  flex: 1;
+  padding: 12px 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.modal-footer {
+  font-size: 0.75rem;
+  color: var(--color-beige);
+  text-align: center;
+}
+
+.modal-link {
+  color: var(--color-blush);
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.modal-link:hover {
+  text-decoration: underline;
+}
+
 /* Stream Monitor */
 .stream-monitor {
   background: rgba(166, 152, 136, 0.2);

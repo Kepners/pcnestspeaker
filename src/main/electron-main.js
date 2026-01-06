@@ -1409,6 +1409,133 @@ ipcMain.handle('toggle-auto-start', async () => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════
+// LICENSE KEY VALIDATION
+// ═══════════════════════════════════════════════════════════
+const licensePath = path.join(app.getPath('userData'), 'license.json');
+
+// License validation API URL (will be set up later)
+const LICENSE_API_URL = 'https://pcnestspeaker.app/api/validate-license';
+
+// Validate license key format: PNS-XXXX-XXXX-XXXX-XXXX
+function validateLicenseFormat(key) {
+  if (!key || key.length !== 23) return false;
+  const pattern = /^PNS-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+  return pattern.test(key.toUpperCase());
+}
+
+function getLicenseData() {
+  try {
+    if (fs.existsSync(licensePath)) {
+      return JSON.parse(fs.readFileSync(licensePath, 'utf8'));
+    }
+  } catch (err) {
+    console.error('[License] Error loading license:', err);
+  }
+  return null;
+}
+
+function saveLicenseData(licenseKey) {
+  const data = {
+    licenseKey: licenseKey.toUpperCase(),
+    activatedAt: new Date().toISOString()
+  };
+  try {
+    fs.writeFileSync(licensePath, JSON.stringify(data, null, 2));
+    return data;
+  } catch (err) {
+    console.error('[License] Error saving license:', err);
+    return null;
+  }
+}
+
+function deleteLicenseData() {
+  try {
+    if (fs.existsSync(licensePath)) {
+      fs.unlinkSync(licensePath);
+      return true;
+    }
+  } catch (err) {
+    console.error('[License] Error deleting license:', err);
+  }
+  return false;
+}
+
+// Get current license status
+ipcMain.handle('get-license', async () => {
+  const license = getLicenseData();
+  return license;
+});
+
+// Validate and save a new license key
+ipcMain.handle('activate-license', async (event, licenseKey) => {
+  if (!licenseKey) {
+    return { success: false, error: 'Please enter a license key' };
+  }
+
+  const cleanKey = licenseKey.toUpperCase().trim();
+
+  // Check format first (quick client-side validation)
+  if (!validateLicenseFormat(cleanKey)) {
+    return {
+      success: false,
+      error: 'Invalid license key format. Please check and try again.'
+    };
+  }
+
+  // Validate against server
+  try {
+    const fetch = require('node-fetch');
+    const response = await fetch(LICENSE_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ licenseKey: cleanKey })
+    });
+
+    const result = await response.json();
+
+    if (!result.valid) {
+      return {
+        success: false,
+        error: result.error || 'Invalid license key. Please check and try again.'
+      };
+    }
+
+    // License is valid - save it locally
+    const saved = saveLicenseData(cleanKey);
+    if (saved) {
+      // Activate license in usage tracker (removes trial limit)
+      usageTracker.activateLicense(cleanKey);
+
+      return { success: true, license: saved };
+    } else {
+      return { success: false, error: 'Failed to save license' };
+    }
+  } catch (err) {
+    console.error('[License] Validation API error:', err);
+    // If API is unreachable, fall back to format-only validation (offline mode)
+    // This allows the app to work offline after initial activation
+    const existingLicense = getLicenseData();
+    if (existingLicense && existingLicense.licenseKey === cleanKey) {
+      // Re-activating same key - allow it
+      usageTracker.activateLicense(cleanKey);
+      return { success: true, license: existingLicense };
+    } else {
+      return {
+        success: false,
+        error: 'Unable to verify license. Please check your internet connection.'
+      };
+    }
+  }
+});
+
+// Deactivate (delete) the current license
+ipcMain.handle('deactivate-license', async () => {
+  deleteLicenseData();
+  usageTracker.deactivateLicense();
+  return { success: true };
+});
+
 // App lifecycle
 app.whenReady().then(() => {
   // Kill any leftover processes from previous runs (port conflicts, etc.)
