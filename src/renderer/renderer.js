@@ -9,35 +9,19 @@
 // DOM Elements
 const statusIndicator = document.getElementById('status-indicator');
 const speakerList = document.getElementById('speaker-list');
-const discoverBtn = document.getElementById('discover-btn');
-const streamBtn = document.getElementById('stream-btn');
 const businessLink = document.getElementById('business-link');
-const audioDeviceSelect = document.getElementById('audio-device-select');
-const audioSourceCard = document.getElementById('audio-source-card');
 const debugLog = document.getElementById('debug-log');
 const clearLogBtn = document.getElementById('clear-log-btn');
-const pingBtn = document.getElementById('ping-btn');
-const modeRadios = document.querySelectorAll('input[name="stream-mode"]');
-const modeDescription = document.getElementById('mode-description');
 
 // State
 let speakers = [];
-let audioDevices = [];
 let selectedSpeaker = null;
 let isStreaming = false;
-let streamingMode = 'http'; // 'http', 'webrtc-system', or 'webrtc-vbcable'
 let dependencies = {
   vbcable: null,      // null = checking, true = installed, false = missing
   screenCapture: null,
   mediamtx: null,
   ffmpeg: null
-};
-
-// Mode descriptions
-const modeDescriptions = {
-  'http': 'HTTP streaming is the most reliable option. Requires VB-CABLE as your Windows audio output device. ~8 second latency.',
-  'webrtc-system': 'WebRTC with system audio capture. Automatically captures any audio playing on your PC. Requires screen-capture-recorder to be installed. <1 second latency.',
-  'webrtc-vbcable': 'WebRTC with VB-CABLE. You must set VB-CABLE as your Windows audio output. Most stable low-latency option. <1 second latency.'
 };
 
 // Debug logging
@@ -68,27 +52,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Set up event listeners
   setupEventListeners();
 
-  // Update UI for default mode
-  updateModeUI();
+  // Auto-discover speakers on startup
+  await discoverDevices();
 });
 
 function setupEventListeners() {
-  discoverBtn.addEventListener('click', discoverDevices);
-  streamBtn.addEventListener('click', toggleStreaming);
-  pingBtn.addEventListener('click', pingSelectedSpeaker);
-
   businessLink.addEventListener('click', (e) => {
     e.preventDefault();
     window.api.openExternal('https://choppedonions.xyz');
-  });
-
-  // Mode selection
-  modeRadios.forEach(radio => {
-    radio.addEventListener('change', (e) => {
-      streamingMode = e.target.value;
-      log(`Streaming mode: ${streamingMode}`);
-      updateModeUI();
-    });
   });
 
   // Clear log button
@@ -125,9 +96,7 @@ function setupEventListeners() {
   // Listen for auto-discovered audio devices (fired on app startup)
   window.api.onAudioDevicesDiscovered((devices) => {
     log(`Auto-discovered ${devices.length} audio devices`);
-    audioDevices = devices;
     devices.forEach(d => log(`  - ${d}`));
-    renderAudioDevices();
   });
 }
 
