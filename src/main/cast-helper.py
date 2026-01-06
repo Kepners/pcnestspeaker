@@ -396,9 +396,20 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None):
 
         # Launch custom receiver
         print(f"[WebRTC] Launching receiver (App ID: {CUSTOM_APP_ID})...", file=sys.stderr)
-        cast.start_app(CUSTOM_APP_ID)
-        time.sleep(3)  # Wait for receiver to load
-        print("[WebRTC] Receiver launched!", file=sys.stderr)
+        print(f"[WebRTC] Device UUID: {cast.uuid}", file=sys.stderr)
+        print(f"[WebRTC] Device model: {cast.cast_info.model_name}", file=sys.stderr)
+
+        try:
+            cast.start_app(CUSTOM_APP_ID)
+            time.sleep(3)  # Wait for receiver to load
+            print("[WebRTC] Receiver launched!", file=sys.stderr)
+        except Exception as app_error:
+            print(f"[WebRTC] ERROR: {type(app_error).__name__}: {str(app_error)}", file=sys.stderr)
+            print(f"[WebRTC] Possible causes:", file=sys.stderr)
+            print(f"[WebRTC]   1. App {CUSTOM_APP_ID} is UNPUBLISHED and device {cast.uuid} not registered for testing", file=sys.stderr)
+            print(f"[WebRTC]   2. App {CUSTOM_APP_ID} does not exist", file=sys.stderr)
+            print(f"[WebRTC]   3. Check: https://cast.google.com/publish/", file=sys.stderr)
+            raise
 
         # If HTTPS URL provided, send it to receiver via custom namespace message
         if https_url:
