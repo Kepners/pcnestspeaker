@@ -1,0 +1,424 @@
+<html>
+<head>
+    <title>PC Nest Speaker</title>
+    <HTA:APPLICATION
+        ID="PCNestSpeaker"
+        APPLICATIONNAME="PC Nest Speaker"
+        BORDER="thin"
+        BORDERSTYLE="normal"
+        CAPTION="yes"
+        ICON="assets/icon.ico"
+        MAXIMIZEBUTTON="no"
+        MINIMIZEBUTTON="yes"
+        SHOWINTASKBAR="yes"
+        SINGLEINSTANCE="yes"
+        SYSMENU="yes"
+        VERSION="1.0"
+        WINDOWSTATE="normal"
+    />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #334E58 0%, #33261D 100%);
+            color: #FCBFB7;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            font-size: 28px;
+            margin-bottom: 5px;
+            color: #FCBFB7;
+        }
+        .subtitle {
+            text-align: center;
+            font-size: 14px;
+            color: #A69888;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(252,191,183,0.2);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .card h2 {
+            font-size: 16px;
+            color: #FCBFB7;
+            margin-bottom: 15px;
+            border-bottom: 1px solid rgba(252,191,183,0.2);
+            padding-bottom: 10px;
+        }
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .status-row:last-child { border-bottom: none; }
+        .status-label { color: #A69888; }
+        .status-value {
+            font-family: 'Consolas', monospace;
+            color: #FCBFB7;
+        }
+        .status-ok { color: #4CAF50; }
+        .status-error { color: #f44336; }
+        .status-pending { color: #FFC107; }
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 15px 20px;
+            margin: 10px 0;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #FCBFB7 0%, #A69888 100%);
+            color: #33261D;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(252,191,183,0.3);
+        }
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: #FCBFB7;
+            border: 1px solid rgba(252,191,183,0.3);
+        }
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.15);
+        }
+        .btn-danger {
+            background: rgba(244,67,54,0.2);
+            color: #f44336;
+            border: 1px solid rgba(244,67,54,0.3);
+        }
+        .btn-danger:hover {
+            background: rgba(244,67,54,0.3);
+        }
+        .url-box {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(252,191,183,0.2);
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            word-break: break-all;
+            margin: 10px 0;
+        }
+        .speaker-list {
+            max-height: 150px;
+            overflow-y: auto;
+            margin: 10px 0;
+        }
+        .speaker-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: rgba(255,255,255,0.05);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .speaker-item:hover {
+            background: rgba(252,191,183,0.2);
+        }
+        .speaker-item.selected {
+            background: rgba(252,191,183,0.3);
+            border: 1px solid #FCBFB7;
+        }
+        .log-box {
+            background: rgba(0,0,0,0.4);
+            border-radius: 6px;
+            padding: 10px;
+            font-family: 'Consolas', monospace;
+            font-size: 11px;
+            height: 120px;
+            overflow-y: auto;
+            color: #A69888;
+        }
+        .log-line { margin: 2px 0; }
+        .log-success { color: #4CAF50; }
+        .log-error { color: #f44336; }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .input-group input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid rgba(252,191,183,0.3);
+            border-radius: 6px;
+            background: rgba(0,0,0,0.3);
+            color: #FCBFB7;
+            font-family: inherit;
+        }
+        .input-group input:focus {
+            outline: none;
+            border-color: #FCBFB7;
+        }
+    </style>
+    <script language="VBScript">
+        Dim shell, fso, appPath, tunnelUrl
+        Set shell = CreateObject("WScript.Shell")
+        Set fso = CreateObject("Scripting.FileSystemObject")
+
+        ' Get app path
+        appPath = Replace(document.location.pathname, "/", "\")
+        If Left(appPath, 1) = "\" Then appPath = Mid(appPath, 2)
+        appPath = fso.GetParentFolderName(appPath)
+
+        Sub Window_OnLoad
+            window.resizeTo 650, 750
+            RefreshStatus
+            LoadTunnelUrl
+        End Sub
+
+        Sub Log(msg)
+            Dim logBox
+            Set logBox = document.getElementById("logBox")
+            logBox.innerHTML = logBox.innerHTML & "<div class='log-line'>" & Now & " - " & msg & "</div>"
+            logBox.scrollTop = logBox.scrollHeight
+        End Sub
+
+        Sub LogSuccess(msg)
+            Dim logBox
+            Set logBox = document.getElementById("logBox")
+            logBox.innerHTML = logBox.innerHTML & "<div class='log-line log-success'>" & Now & " - " & msg & "</div>"
+            logBox.scrollTop = logBox.scrollHeight
+        End Sub
+
+        Sub LogError(msg)
+            Dim logBox
+            Set logBox = document.getElementById("logBox")
+            logBox.innerHTML = logBox.innerHTML & "<div class='log-line log-error'>" & Now & " - " & msg & "</div>"
+            logBox.scrollTop = logBox.scrollHeight
+        End Sub
+
+        Sub LoadTunnelUrl
+            Dim urlFile, f
+            urlFile = appPath & "\tunnel_url.txt"
+            If fso.FileExists(urlFile) Then
+                Set f = fso.OpenTextFile(urlFile, 1)
+                tunnelUrl = Trim(f.ReadAll())
+                f.Close
+                document.getElementById("tunnelUrl").innerHTML = tunnelUrl
+            End If
+        End Sub
+
+        Sub RefreshStatus
+            ' Check if processes are running
+            Dim exec, output
+
+            ' Check MediaMTX
+            Set exec = shell.Exec("cmd /c tasklist /FI ""IMAGENAME eq mediamtx.exe"" 2>nul | findstr mediamtx")
+            output = exec.StdOut.ReadAll()
+            If InStr(output, "mediamtx") > 0 Then
+                document.getElementById("statusMediaMTX").innerHTML = "Running"
+                document.getElementById("statusMediaMTX").className = "status-value status-ok"
+            Else
+                document.getElementById("statusMediaMTX").innerHTML = "Stopped"
+                document.getElementById("statusMediaMTX").className = "status-value status-error"
+            End If
+
+            ' Check FFmpeg
+            Set exec = shell.Exec("cmd /c tasklist /FI ""IMAGENAME eq ffmpeg.exe"" 2>nul | findstr ffmpeg")
+            output = exec.StdOut.ReadAll()
+            If InStr(output, "ffmpeg") > 0 Then
+                document.getElementById("statusFFmpeg").innerHTML = "Running"
+                document.getElementById("statusFFmpeg").className = "status-value status-ok"
+            Else
+                document.getElementById("statusFFmpeg").innerHTML = "Stopped"
+                document.getElementById("statusFFmpeg").className = "status-value status-error"
+            End If
+
+            ' Check Cloudflared
+            Set exec = shell.Exec("cmd /c tasklist /FI ""IMAGENAME eq cloudflared.exe"" 2>nul | findstr cloudflared")
+            output = exec.StdOut.ReadAll()
+            If InStr(output, "cloudflared") > 0 Then
+                document.getElementById("statusTunnel").innerHTML = "Running"
+                document.getElementById("statusTunnel").className = "status-value status-ok"
+            Else
+                document.getElementById("statusTunnel").innerHTML = "Stopped"
+                document.getElementById("statusTunnel").className = "status-value status-error"
+            End If
+
+            LoadTunnelUrl
+        End Sub
+
+        Sub StartPipeline
+            Log "Starting pipeline..."
+
+            ' Kill existing
+            shell.Run "taskkill /F /IM mediamtx.exe", 0, True
+            shell.Run "taskkill /F /IM ffmpeg.exe", 0, True
+            shell.Run "taskkill /F /IM cloudflared.exe", 0, True
+
+            ' Start MediaMTX
+            Log "Starting MediaMTX..."
+            shell.Run "cmd /c cd /d """ & appPath & """ && start /min """" ""mediamtx\mediamtx.exe"" ""mediamtx\mediamtx-audio.yml""", 0, False
+            LogSuccess "MediaMTX started"
+
+            ' Wait a moment
+            shell.Run "cmd /c timeout /t 2 /nobreak", 0, True
+
+            ' Start FFmpeg
+            Log "Starting FFmpeg..."
+            shell.Run "cmd /c cd /d """ & appPath & """ && start /min """" ffmpeg -hide_banner -loglevel error -f dshow -i ""audio=virtual-audio-capturer"" -c:a libopus -b:a 128k -ar 48000 -ac 2 -f rtsp -rtsp_transport tcp rtsp://localhost:8554/pcaudio", 0, False
+            LogSuccess "FFmpeg started"
+
+            ' Wait a moment
+            shell.Run "cmd /c timeout /t 2 /nobreak", 0, True
+
+            ' Start Cloudflared
+            Log "Starting Cloudflare tunnel..."
+            shell.Run "cmd /c cd /d """ & appPath & """ && start """" cloudflared tunnel --url http://localhost:8889", 0, False
+            LogSuccess "Cloudflared started - check popup window for URL"
+
+            ' Refresh status
+            shell.Run "cmd /c timeout /t 3 /nobreak", 0, True
+            RefreshStatus
+
+            MsgBox "Pipeline started!" & vbCrLf & vbCrLf & "Copy the tunnel URL from the cloudflared window and paste it below.", vbInformation, "PC Nest Speaker"
+        End Sub
+
+        Sub StopPipeline
+            Log "Stopping all services..."
+            shell.Run "taskkill /F /IM mediamtx.exe", 0, True
+            shell.Run "taskkill /F /IM ffmpeg.exe", 0, True
+            shell.Run "taskkill /F /IM cloudflared.exe", 0, True
+            LogSuccess "All services stopped"
+            RefreshStatus
+        End Sub
+
+        Sub DiscoverSpeakers
+            Log "Discovering speakers..."
+            Dim exec, output
+            Set exec = shell.Exec("cmd /c cd /d """ & appPath & """ && python src/main/cast-helper.py discover 2>&1")
+            output = exec.StdOut.ReadAll()
+
+            Dim speakerList
+            Set speakerList = document.getElementById("speakerList")
+            speakerList.innerHTML = ""
+
+            Dim lines, line, i
+            lines = Split(output, vbCrLf)
+            For Each line In lines
+                line = Trim(line)
+                If Len(line) > 0 And InStr(line, "Discovered") = 0 And InStr(line, "---") = 0 Then
+                    speakerList.innerHTML = speakerList.innerHTML & "<div class='speaker-item' onclick='SelectSpeaker(this)'>" & line & "</div>"
+                End If
+            Next
+
+            LogSuccess "Found speakers"
+        End Sub
+
+        Sub SelectSpeaker(elem)
+            ' Remove selected class from all
+            Dim items, item
+            Set items = document.getElementsByClassName("speaker-item")
+            For Each item In items
+                item.className = "speaker-item"
+            Next
+            ' Add to clicked
+            elem.className = "speaker-item selected"
+            document.getElementById("speakerInput").value = elem.innerText
+        End Sub
+
+        Sub CastToSpeaker
+            Dim speaker, url
+            speaker = Trim(document.getElementById("speakerInput").value)
+            url = Trim(document.getElementById("urlInput").value)
+
+            If Len(speaker) = 0 Then
+                MsgBox "Please enter or select a speaker name", vbExclamation, "PC Nest Speaker"
+                Exit Sub
+            End If
+
+            If Len(url) = 0 Then
+                MsgBox "Please enter the tunnel URL", vbExclamation, "PC Nest Speaker"
+                Exit Sub
+            End If
+
+            Log "Casting to " & speaker & "..."
+
+            Dim cmd
+            cmd = "cmd /c cd /d """ & appPath & """ && python src/main/cast-helper.py webrtc-launch """ & speaker & """ """ & url & """ 2>&1"
+
+            Dim exec, output
+            Set exec = shell.Exec(cmd)
+            output = exec.StdOut.ReadAll()
+
+            If InStr(output, "error") > 0 Or InStr(output, "Error") > 0 Or InStr(output, "not found") > 0 Then
+                LogError "Cast failed: " & output
+                MsgBox "Cast failed: " & output, vbExclamation, "PC Nest Speaker"
+            Else
+                LogSuccess "Cast to " & speaker & " successful!"
+                MsgBox "Now streaming to " & speaker & "!", vbInformation, "PC Nest Speaker"
+            End If
+        End Sub
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>🔊 PC Nest Speaker</h1>
+        <p class="subtitle">Sub-second latency audio streaming to Google Nest</p>
+
+        <div class="card">
+            <h2>📊 Service Status</h2>
+            <div class="status-row">
+                <span class="status-label">MediaMTX (WebRTC)</span>
+                <span id="statusMediaMTX" class="status-value status-pending">Checking...</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">FFmpeg (Audio)</span>
+                <span id="statusFFmpeg" class="status-value status-pending">Checking...</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">Cloudflare Tunnel</span>
+                <span id="statusTunnel" class="status-value status-pending">Checking...</span>
+            </div>
+            <button class="btn btn-secondary" onclick="RefreshStatus">↻ Refresh Status</button>
+        </div>
+
+        <div class="card">
+            <h2>🚀 Pipeline Control</h2>
+            <button class="btn btn-primary" onclick="StartPipeline">▶ Start Streaming Pipeline</button>
+            <button class="btn btn-danger" onclick="StopPipeline">■ Stop All Services</button>
+        </div>
+
+        <div class="card">
+            <h2>📺 Cast to Speaker</h2>
+            <div class="input-group">
+                <input type="text" id="urlInput" placeholder="Paste tunnel URL (https://xxx.trycloudflare.com)">
+            </div>
+            <button class="btn btn-secondary" onclick="DiscoverSpeakers">🔍 Discover Speakers</button>
+            <div id="speakerList" class="speaker-list"></div>
+            <div class="input-group">
+                <input type="text" id="speakerInput" placeholder="Speaker name (e.g., Den pair)">
+            </div>
+            <button class="btn btn-primary" onclick="CastToSpeaker">📡 Cast Now</button>
+        </div>
+
+        <div class="card">
+            <h2>📋 Log</h2>
+            <div id="logBox" class="log-box">
+                <div class="log-line">Ready</div>
+            </div>
+        </div>
+
+        <div id="tunnelUrl" style="display:none;"></div>
+    </div>
+</body>
+</html>

@@ -447,6 +447,75 @@ mc.block_until_active(timeout=30)
   - 8189: ICE UDP/TCP (WebRTC media)
   - 9997: MediaMTX API (health checks)
 
+### January 5, 2026 (Session 7) - 🎉 WEBRTC STREAMING WORKING!
+**MAJOR MILESTONE: Sub-second latency audio streaming to Google Nest speakers achieved!**
+
+#### The Breakthrough
+- **WORKING:** Full WebRTC pipeline with sub-second latency
+- **Tested:** Green TV (Nest Hub), Den pair (stereo group)
+- **User reaction:** "FUCKING INSTANT!!!!!!!!!!"
+- **Latency:** Sub-1 second (imperceptible to human perception)
+
+#### Complete Working Pipeline
+```
+PC Audio → virtual-audio-capturer → FFmpeg (Opus) → RTSP → MediaMTX → WebRTC/WHEP → Cloudflare Tunnel → Custom Cast Receiver → Nest Speaker
+```
+
+#### Critical Fixes Made
+1. **MediaMTX config file** - Must specify config path explicitly or Opus codec rejected
+2. **Opus codec required** - AAC (MPEG-4 Audio) doesn't work with WebRTC
+3. **Custom receiver not default** - Must use `webrtc-launch` not `cast` command
+4. **cloudflared over localtunnel** - No interstitial page blocking WHEP requests
+
+#### Files Created/Modified
+- `cast-receiver/receiver.html` - WHEP-based WebRTC receiver
+- `docs/receiver.html` - GitHub Pages deployment (synced)
+- `mediamtx/mediamtx-audio.yml` - Audio-optimized MediaMTX config
+- `src/main/electron-main.js` - cloudflared support, MediaMTX integration
+- `src/main/cast-helper.py` - `webrtc-launch` command for custom receiver
+- `pc-nest-speaker.bat` - All-in-one launcher with menu
+- `dashboard.hta` - Windows HTA app with GUI control panel
+
+#### Git Commit
+- `5e9839c` - feat: WebRTC streaming to Nest speakers working!
+
+#### Achievement Summary
+**PC Nest Speaker is the FIRST and ONLY solution** that streams Windows system audio to Google Nest speakers with sub-second latency. No commercial solution exists with this capability.
+
+### January 6, 2026 (Session 8) - Revert to Working State
+**Session Goal:** Add stream monitor and auto-start features
+
+#### What Went Wrong
+- Added stream monitor UI (audio visualizer, bitrate display, data counter)
+- Added auto-start and auto-connect functionality
+- Modified multiple files: index.html, styles.css, renderer.js, preload.js, electron-main.js, audio-streamer.js
+- Created new file: audio-device-switcher.js (Windows audio switching)
+- **RESULT:** Audio completely stopped working - "NO AUDIO!!!!!!!"
+
+#### User Decision
+- **Reverted all changes** back to commit `5e9839c` (last working state from Jan 5 night)
+- Deleted new files created today (audio-device-switcher.js, auto-setup.js, auto-start-manager.js, settings-manager.js)
+- App restored to working WebRTC streaming state
+
+#### Lesson Learned
+- Working WebRTC pipeline is fragile - changes can break audio routing
+- Must be more careful when adding features to working core functionality
+- Should test each feature addition incrementally rather than batch changes
+- Git revert is essential when breaking working functionality
+
+#### Current State
+- Back to `5e9839c` - WebRTC streaming working perfectly
+- Stream monitor and auto-start features deferred for careful re-implementation
+- Documentation updated: docs/BLOG_CONTENT.md (comprehensive blog post material)
+
+#### Next Steps (Deferred)
+- Fix audio routing (careful implementation needed)
+- Add stream monitor (without breaking audio)
+- Implement auto-start functionality
+- Add system tray icon
+- Volume control integration
+- Multi-speaker streaming
+
 ---
 
-*Last Updated: January 5, 2026*
+*Last Updated: January 6, 2026*

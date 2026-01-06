@@ -84,7 +84,19 @@
       "Bash(cmd /c \"start /b ffmpeg -f dshow -i \"\"audio=virtual-audio-capturer\"\" -c:a libopus -b:a 128k -ar 48000 -ac 2 -f rtsp -rtsp_transport tcp rtsp://localhost:8554/pcaudio\")",
       "Bash(cmd //c \"taskkill /F /PID 510188\")",
       "Bash(cmd //c \"taskkill /F /IM ffmpeg.exe\")",
-      "Bash(sleep 1 ffmpeg -f dshow -i \"audio=virtual-audio-capturer\" -c:a pcm_mulaw -ar 8000 -ac 1 -f rtsp -rtsp_transport tcp rtsp://localhost:8554/pcaudio)"
+      "Bash(sleep 1 ffmpeg -f dshow -i \"audio=virtual-audio-capturer\" -c:a pcm_mulaw -ar 8000 -ac 1 -f rtsp -rtsp_transport tcp rtsp://localhost:8554/pcaudio)",
+      "Bash(cmd //c \"cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && del /F /Q src\\\\main\\\\audio-device-switcher.js src\\\\main\\\\auto-setup.js src\\\\main\\\\auto-start-manager.js src\\\\main\\\\settings-manager.js\")",
+      "Bash(cmd /c \"cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && set ELECTRON_RUN_AS_NODE= && npm run dev\")",
+      "Bash(cmd //c \"cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && start cmd /k \"\"set ELECTRON_RUN_AS_NODE= && npm run dev\"\"\")",
+      "Bash(node_modules.binelectron.cmd . --dev)",
+      "Bash(cmd //c \"cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && node_modules\\\\.bin\\\\electron.cmd . --dev\")",
+      "Bash(cmd //c \"set ELECTRON_RUN_AS_NODE=\")",
+      "Bash(cmd //c \"timeout /nobreak 3 >nul 2>&1 && tasklist | findstr /I electron\")",
+      "Bash(cmd //c \"taskkill /F /IM electron.exe 2>nul\")",
+      "Bash(cmd //c \"cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && set ELECTRON_RUN_AS_NODE= && npm run dev\")",
+      "Bash(cmd //c \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\clean-launch.bat\")",
+      "Bash(cmd //c:*)",
+      "Bash(xargs ls:*)"
     ]
   }
 }
