@@ -73,6 +73,57 @@ def discover_speakers(timeout=8):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+
+def device_info(speaker_name):
+    """Get detailed device information including supported receivers."""
+    try:
+        print(f"Looking for '{speaker_name}'...", file=sys.stderr)
+
+        chromecasts, browser = pychromecast.get_listed_chromecasts(
+            friendly_names=[speaker_name],
+            timeout=10
+        )
+
+        if not chromecasts:
+            browser.stop_discovery()
+            return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
+
+        cast = chromecasts[0]
+        info = cast.cast_info
+        print(f"Connected to {info.host}, waiting...", file=sys.stderr)
+        cast.wait(timeout=10)
+
+        # Get detailed status
+        device_info = {
+            "name": cast.name,
+            "model": info.model_name,
+            "manufacturer": info.manufacturer,
+            "uuid": str(cast.uuid),
+            "ip": info.host,
+            "port": info.port,
+            "cast_type": info.cast_type,
+            "status": {}
+        }
+
+        if cast.status:
+            device_info["status"] = {
+                "is_active_input": cast.status.is_active_input,
+                "is_stand_by": cast.status.is_stand_by,
+                "volume_level": cast.status.volume_level,
+                "volume_muted": cast.status.volume_muted,
+                "app_id": cast.status.app_id,
+                "display_name": cast.status.display_name,
+                "status_text": cast.status.status_text,
+                "icon_url": cast.status.icon_url
+            }
+
+        browser.stop_discovery()
+        print(f"Device info retrieved successfully", file=sys.stderr)
+        return {"success": True, "device": device_info}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 def cast_to_speaker(speaker_name, media_url, content_type="application/x-mpegURL"):
     """Cast media to a speaker using pychromecast (HTTP streaming mode)."""
     try:
@@ -566,6 +617,11 @@ if __name__ == "__main__":
         result = stop_cast(speaker)
         print(json.dumps(result))
 
+    elif command == "device-info" and len(sys.argv) >= 3:
+        speaker = sys.argv[2]
+        result = device_info(speaker)
+        print(json.dumps(result, indent=2))
+
     else:
-        print(json.dumps({"success": False, "error": "Invalid command"}))
+        print(json.dumps({"success": False, "error": "Invalid command. Use: discover, cast, webrtc-launch, device-info, or stop"}))
         sys.exit(1)
