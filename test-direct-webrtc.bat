@@ -2,12 +2,21 @@
 title PC Nest Speaker - Direct WebRTC Test
 cd /d "%~dp0"
 
+:: Auto-detect local IP address
+for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4 Address" ^| findstr "192.168."') do (
+    set LOCAL_IP=%%a
+    goto :found_ip
+)
+:found_ip
+:: Trim spaces
+set LOCAL_IP=%LOCAL_IP: =%
+
 echo =========================================
 echo  PC Nest Speaker - Direct Pipeline Test
 echo =========================================
 echo.
-echo Your local IP: 192.168.50.48
-echo MediaMTX WebRTC: http://192.168.50.48:8889
+echo Your local IP: %LOCAL_IP%
+echo MediaMTX WebRTC: http://%LOCAL_IP%:8889
 echo.
 
 :: Kill old processes
@@ -32,7 +41,7 @@ echo  Pipeline Ready!
 echo =========================================
 echo.
 echo Now cast to your speaker using:
-echo   python src/main/cast-helper.py webrtc-launch "Green TV" "http://192.168.50.48:8889"
+echo   python src/main/cast-helper.py webrtc-launch "Green TV" "http://%LOCAL_IP%:8889"
 echo.
 echo Or run discovery:
 echo   python src/main/cast-helper.py discover
