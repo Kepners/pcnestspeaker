@@ -24,6 +24,14 @@ let dependencies = {
   ffmpeg: null
 };
 
+// Stereo separation state
+let stereoMode = {
+  enabled: false,
+  leftSpeaker: null,   // index of speaker assigned to left channel
+  rightSpeaker: null,  // index of speaker assigned to right channel
+  streaming: false     // true when stereo streaming is active
+};
+
 // Debug logging
 function log(message, type = 'info') {
   const time = new Date().toLocaleTimeString();

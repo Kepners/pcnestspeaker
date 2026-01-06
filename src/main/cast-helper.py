@@ -336,6 +336,79 @@ def webrtc_connect(speaker_name, webrtc_server_port=8080):
         return {"success": False, "error": str(e)}
 
 
+def set_volume(speaker_name, volume_level):
+    """Set volume on a Cast device.
+
+    Args:
+        speaker_name: Name of the speaker
+        volume_level: Volume level (0.0 to 1.0)
+    """
+    try:
+        browser = pychromecast.discovery.CastBrowser(
+            pychromecast.SimpleCastListener(),
+            None
+        )
+        browser.start_discovery()
+        time.sleep(2)
+
+        chromecasts, browser = pychromecast.get_listed_chromecasts(friendly_names=[speaker_name])
+        if not chromecasts:
+            browser.stop_discovery()
+            return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
+
+        cast = chromecasts[0]
+        cast.wait()
+
+        # Clamp volume to 0.0-1.0 range
+        volume = max(0.0, min(1.0, float(volume_level)))
+        cast.set_volume(volume)
+
+        browser.stop_discovery()
+        return {
+            "success": True,
+            "speaker": speaker_name,
+            "volume": volume
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def get_volume(speaker_name):
+    """Get current volume from a Cast device.
+
+    Args:
+        speaker_name: Name of the speaker
+    """
+    try:
+        browser = pychromecast.discovery.CastBrowser(
+            pychromecast.SimpleCastListener(),
+            None
+        )
+        browser.start_discovery()
+        time.sleep(2)
+
+        chromecasts, browser = pychromecast.get_listed_chromecasts(friendly_names=[speaker_name])
+        if not chromecasts:
+            browser.stop_discovery()
+            return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
+
+        cast = chromecasts[0]
+        cast.wait()
+
+        # Get current volume level
+        volume = cast.status.volume_level if cast.status else 0.5
+
+        browser.stop_discovery()
+        return {
+            "success": True,
+            "speaker": speaker_name,
+            "volume": volume,
+            "muted": cast.status.volume_muted if cast.status else False
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pcaudio"):
     """Launch custom receiver for WebRTC streaming.
 
@@ -651,6 +724,21 @@ if __name__ == "__main__":
         result = device_info(speaker)
         print(json.dumps(result, indent=2))
 
+    elif command == "set-volume" and len(sys.argv) >= 4:
+        # Set volume on a speaker
+        # Args: set-volume <speaker_name> <volume_level>
+        speaker = sys.argv[2]
+        volume_level = sys.argv[3]
+        result = set_volume(speaker, volume_level)
+        print(json.dumps(result))
+
+    elif command == "get-volume" and len(sys.argv) >= 3:
+        # Get current volume from a speaker
+        # Args: get-volume <speaker_name>
+        speaker = sys.argv[2]
+        result = get_volume(speaker)
+        print(json.dumps(result))
+
     else:
-        print(json.dumps({"success": False, "error": "Invalid command. Use: discover, cast, webrtc-launch, device-info, or stop"}))
+        print(json.dumps({"success": False, "error": "Invalid command. Use: discover, cast, webrtc-launch, set-volume, get-volume, device-info, or stop"}))
         sys.exit(1)

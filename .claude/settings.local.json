@@ -97,7 +97,9 @@
       "Bash(cmd //c \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\clean-launch.bat\")",
       "Bash(cmd //c:*)",
       "Bash(xargs ls:*)",
-      "Bash(start:*)"
+      "Bash(start:*)",
+      "Bash(cmd /c \"start \"\"\"\" \"\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\start-app.bat\"\"\")",
+      "Bash(cmd /c \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\test-stereo-split.bat\")"
     ]
   }
 }
