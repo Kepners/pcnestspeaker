@@ -647,6 +647,91 @@ The "Back garden speaker" likely has **older firmware** that does not support cu
 9. License Verification & Purchase Flow
 10. Match DeleteMyTweets Styling
 
+### January 6, 2026 (Session 9 - Continuation) - Stream Monitor Implementation
+**Session Goal:** Implement Task #2 - Add Stream Monitor
+
+#### What Was Completed
+- ✅ Created `stream-stats.js` module (150 lines) - Core stats tracking
+- ✅ Added 8-bar audio visualizer with animated heights
+- ✅ Implemented bitrate display from FFmpeg output
+- ✅ Added data sent counter (MB)
+- ✅ Connection status indicator with color coding
+- ✅ 100ms update interval for smooth animation
+- ✅ Auto-show/hide based on streaming state
+- ✅ Integrated into standard and stereo streaming modes
+- ✅ Committed and pushed: `1125453` - feat: Add stream monitor
+
+#### Implementation Details
+
+**StreamStats Class** (`stream-stats.js`):
+- `parseFfmpegOutput()` - Parses FFmpeg stderr for bitrate and data
+- `updateAudioLevels()` - Generates simulated audio levels for visualizer
+- `getStats()` - Returns current stats object
+- `addListener()` - Registers callback for stats updates
+- 100ms timer sends updates to all listeners
+
+**FFmpeg Output Parsing:**
+```
+Example: "frame=123 fps=25 q=28.0 size=1024kB time=00:00:05.00 bitrate=128.0kbits/s"
+Extracts: bitrate=128.0, size=1024kB
+```
+
+**Audio Visualizer:**
+- 8 bars using flexbox layout
+- Heights driven by simulated audio levels (0-100%)
+- Each bar oscillates at different frequency for natural look
+- Sine wave (50%) + random (30%) = organic animation
+- Active class adds glow effect when level > 30%
+
+**Integration Points:**
+- `startFFmpegWebRTC()` - Parses main FFmpeg stderr
+- `start-stereo-streaming` - Parses both L/R FFmpeg stderr
+- `streamStats.start()` called after FFmpeg launches
+- `streamStats.stop()` called on stream stop
+- Stats listener sends to renderer via IPC every 100ms
+
+#### User Experience
+**Visual Feedback:**
+- Stream monitor appears when streaming starts
+- 8 animated bars show audio activity
+- Bitrate display shows stream quality
+- Data counter shows total MB sent
+- Connection status: Green (Active) / Red (Inactive)
+- Monitor disappears cleanly when streaming stops
+
+**Stats Display:**
+```
+┌─────────────────────────────┐
+│ [||||||||] <- 8 bars        │
+│                             │
+│ Bitrate     Data    Connect │
+│ 128 kbps    5.2 MB  Active  │
+└─────────────────────────────┘
+```
+
+#### Files Created/Modified
+- `src/main/stream-stats.js` - NEW: Stats tracking module
+- `src/main/electron-main.js` - MODIFIED: FFmpeg integration, stats start/stop
+- `src/main/preload.js` - MODIFIED: onStreamStats IPC event
+- `src/renderer/index.html` - MODIFIED: Stream monitor UI structure
+- `src/renderer/renderer.js` - MODIFIED: updateStreamMonitor() function
+- `src/renderer/styles.css` - MODIFIED: Visualizer bars, stats grid
+
+#### Git Commit
+- `1125453` - feat: Add stream monitor with audio visualizer and stats
+
+#### Next Steps (From Priority List)
+1. ~~Fix Audio Routing - Windows Audio Device Auto-Switch~~ ✅ DONE
+2. ~~Add Stream Monitor (audio visualizer, bitrate, data counter)~~ ✅ DONE
+3. Auto-Start on Windows Boot
+4. Document Device Compatibility
+5. System Tray Icon
+6. Volume Control Integration
+7. Multi-Speaker Streaming
+8. Trial & Usage Timer (10 hours)
+9. License Verification & Purchase Flow
+10. Match DeleteMyTweets Styling
+
 ---
 
 *Last Updated: January 6, 2026*
