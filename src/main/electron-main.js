@@ -795,8 +795,40 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       if (result.success) {
         sendLog('WebRTC streaming started! (via MediaMTX)', 'success');
         return { success: true, url: httpsUrl, mode: streamingMode };
+      } else if (result.error_code === 'CUSTOM_RECEIVER_NOT_SUPPORTED') {
+        // Custom receiver not supported - automatically fallback to HTTP streaming
+        sendLog('Custom receiver not supported on this device', 'warning');
+        sendLog('Automatically falling back to HTTP streaming...', 'info');
+
+        // Stop WebRTC services
+        if (ffmpegWebrtcProcess) {
+          try { ffmpegWebrtcProcess.kill(); } catch (e) {}
+          ffmpegWebrtcProcess = null;
+        }
+
+        // Start HTTP streaming instead
+        if (!audioStreamer) {
+          audioStreamer = new AudioStreamer();
+        }
+
+        sendLog(`Audio source: ${audioDevice || 'virtual-audio-capturer'}`);
+        const streamUrl = await audioStreamer.start(audioDevice || 'virtual-audio-capturer', 'mp3');
+        sendLog(`Stream URL: ${streamUrl}`, 'success');
+
+        // Cast to speaker using default receiver
+        sendLog(`Casting via HTTP (fallback) to ${speakerName}...`);
+        const httpResult = await runPython(['cast', speakerName, streamUrl, 'audio/mpeg']);
+
+        if (httpResult.success) {
+          sendLog('HTTP streaming started! (automatic fallback)', 'success');
+          currentStreamingMode = 'http';
+          return { success: true, url: streamUrl, mode: 'http', fallback: true };
+        } else {
+          cleanup();
+          throw new Error(`Fallback failed: ${httpResult.error}`);
+        }
       } else {
-        // Stop services if casting failed
+        // Other errors
         cleanup();
         throw new Error(result.error);
       }

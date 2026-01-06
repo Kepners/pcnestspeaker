@@ -387,7 +387,26 @@ async function selectSpeaker(index) {
 
     if (result.success) {
       setStreamingState(true);
-      log(`Streaming to ${selectedSpeaker.name}!`, 'success');
+
+      // Update UI to show streaming mode
+      const modeText = result.fallback ? '(HTTP fallback)' : '(WebRTC)';
+      const modeClass = result.fallback ? 'mode-http' : 'mode-webrtc';
+
+      // Update speaker card with mode indicator
+      const speakerCard = speakerList.querySelector('.speaker-item.selected .speaker-info');
+      if (speakerCard) {
+        const existingMode = speakerCard.querySelector('.streaming-mode');
+        if (existingMode) {
+          existingMode.remove();
+        }
+
+        const modeSpan = document.createElement('div');
+        modeSpan.className = `streaming-mode ${modeClass}`;
+        modeSpan.textContent = modeText;
+        speakerCard.appendChild(modeSpan);
+      }
+
+      log(`Streaming to ${selectedSpeaker.name} ${modeText}!`, 'success');
     } else {
       throw new Error(result.error || 'Failed to start streaming');
     }

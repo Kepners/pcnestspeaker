@@ -231,6 +231,23 @@ body {
   opacity: 1;
 }
 
+/* Streaming mode indicator */
+.streaming-mode {
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.streaming-mode.mode-webrtc {
+  color: var(--color-success);
+}
+
+.streaming-mode.mode-http {
+  color: var(--color-warning);
+}
+
 /* Buttons */
 .btn {
   display: inline-flex;

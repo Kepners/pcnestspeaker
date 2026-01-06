@@ -404,12 +404,27 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None):
             time.sleep(3)  # Wait for receiver to load
             print("[WebRTC] Receiver launched!", file=sys.stderr)
         except Exception as app_error:
-            print(f"[WebRTC] ERROR: {type(app_error).__name__}: {str(app_error)}", file=sys.stderr)
+            error_type = type(app_error).__name__
+            error_msg = str(app_error)
+            print(f"[WebRTC] ERROR: {error_type}: {error_msg}", file=sys.stderr)
+
+            # Return specific error code for custom receiver failures
+            # This allows automatic fallback to HTTP streaming
+            if "RequestFailed" in error_type or "Failed to execute start app" in error_msg:
+                print(f"[WebRTC] Device doesn't support custom receiver - will use HTTP fallback", file=sys.stderr)
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "error_code": "CUSTOM_RECEIVER_NOT_SUPPORTED",
+                    "fallback_available": True
+                }
+
+            # Other errors
             print(f"[WebRTC] Possible causes:", file=sys.stderr)
-            print(f"[WebRTC]   1. App {CUSTOM_APP_ID} is UNPUBLISHED and device {cast.uuid} not registered for testing", file=sys.stderr)
+            print(f"[WebRTC]   1. App {CUSTOM_APP_ID} is UNPUBLISHED", file=sys.stderr)
             print(f"[WebRTC]   2. App {CUSTOM_APP_ID} does not exist", file=sys.stderr)
             print(f"[WebRTC]   3. Check: https://cast.google.com/publish/", file=sys.stderr)
-            raise
+            return {"success": False, "error": error_msg, "error_code": "UNKNOWN"}
 
         # If HTTPS URL provided, send it to receiver via custom namespace message
         if https_url:
