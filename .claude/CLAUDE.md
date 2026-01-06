@@ -851,8 +851,106 @@ Extracts: bitrate=128.0, size=1024kB
 10. Match DeleteMyTweets Styling
 
 **Research Tasks:**
-- Research Nest Microphone → PC input feasibility
-- Phone Mic → Nest Speakers (future separate project)
+- Research Nest Microphone → PC input feasibility (likely blocked by Cast protocol)
+- Phone Mic → Nest Speakers (future separate project - Android app)
+- Baby Monitor Feature Requirements:
+  - Need two-way audio (Parent → Nest + Nest → PC/Phone)
+  - Music playback + voice mixing on Nest (not natively supported)
+  - Cast in/out of existing playback
+  - CRITICAL: Need Nest mic → PC audio stream (currently impossible with Cast)
+
+### January 6, 2026 (Session 10 - Continuation) - System Tray Icon
+
+**Session Goal:** Implement Task #5 - System Tray Icon
+
+#### What Was Completed
+- ✅ Created `tray-manager.js` module (170 lines) - Complete tray management
+- ✅ Minimize to tray on window close (instead of quit)
+- ✅ Context menu: Show/Hide, Stop Streaming, Exit
+- ✅ Double-click tray icon to toggle window visibility
+- ✅ Icon states: idle (gray) vs streaming (colored)
+- ✅ Programmatic fallback icons if PNG files missing
+- ✅ Proper app quit handling with app.isQuitting flag
+- ✅ IPC integration for tray stop streaming event
+- ✅ Tray icon changes based on streaming state
+- ✅ Tooltip updates: "PC Nest Speaker" vs "PC Nest Speaker - Streaming"
+- ✅ Stop Streaming menu item enabled only when streaming
+- ✅ Committed and pushed: `8613f19` - feat: Add system tray icon integration
+
+#### Implementation Details
+
+**TrayManager Module** (`tray-manager.js`):
+- `createTray(window)` - Initializes system tray with icon and menu
+- `updateTrayState(streaming)` - Changes icon/tooltip based on state
+- `destroyTray()` - Cleanup on app quit
+- `onWindowVisibilityChange()` - Updates menu when window shows/hides
+- `createFallbackIcon(color)` - Creates colored square if PNG missing
+- `loadIcon(filename, fallbackColor)` - Loads PNG or creates fallback
+
+**Window Close Behavior:**
+```javascript
+mainWindow.on('close', (event) => {
+  if (!app.isQuitting) {
+    event.preventDefault();
+    mainWindow.hide();
+    trayManager.onWindowVisibilityChange();
+  }
+});
+```
+
+**Tray State Updates:**
+- Start streaming (HTTP/WebRTC/fallback) → `updateTrayState(true)`
+- Stop streaming → `updateTrayState(false)`
+- Cleanup → `updateTrayState(false)`
+- Error during streaming → `updateTrayState(false)`
+
+**Context Menu Actions:**
+1. **Show/Hide Window** - Toggles window visibility, label changes dynamically
+2. **Stop Streaming** - Sends IPC event to renderer, only enabled when streaming
+3. **Exit** - Quits application (sets app.isQuitting = true)
+
+**Fallback Icons:**
+- Idle: Gray square (#808080) if tray-icon.png missing
+- Streaming: Green square (#00FF00) if tray-icon-active.png missing
+- Uses nativeImage.createFromBuffer() with raw pixel data
+
+#### User Experience
+**Tray Behavior:**
+- Click X on window → Minimizes to tray (doesn't quit)
+- Double-click tray icon → Shows/hides window
+- Right-click tray → Context menu
+- App stays in tray when window hidden
+- Must explicitly choose "Exit" from tray to quit
+
+**Visual Feedback:**
+- Icon changes color when streaming starts
+- Tooltip changes to show streaming status
+- Stop Streaming menu item grays out when not streaming
+
+#### Files Created/Modified
+- `src/main/tray-manager.js` - NEW: Tray management module
+- `src/main/electron-main.js` - MODIFIED: Tray integration, quit handling
+- `src/main/preload.js` - MODIFIED: onTrayStopStreaming IPC event
+- `src/renderer/renderer.js` - MODIFIED: Tray stop event listener
+- `assets/TRAY_ICONS_README.md` - NEW: Icon specifications
+
+#### Git Commit
+- `1ecc880` - docs: Add comprehensive device compatibility guide
+- `8613f19` - feat: Add system tray icon integration
+
+#### Next Steps (From Priority List)
+1. ~~Fix Audio Routing - Windows Audio Device Auto-Switch~~ ✅ DONE
+2. ~~Add Stream Monitor (audio visualizer, bitrate, data counter)~~ ✅ DONE
+3. ~~Auto-Start on Windows Boot~~ ✅ DONE
+4. ~~Document Device Compatibility~~ ✅ DONE
+5. ~~System Tray Icon~~ ✅ DONE
+6. Volume Control Integration
+7. Multi-Speaker Streaming (7.1: Multi-casting PRO, 7.2: Phone/PC mic → Nest PRO)
+8. Trial & Usage Timer (10 hours)
+9. License Verification & Purchase Flow
+10. Match DeleteMyTweets Styling
+
+**Progress: 5 out of 10 tasks completed (50%)**
 
 ---
 
