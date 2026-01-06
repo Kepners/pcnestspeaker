@@ -387,7 +387,7 @@ function renderAudioDevices() {
   updateStreamButtonState();
 }
 
-function selectSpeaker(index) {
+async function selectSpeaker(index) {
   selectedSpeaker = speakers[index];
   log(`Selected speaker: ${selectedSpeaker.name}`);
 
@@ -396,8 +396,38 @@ function selectSpeaker(index) {
     item.classList.toggle('selected', i === index);
   });
 
-  updateStreamButtonState();
-  // Note: Removed auto-ping on selection. User can manually ping with the Test button.
+  // If already streaming, stop current stream first
+  if (isStreaming) {
+    log('Stopping stream...');
+    try {
+      await window.api.stopStreaming();
+      setStreamingState(false);
+      log('Stream stopped', 'success');
+    } catch (error) {
+      log(`Stop failed: ${error.message}`, 'error');
+    }
+  }
+
+  // Immediately start streaming to selected speaker (WebRTC System Audio only)
+  log(`Starting webrtc-system stream to ${selectedSpeaker.name}...`);
+
+  try {
+    const result = await window.api.startStreaming(
+      selectedSpeaker.name,
+      null, // no audio device selection needed
+      'webrtc-system' // always use WebRTC System Audio
+    );
+
+    if (result.success) {
+      setStreamingState(true);
+      log(`Streaming to ${selectedSpeaker.name}!`, 'success');
+    } else {
+      throw new Error(result.error || 'Failed to start streaming');
+    }
+  } catch (error) {
+    log(`Stream failed: ${error.message}`, 'error');
+    showError(error.message || 'Failed to start streaming');
+  }
 }
 
 function updateStreamButtonState() {

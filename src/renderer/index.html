@@ -35,80 +35,12 @@
         </div>
       </div>
 
-      <!-- Streaming Mode Selection -->
+      <!-- Speaker List (Auto-discovered) -->
       <div class="card">
-        <h2 class="card-title">Streaming Mode</h2>
-        <div class="mode-selector">
-          <label class="mode-option">
-            <input type="radio" name="stream-mode" value="http" checked>
-            <span class="mode-label">
-              <strong>HTTP MP3</strong>
-              <small>~8 sec latency • Most reliable</small>
-            </span>
-            <span class="mode-deps" id="http-deps">
-              <span class="dep-item dep-checking">VB-CABLE</span>
-            </span>
-          </label>
-          <label class="mode-option">
-            <input type="radio" name="stream-mode" value="webrtc-system">
-            <span class="mode-label">
-              <strong>WebRTC System Audio</strong>
-              <small>&lt;1 sec latency • Captures any audio</small>
-            </span>
-            <span class="mode-deps" id="webrtc-system-deps">
-              <span class="dep-item dep-checking">screen-capture-recorder</span>
-              <span class="dep-item dep-checking">MediaMTX</span>
-            </span>
-          </label>
-          <label class="mode-option">
-            <input type="radio" name="stream-mode" value="webrtc-vbcable">
-            <span class="mode-label">
-              <strong>WebRTC VB-CABLE</strong>
-              <small>&lt;1 sec latency • Manual audio routing</small>
-            </span>
-            <span class="mode-deps" id="webrtc-vbcable-deps">
-              <span class="dep-item dep-checking">VB-CABLE</span>
-              <span class="dep-item dep-checking">MediaMTX</span>
-            </span>
-          </label>
+        <h2 class="card-title">SELECT SPEAKER</h2>
+        <div id="speaker-list" class="speaker-list">
+          <p class="loading-text">Discovering speakers...</p>
         </div>
-        <div class="mode-info" id="mode-info">
-          <p id="mode-description">HTTP streaming is the most reliable option with ~8 second latency.</p>
-        </div>
-      </div>
-
-      <!-- Audio Source Selection (HTTP mode only) -->
-      <div class="card" id="audio-source-card">
-        <h2 class="card-title">Audio Source</h2>
-        <select class="select" id="audio-device-select" disabled>
-          <option value="">Click "Discover" to find devices</option>
-        </select>
-      </div>
-
-      <!-- Discover & Test Buttons -->
-      <div class="card">
-        <button class="btn btn-secondary btn-large" id="discover-btn">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-          </svg>
-          Discover Devices
-        </button>
-        <button class="btn btn-secondary" id="ping-btn" style="margin-top: 8px;" disabled>
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M5.636 18.364a9 9 0 010-12.728M8.464 15.536a5 5 0 010-7.072"/>
-          </svg>
-          Test Ping
-        </button>
-      </div>
-
-      <!-- Controls -->
-      <div class="card controls-card">
-        <button class="btn btn-primary btn-large" id="stream-btn" disabled>
-          <svg class="icon" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M8 5v14l11-7z"/>
-          </svg>
-          <span>Start Streaming</span>
-        </button>
       </div>
 
       <!-- Debug Log -->
