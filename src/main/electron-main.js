@@ -12,6 +12,7 @@ const audioDeviceManager = require('./audio-device-manager');
 const { StreamStats } = require('./stream-stats');
 const settingsManager = require('./settings-manager');
 const autoStartManager = require('./auto-start-manager');
+const trayManager = require('./tray-manager');
 
 // Keep global references
 let mainWindow = null;
@@ -149,14 +150,33 @@ function createWindow() {
     }
   });
 
+  // Minimize to tray instead of close (unless quitting)
+  mainWindow.on('close', (event) => {
+    if (!app.isQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+      trayManager.onWindowVisibilityChange();
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
     cleanup();
+  });
+
+  // Update tray menu when window visibility changes
+  mainWindow.on('show', () => {
+    trayManager.onWindowVisibilityChange();
+  });
+
+  mainWindow.on('hide', () => {
+    trayManager.onWindowVisibilityChange();
   });
 }
 
 function cleanup() {
   sendLog('Cleaning up all processes...');
+  trayManager.updateTrayState(false); // Update tray to idle state
 
   // Stop audio streamer (HTTP mode)
   if (audioStreamer) {
@@ -789,6 +809,7 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
       if (result.success) {
         sendLog('HTTP streaming started!', 'success');
+        trayManager.updateTrayState(true); // Update tray to streaming state
         return { success: true, url: streamUrl };
       } else {
         await audioStreamer.stop();
@@ -861,6 +882,7 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
       if (result.success) {
         sendLog('WebRTC streaming started! (via MediaMTX)', 'success');
+        trayManager.updateTrayState(true); // Update tray to streaming state
         return { success: true, url: httpsUrl, mode: streamingMode };
       } else if (result.error_code === 'CUSTOM_RECEIVER_NOT_SUPPORTED') {
         // Custom receiver not supported - automatically fallback to HTTP streaming
@@ -889,6 +911,7 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         if (httpResult.success) {
           sendLog('HTTP streaming started! (automatic fallback)', 'success');
           currentStreamingMode = 'http';
+          trayManager.updateTrayState(true); // Update tray to streaming state
           return { success: true, url: streamUrl, mode: 'http', fallback: true };
         } else {
           cleanup();
@@ -946,9 +969,11 @@ ipcMain.handle('stop-streaming', async (event, speakerName) => {
     }
 
     sendLog('Stopped', 'success');
+    trayManager.updateTrayState(false); // Update tray to idle state
     return { success: true };
   } catch (error) {
     sendLog(`Stop error: ${error.message}`, 'error');
+    trayManager.updateTrayState(false); // Update tray to idle state
     return { success: false, error: error.message };
   }
 });
@@ -1333,6 +1358,9 @@ app.whenReady().then(() => {
   killLeftoverProcesses();
   createWindow();
 
+  // Create system tray
+  trayManager.createTray(mainWindow);
+
   // Auto-discover speakers and audio devices in background
   // This populates the UI without user having to click "Discover"
   setTimeout(() => {
@@ -1372,14 +1400,14 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  cleanup();
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // Don't quit on window close - we have a system tray
+  // User must explicitly choose "Exit" from tray menu
 });
 
 app.on('before-quit', () => {
+  app.isQuitting = true;
   cleanup();
+  trayManager.destroyTray();
   // Force kill any leftover processes by name (belt and suspenders)
   killLeftoverProcesses();
 });

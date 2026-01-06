@@ -71,6 +71,11 @@ contextBridge.exposeInMainWorld('api', {
   onAudioDevicesDiscovered: (callback) => {
     ipcRenderer.on('audio-devices-discovered', (event, devices) => callback(devices));
   },
+
+  // Tray events
+  onTrayStopStreaming: (callback) => {
+    ipcRenderer.on('tray-stop-streaming', () => callback());
+  },
 });
 
 // Expose WebRTC-specific APIs separately (for low-latency streaming)

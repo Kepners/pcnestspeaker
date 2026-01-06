@@ -179,6 +179,14 @@ function setupEventListeners() {
       log(`Speaker "${speaker.name}" not found`, 'error');
     }
   });
+
+  // Listen for tray stop streaming event
+  window.api.onTrayStopStreaming(async () => {
+    log('Stop requested from tray menu');
+    if (isStreaming) {
+      await stopStreaming();
+    }
+  });
 }
 
 // Check all dependencies
