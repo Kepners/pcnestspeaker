@@ -1169,6 +1169,232 @@ mainWindow.on('close', (event) => {
 
 **Progress: 7 out of 10 tasks completed (70%)**
 
+### January 6, 2026 (Session 13) - License Verification & Purchase Flow
+
+**Session Goal:** Implement Task #9 - Complete license key validation system following DeleteMyTweets pattern
+
+#### What Was Completed
+- ✅ Backend license validation (electron-main.js)
+- ✅ License format: PNS-XXXX-XXXX-XXXX-XXXX (23 chars)
+- ✅ Server-side API validation with offline fallback
+- ✅ License storage in userData/license.json
+- ✅ IPC handlers: get-license, activate-license, deactivate-license
+- ✅ Integration with usage tracker (activates/deactivates license)
+- ✅ Collapsible license card UI (collapsed/expanded states)
+- ✅ License modal with auto-formatting input
+- ✅ Purchase flow integration (Stripe link - TBD)
+- ✅ Auto-load license status on app startup
+- ✅ Preload.js API bindings
+- ✅ Committed: `f2cb895` - feat: Add complete license key validation system
+
+#### Implementation Details
+
+**Backend (electron-main.js)**:
+```javascript
+// License validation functions
+- validateLicenseFormat(key) - Regex: ^PNS-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$
+- getLicenseData() - Load from license.json
+- saveLicenseData(key) - Save to license.json with activatedAt timestamp
+- deleteLicenseData() - Remove license file
+
+// IPC Handlers
+- get-license → Returns current license or null
+- activate-license(key) → Validates format → API call → Save → Activate in tracker
+- deactivate-license → Delete file → Deactivate in tracker
+
+// Validation Flow
+1. Client-side format check (instant feedback)
+2. Server-side API validation: POST https://pcnestspeaker.app/api/validate-license
+3. Offline fallback: If API unreachable, allow re-activation of same key
+4. Save to license.json on success
+5. Activate in usage tracker (removes trial limits)
+```
+
+**Usage Tracker Integration** (usage-tracker.js):
+```javascript
+// New functions
+- activateLicense(key) → Sets licenseKey in settings, clears trialExpired
+- deactivateLicense() → Clears license, re-enables trial limits
+
+// License checking in getUsage()
+- trialExpired: licenseKey ? false : trialExpired
+- hasLicense: !!licenseKey
+```
+
+**Frontend UI** (index.html):
+```html
+<!-- Collapsible License Card -->
+<div class="card license-card license-collapsible">
+  <!-- Collapsed view -->
+  <div class="license-collapsed">
+    <div class="license-row">
+      <span class="license-label">LICENSE STATUS</span>
+      <span id="license-status">Active ✓</span>
+    </div>
+  </div>
+  <!-- Expanded view (on click) -->
+  <div class="license-expanded">
+    <div class="license-row">
+      <span class="license-label">LICENSE STATUS</span>
+      <span id="license-status-expanded">Active ✓</span>
+    </div>
+    <div class="license-row">
+      <span class="license-label">LICENSE KEY</span>
+      <span id="license-key-display">PNS-XXXX-****-****-XXXX</span>
+    </div>
+    <div class="license-row">
+      <span class="license-terms">
+        Personal use on up to 2 devices.<br>
+        Lifetime access to all updates.
+      </span>
+    </div>
+    <div class="license-buttons">
+      <button class="btn btn-secondary">Change Key</button>
+      <button class="btn btn-danger">Deactivate</button>
+    </div>
+  </div>
+</div>
+
+<!-- License Modal -->
+<div class="modal-overlay" id="license-modal">
+  <div class="modal-box">
+    <h2 class="modal-title">Enter License Key</h2>
+    <p class="modal-description">
+      Check your email for your license key after purchase
+    </p>
+    <input type="text" id="license-input"
+           placeholder="PNS-XXXX-XXXX-XXXX-XXXX">
+    <div class="modal-error" id="license-error"></div>
+    <div class="modal-buttons">
+      <button onclick="openPurchaseLink()">Buy License</button>
+      <button onclick="activateLicense()">Activate</button>
+    </div>
+    <p class="modal-footer">
+      Lost your key? <a href="#">Contact support</a>
+    </p>
+  </div>
+</div>
+```
+
+**JavaScript Functions** (renderer.js):
+```javascript
+// Auto-formatting (as user types)
+formatLicenseInput(input) → "PNS-XXXX-XXXX-XXXX-XXXX"
+- Removes non-alphanumeric
+- Auto-adds PNS prefix
+- Maintains cursor position
+
+// Masking (for display)
+maskLicenseKey(key) → "PNS-XXXX-****-****-XXXX"
+- Shows first 4 and last 4 characters
+- Masks middle 8 characters
+
+// Modal management
+showLicenseModal() - Shows modal, clears input, focuses
+hideLicenseModal() - Hides modal
+openPurchaseLink() - Opens Stripe payment URL
+openSupportLink() - Opens support email
+
+// Activation/Deactivation
+activateLicense() - Validates input → IPC call → Update UI → Hide modal
+deactivateLicense() - Confirms → IPC call → Update UI → Refresh trial
+
+// Display update
+updateLicenseDisplay(license) - Updates status/key in both collapsed & expanded views
+toggleLicenseDetails(event) - Expands/collapses card on click
+
+// Startup
+loadLicenseStatus() - Called on DOMContentLoaded
+- Loads license from backend
+- Updates UI
+- Shows modal if no license AND trial expired
+```
+
+**Styling** (styles.css - ~200 lines):
+```css
+/* License Card */
+.license-card - Collapsible card with hover effects
+.license-collapsible.expanded - Shows expanded view
+.license-row - Status/key rows with borders
+.license-label - Uppercase labels
+.license-status-value - Bold colored status
+.license-key-text - Monospace masked key
+.license-buttons - Flex layout for action buttons
+
+/* License Modal */
+.modal-overlay - Full-screen dark backdrop with blur
+.modal-box - Centered card with border and shadow
+.modal-input - Monospace input with focus glow
+.modal-error - Red error message with background
+.modal-buttons - Flex layout for Buy/Activate buttons
+```
+
+**Color Scheme** (Warm Neutral):
+- Active status: `var(--color-blush)` - Powder Blush
+- Inactive status: `#FF2A6D` - Coral warning
+- License key: Monospace, blush color
+- Modal background: `var(--color-coffee)` - Dark Coffee
+- Danger button: Red with transparency
+- Borders: `var(--color-beige)` - Khaki Beige
+
+#### User Experience Flow
+
+**First-Time User (Trial)**:
+1. App starts → License card shows "Not Active"
+2. User can stream for 10 hours (trial)
+3. When trial <1 hour or expired → Purchase button appears
+4. Click Purchase → Opens license modal → Buy → Enter key → Activate
+
+**Returning User (Licensed)**:
+1. App starts → Auto-loads license
+2. License card shows "Active ✓"
+3. Click card → Expands to show masked key
+4. Trial card hidden (licensed users don't see trials)
+5. Can change key or deactivate if needed
+
+**Purchase Flow**:
+1. Click "Purchase License" (trial card) or "Buy License" (modal)
+2. Opens Stripe payment link (TBD)
+3. User completes purchase → Receives email with key
+4. Returns to app → Enters key in modal
+5. Key validated → License activated → Trial removed
+
+**Validation Flow**:
+1. User enters key (auto-formatted as they type)
+2. Client checks format (instant feedback)
+3. Submits to backend → API validation
+4. Success: Save locally → Activate tracker → Update UI → Hide modal
+5. Failure: Show error message in modal
+
+#### Files Created/Modified
+- `src/main/electron-main.js` - MODIFIED: License validation backend (~140 lines)
+- `src/main/usage-tracker.js` - MODIFIED: Added deactivateLicense(), exported it
+- `src/main/preload.js` - MODIFIED: License IPC bindings (3 functions)
+- `src/renderer/index.html` - MODIFIED: License card + modal HTML
+- `src/renderer/styles.css` - MODIFIED: License card + modal styles (~200 lines)
+- `src/renderer/renderer.js` - MODIFIED: License management functions (~260 lines)
+
+#### Git Commit
+- `f2cb895` - feat: Add complete license key validation system
+
+#### Next Steps (From Priority List)
+1. ~~Fix Audio Routing - Windows Audio Device Auto-Switch~~ ✅ DONE
+2. ~~Add Stream Monitor (audio visualizer, bitrate, data counter)~~ ✅ DONE
+3. ~~Auto-Start on Windows Boot~~ ✅ DONE
+4. ~~Document Device Compatibility~~ ✅ DONE
+5. ~~System Tray Icon~~ ✅ DONE
+6. ~~Volume Control Integration~~ ✅ DONE
+7. Multi-Speaker Streaming (7.1: Multi-casting PRO, 7.2: Phone/PC mic → Nest PRO)
+8. ~~Trial & Usage Timer (10 hours)~~ ✅ DONE
+9. ~~License Verification & Purchase Flow~~ ✅ DONE
+10. Match DeleteMyTweets Styling
+
+**Progress: 8 out of 10 tasks completed (80%)**
+
+**Remaining Tasks:**
+- Task #7: Multi-Speaker Streaming (PRO features)
+- Task #10: Match DeleteMyTweets Styling
+
 ---
 
 *Last Updated: January 6, 2026*
