@@ -582,6 +582,71 @@ The "Back garden speaker" likely has **older firmware** that does not support cu
 - `src/renderer/styles.css` - Added timer icon, connecting state
 - `assets/timer.gif` - Downloaded and recolored for connecting state
 
+### January 6, 2026 (Session 9 - Continuation) - Windows Audio Auto-Switching
+**Session Goal:** Implement Task #1 from priority list - Windows audio device auto-switching
+
+#### What Was Completed
+- ✅ Created `src/main/audio-device-manager.js` module (157 lines)
+- ✅ Uses NirCmd utility (simple, reliable, 47KB, no PowerShell)
+- ✅ Integrated into all streaming handlers:
+  - `start-streaming` → switches to virtual device
+  - `stop-streaming` → restores original device
+  - `start-stereo-streaming` → switches to virtual device
+  - `stop-stereo-streaming` → restores original device
+  - `cleanup()` → restores on app exit
+- ✅ Created `nircmd/README.md` with setup instructions
+- ✅ Committed and pushed: `8c9a404` - feat: Windows audio device auto-switching
+
+#### Implementation Details
+**Audio Device Manager:**
+- `getCurrentAudioDevice()` - Uses WMIC to detect current device
+- `setDefaultAudioDevice()` - Uses NirCmd to switch devices
+- `switchToStreamingDevice()` - Saves original, tries multiple virtual device names
+- `restoreOriginalDevice()` - Restores saved device
+
+**Device Names Tried (in order):**
+1. `virtual-audio-capturer`
+2. `Virtual Audio Capturer`
+3. `CABLE Input`
+4. `VB-Audio Virtual Cable`
+
+**Error Handling:**
+- Graceful degradation - continues if switch fails (user may have already set it)
+- Warnings logged but don't block streaming
+- Cleanup always attempts restore (even if errors occur)
+
+#### User Experience Improvement
+**Before:**
+- User must manually switch Windows audio to virtual device
+- User must remember to switch back after streaming
+- Easy to forget and lose audio on normal speakers
+
+**After:**
+- Start streaming → Automatic switch to virtual device
+- Stop streaming → Automatic restore to original device
+- App exit/crash → Automatic restore via cleanup()
+- Zero user configuration required
+
+#### Files Created/Modified
+- `src/main/audio-device-manager.js` - NEW: Core switching logic
+- `src/main/electron-main.js` - MODIFIED: Integration into handlers
+- `nircmd/README.md` - NEW: NirCmd setup guide
+
+#### Git Commit
+- `8c9a404` - feat: Windows audio device auto-switching
+
+#### Next Steps (From Priority List)
+1. ~~Fix Audio Routing - Windows Audio Device Auto-Switch~~ ✅ DONE
+2. Add Stream Monitor (audio visualizer, bitrate, data counter)
+3. Auto-Start on Windows Boot
+4. Document Device Compatibility
+5. System Tray Icon
+6. Volume Control Integration
+7. Multi-Speaker Streaming
+8. Trial & Usage Timer (10 hours)
+9. License Verification & Purchase Flow
+10. Match DeleteMyTweets Styling
+
 ---
 
 *Last Updated: January 6, 2026*
