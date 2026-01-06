@@ -516,6 +516,72 @@ PC Audio → virtual-audio-capturer → FFmpeg (Opus) → RTSP → MediaMTX → 
 - Volume control integration
 - Multi-speaker streaming
 
+### January 6, 2026 (Session 9) - Speaker Compatibility Investigation
+**Session Goal:** Fix UI issues, investigate "Back garden speaker" custom receiver failure
+
+#### UI Fixes
+- Fixed JavaScript errors from removed UI elements (buttons, mode radios)
+- Removed references to `discoverBtn`, `streamBtn`, `audioDeviceSelect`, `modeRadios`
+- Added auto-discovery on app startup
+- Replaced full-screen loading overlay with small status indicator (timer GIF)
+- Commits: `ff78bcc`, `6357af3`, `2b2d55b`
+
+#### "Back garden speaker" Investigation
+**Problem:** "Back garden speaker" (Google Nest Mini) fails to launch custom receiver FCAA4619
+
+**Testing performed:**
+1. Added `device-info` command to cast-helper.py
+2. Confirmed speaker details:
+   - Model: Google Nest Mini
+   - UUID: `6d9cdd5d-5f80-8408-4080-7f4d30a714d7`
+   - IP: 192.168.50.202
+   - cast_type: "audio"
+3. Tested custom receiver launch → `RequestFailed: Failed to execute start app FCAA4619`
+4. Tested default receiver (HTTP/MP3) → ✅ Works perfectly
+
+**Key Discovery:**
+- Checked Cast SDK Developer Console settings
+- **"Supports casting to audio only devices"** checkbox is ALREADY ENABLED ✅
+- App is Published ✅
+- All settings are correct ✅
+
+**Conclusion:**
+The "Back garden speaker" likely has **older firmware** that does not support custom Cast receivers, even though:
+- It's the same model as other working Nest Minis
+- The custom receiver is properly configured for audio-only devices
+- The app is published and available globally
+
+**Working devices with custom receiver:**
+- Green TV (NVIDIA SHIELD) - cast_type: "cast"
+- DENNIS (Google Nest Mini) - cast_type: "audio"
+- Den pair (Google Cast Group) - cast_type: "group"
+- STUDY (Google Cast Group) - cast_type: "group"
+
+**Non-working devices:**
+- Back garden speaker (Google Nest Mini) - cast_type: "audio" ❌
+
+**Workaround for "Back garden speaker":**
+- Use HTTP/MP3 streaming mode instead of WebRTC
+- Higher latency (~8 seconds) but works on older firmware
+
+#### Den Pair Investigation
+**Issue:** "Den pair" Cast group only plays on one speaker (newer Nest Mini)
+
+**Analysis:**
+- "Den pair" shares IP 192.168.50.241 with "DENNIS"
+- Suggests DENNIS is the newer Nest Mini in the group
+- Custom receiver launches successfully on the group
+- Need to test if both speakers play when pipeline is active
+
+**Status:** Pending user testing with active MediaMTX/FFmpeg pipeline
+
+#### Files Modified
+- `src/main/cast-helper.py` - Added device-info command, improved error logging
+- `src/renderer/renderer.js` - Removed deleted UI element references
+- `src/renderer/index.html` - Removed loading overlay
+- `src/renderer/styles.css` - Added timer icon, connecting state
+- `assets/timer.gif` - Downloaded and recolored for connecting state
+
 ---
 
 *Last Updated: January 6, 2026*

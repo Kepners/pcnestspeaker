@@ -96,7 +96,8 @@
       "Bash(cmd //c \"cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && set ELECTRON_RUN_AS_NODE= && npm run dev\")",
       "Bash(cmd //c \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\clean-launch.bat\")",
       "Bash(cmd //c:*)",
-      "Bash(xargs ls:*)"
+      "Bash(xargs ls:*)",
+      "Bash(start:*)"
     ]
   }
 }
