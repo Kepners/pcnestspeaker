@@ -11,8 +11,6 @@ const statusIndicator = document.getElementById('status-indicator');
 const speakerList = document.getElementById('speaker-list');
 const discoverBtn = document.getElementById('discover-btn');
 const streamBtn = document.getElementById('stream-btn');
-const loadingOverlay = document.getElementById('loading-overlay');
-const loadingText = document.getElementById('loading-text');
 const businessLink = document.getElementById('business-link');
 const audioDeviceSelect = document.getElementById('audio-device-select');
 const audioSourceCard = document.getElementById('audio-source-card');
@@ -565,12 +563,15 @@ function setStreamingState(streaming) {
 }
 
 function showLoading(text) {
-  loadingText.textContent = text;
-  loadingOverlay.hidden = false;
+  // Update status indicator instead of showing overlay
+  statusIndicator.className = 'status-indicator connecting';
+  statusIndicator.querySelector('.status-text').textContent = text;
 }
 
 function hideLoading() {
-  loadingOverlay.hidden = true;
+  // Reset status indicator to ready state
+  statusIndicator.className = 'status-indicator ready';
+  statusIndicator.querySelector('.status-text').textContent = 'Ready';
 }
 
 function showError(message) {
