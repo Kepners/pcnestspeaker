@@ -940,7 +940,26 @@ async function startStreamingToSpeaker(index) {
     log(`Failed to save speaker: ${error.message}`, 'warning');
   }
 
-  // If already streaming, stop current stream first
+  // If stereo mode is active (L/R assigned), stop it first
+  if (stereoMode.streaming || (stereoMode.leftSpeaker !== null && stereoMode.rightSpeaker !== null)) {
+    log('Stopping stereo mode for single speaker stream...');
+    try {
+      const leftSpeaker = stereoMode.leftSpeaker !== null ? speakers[stereoMode.leftSpeaker] : null;
+      const rightSpeaker = stereoMode.rightSpeaker !== null ? speakers[stereoMode.rightSpeaker] : null;
+      await window.api.stopStereoStreaming(leftSpeaker, rightSpeaker);
+      stereoMode.streaming = false;
+      stereoMode.enabled = false;
+      // Clear stereo assignments
+      stereoMode.leftSpeaker = null;
+      stereoMode.rightSpeaker = null;
+      setStreamingState(false);
+      renderSpeakers(); // Re-render to clear L/R buttons
+    } catch (error) {
+      log(`Stereo stop failed: ${error.message}`, 'warning');
+    }
+  }
+
+  // If already streaming (regular stream), stop current stream first
   if (isStreaming) {
     log('Stopping current stream...');
     try {
