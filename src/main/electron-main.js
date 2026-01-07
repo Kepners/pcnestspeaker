@@ -15,6 +15,7 @@ const autoStartManager = require('./auto-start-manager');
 const trayManager = require('./tray-manager');
 const usageTracker = require('./usage-tracker');
 const volumeSync = require('./windows-volume-sync');
+const daemonManager = require('./daemon-manager');
 
 // Keep global references
 let mainWindow = null;
@@ -869,7 +870,12 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
                 return; // Skip sync when boost is on
               }
               sendLog(`[VolumeSync] Windows volume: ${volume}%`);
-              runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
+              // Use daemon for instant volume control
+              if (daemonManager.isDaemonRunning()) {
+                daemonManager.setVolumeFast(speaker.name, volume / 100, speaker.ip || null).catch(() => {});
+              } else {
+                runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
+              }
             }
           );
         }
@@ -963,7 +969,12 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
                 return; // Skip sync when boost is on
               }
               sendLog(`[VolumeSync] Windows volume: ${volume}%`);
-              runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
+              // Use daemon for instant volume control
+              if (daemonManager.isDaemonRunning()) {
+                daemonManager.setVolumeFast(speaker.name, volume / 100, speaker.ip || null).catch(() => {});
+              } else {
+                runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
+              }
             }
           );
         }
@@ -1009,7 +1020,12 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
                   return; // Skip sync when boost is on
                 }
                 sendLog(`[VolumeSync] Windows volume: ${volume}%`);
-                runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
+                // Use daemon for instant volume control
+                if (daemonManager.isDaemonRunning()) {
+                  daemonManager.setVolumeFast(speaker.name, volume / 100, speaker.ip || null).catch(() => {});
+                } else {
+                  runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
+                }
               }
             );
           }
@@ -1163,19 +1179,29 @@ ipcMain.handle('get-volume', async (event, speakerName) => {
   }
 });
 
-// Set speaker volume (0.0 - 1.0) - uses cached IP for speed
+// Set speaker volume (0.0 - 1.0) - uses daemon for INSTANT response
 ipcMain.handle('set-volume', async (event, speakerName, volume) => {
   try {
-    // Find cached IP for this speaker (avoids slow network scan)
+    // Find cached IP for this speaker
     const speaker = discoveredSpeakers.find(s => s.name === speakerName);
-    const speakerIp = speaker ? speaker.ip : '';
+    const speakerIp = speaker ? speaker.ip : null;
 
-    const result = await runPython(['set-volume-fast', speakerName, volume.toString(), speakerIp]);
-
-    if (result.success) {
-      return { success: true, volume: result.volume };
+    // Try daemon first (instant), fall back to spawning Python (slow)
+    if (daemonManager.isDaemonRunning()) {
+      const result = await daemonManager.setVolumeFast(speakerName, volume, speakerIp);
+      if (result.success) {
+        return { success: true, volume: result.volume };
+      } else {
+        return { success: false, error: result.error };
+      }
     } else {
-      return { success: false, error: result.error };
+      // Fallback to spawning Python process
+      const result = await runPython(['set-volume-fast', speakerName, volume.toString(), speakerIp || '']);
+      if (result.success) {
+        return { success: true, volume: result.volume };
+      } else {
+        return { success: false, error: result.error };
+      }
     }
   } catch (error) {
     return { success: false, error: error.message };
@@ -1425,10 +1451,16 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
           return; // Skip sync when boost is on
         }
         sendLog(`[VolumeSync] Windows volume: ${volume}%`);
-        // Set volume on both speakers in parallel
-        const volumeLevel = (volume / 100).toString();
-        runPython(['set-volume-fast', leftSpeaker.name, volumeLevel, leftSpeaker.ip || '']).catch(() => {});
-        runPython(['set-volume-fast', rightSpeaker.name, volumeLevel, rightSpeaker.ip || '']).catch(() => {});
+        // Set volume on both speakers in parallel using daemon for instant response
+        const volumeLevel = volume / 100;
+        if (daemonManager.isDaemonRunning()) {
+          daemonManager.setVolumeFast(leftSpeaker.name, volumeLevel, leftSpeaker.ip || null).catch(() => {});
+          daemonManager.setVolumeFast(rightSpeaker.name, volumeLevel, rightSpeaker.ip || null).catch(() => {});
+        } else {
+          const volumeStr = volumeLevel.toString();
+          runPython(['set-volume-fast', leftSpeaker.name, volumeStr, leftSpeaker.ip || '']).catch(() => {});
+          runPython(['set-volume-fast', rightSpeaker.name, volumeStr, rightSpeaker.ip || '']).catch(() => {});
+        }
       }
     );
 
@@ -1683,6 +1715,14 @@ app.whenReady().then(() => {
   // Create system tray
   trayManager.createTray(mainWindow);
 
+  // Start Cast daemon for instant volume control
+  daemonManager.startDaemon().then(() => {
+    console.log('[Main] Cast daemon started - volume control will be instant');
+  }).catch(err => {
+    console.log('[Main] Cast daemon failed to start:', err.message);
+    console.log('[Main] Falling back to spawning Python per command (slower)');
+  });
+
   // Auto-discover speakers and audio devices in background
   // This populates the UI without user having to click "Discover"
   setTimeout(() => {
@@ -1730,6 +1770,7 @@ app.on('before-quit', () => {
   app.isQuitting = true;
   cleanup();
   trayManager.destroyTray();
+  daemonManager.stopDaemon(); // Stop the Cast daemon
   // Force kill any leftover processes by name (belt and suspenders)
   killLeftoverProcesses();
 });

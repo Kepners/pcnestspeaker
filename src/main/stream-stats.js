@@ -6,7 +6,13 @@
  * - Data sent (MB)
  * - Connection status
  * - Activity indicator (shows when FFmpeg is actively sending data)
+ *
+ * Note: For RTSP streaming (WebRTC mode), FFmpeg shows bitrate=N/A and size=N/A.
+ * In this case, we use configured values and calculate estimated data sent.
  */
+
+// Configured bitrate for Opus encoding (kbps)
+const CONFIGURED_BITRATE = 128;
 
 class StreamStats {
   constructor() {
@@ -24,6 +30,8 @@ class StreamStats {
     this.lastDataTime = 0;  // When we last got FFmpeg data
     this.audioLevels = new Array(8).fill(0);
     this.hasReceivedData = false;  // Have we ever received FFmpeg output?
+    this.elapsedSeconds = 0;  // FFmpeg reported elapsed time
+    this.useEstimatedData = false;  // True when FFmpeg reports N/A
   }
 
   /**
@@ -59,14 +67,24 @@ class StreamStats {
    * FFmpeg audio output formats:
    * - "size=    1024kB time=00:00:05.00 bitrate= 128.0kbits/s"
    * - "size=1024kB time=00:00:05.00 bitrate=128.0kbits/s"
-   * - "size=N/A time=00:00:05.00 bitrate=N/A" (for some streams)
+   * - "size=N/A time=00:00:05.00 bitrate=N/A speed=1x" (RTSP streaming)
    */
   parseFfmpegOutput(line) {
     if (!this.isActive) return;
 
-    // Log raw FFmpeg output for debugging
-    if (line.includes('size=') || line.includes('bitrate=')) {
-      console.log('[StreamStats] FFmpeg output:', line.trim());
+    // Only process lines with FFmpeg stats
+    if (!line.includes('time=')) return;
+
+    // Extract elapsed time from FFmpeg output
+    // "time=00:13:08.45" -> parse to seconds
+    const timeMatch = line.match(/time=(\d+):(\d+):(\d+\.\d+)/);
+    if (timeMatch) {
+      const hours = parseInt(timeMatch[1]);
+      const minutes = parseInt(timeMatch[2]);
+      const seconds = parseFloat(timeMatch[3]);
+      this.elapsedSeconds = hours * 3600 + minutes * 60 + seconds;
+      this.lastDataTime = Date.now();
+      this.hasReceivedData = true;
     }
 
     // Extract bitrate - handle various formats
@@ -74,8 +92,11 @@ class StreamStats {
     const bitrateMatch = line.match(/bitrate=\s*([0-9.]+)\s*kbits\/s/i);
     if (bitrateMatch) {
       this.bitrate = parseFloat(bitrateMatch[1]);
-      this.lastDataTime = Date.now();
-      this.hasReceivedData = true;
+      this.useEstimatedData = false;
+    } else if (line.includes('bitrate=N/A')) {
+      // RTSP streaming mode - use configured bitrate
+      this.bitrate = CONFIGURED_BITRATE;
+      this.useEstimatedData = true;
     }
 
     // Extract size (total data sent) - handle various formats
@@ -83,8 +104,12 @@ class StreamStats {
     const sizeMatch = line.match(/size=\s*([0-9]+)\s*(kB|KiB)/i);
     if (sizeMatch) {
       this.totalBytes = parseInt(sizeMatch[1]) * 1024; // Convert kB to bytes
-      this.lastDataTime = Date.now();
-      this.hasReceivedData = true;
+      this.useEstimatedData = false;
+    } else if (line.includes('size=N/A') && this.elapsedSeconds > 0) {
+      // RTSP streaming mode - estimate data based on bitrate and time
+      // Bitrate in kbits/s -> bytes = (kbits * time_seconds) / 8 * 1000
+      this.totalBytes = (CONFIGURED_BITRATE * this.elapsedSeconds * 1000) / 8;
+      this.useEstimatedData = true;
     }
 
     // Update timestamp
@@ -108,7 +133,9 @@ class StreamStats {
     // Otherwise, show minimal activity or flat bars
     if (this.hasReceivedData && timeSinceData < 2000) {
       // Active streaming - show animated bars based on bitrate
-      const activityLevel = Math.min(100, (this.bitrate / 320) * 100); // 320kbps = 100%
+      // Use configured bitrate if actual is N/A
+      const effectiveBitrate = this.bitrate || CONFIGURED_BITRATE;
+      const activityLevel = Math.min(100, (effectiveBitrate / 320) * 100); // 320kbps = 100%
 
       for (let i = 0; i < 8; i++) {
         // Create wave effect based on bitrate
@@ -137,13 +164,18 @@ class StreamStats {
     const dataMB = (this.totalBytes / (1024 * 1024)).toFixed(2);
     const uptime = this.startTime ? Math.floor((Date.now() - this.startTime) / 1000) : 0;
 
+    // Use configured bitrate if actual is N/A
+    const effectiveBitrate = this.bitrate || (this.isActive ? CONFIGURED_BITRATE : 0);
+
     return {
-      bitrate: Math.round(this.bitrate),
+      bitrate: Math.round(effectiveBitrate),
       data: dataMB,
       connection: this.isActive ? 'Active' : 'Inactive',
       audioLevels: this.audioLevels,
       uptime,
-      isActive: this.isActive
+      isActive: this.isActive,
+      isEstimated: this.useEstimatedData,  // True when using estimated data
+      elapsedSeconds: Math.round(this.elapsedSeconds)
     };
   }
 
