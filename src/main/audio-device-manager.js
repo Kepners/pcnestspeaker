@@ -332,28 +332,35 @@ async function switchToStreamingDevice() {
 
     // Switch to virtual audio device
     // Note: The exact device name might vary - we'll try common names
+    // Windows shows devices as "[Name] (Description)" - partial match works
     const virtualDeviceNames = [
-      'virtual-audio-capturer',
-      'Virtual Audio Capturer',
-      'CABLE Input',
-      'VB-Audio Virtual Cable'
+      'Virtual Desktop Audio',           // Most common - screen-capture-recorder
+      'virtual-audio-capturer',          // Legacy name
+      'Virtual Audio Capturer',          // Case variant
+      'Speakers (Virtual Desktop Audio)', // Full name with prefix
+      'CABLE Input',                      // VB-Audio CABLE
+      'VB-Audio Virtual Cable'            // VB-Audio alternative
     ];
 
     let switched = false;
+    let triedNames = [];
     for (const deviceName of virtualDeviceNames) {
       try {
+        console.log(`[AudioDeviceManager] Trying device: ${deviceName}`);
         await setDefaultAudioDevice(deviceName);
         console.log(`[AudioDeviceManager] Successfully switched to: ${deviceName}`);
         switched = true;
         break;
       } catch (err) {
-        // Try next device name
+        triedNames.push(deviceName);
+        console.log(`[AudioDeviceManager] Device not found: ${deviceName}`);
         continue;
       }
     }
 
     if (!switched) {
-      throw new Error('Could not find virtual audio device. Please ensure virtual-audio-capturer is installed.');
+      console.error(`[AudioDeviceManager] Tried devices: ${triedNames.join(', ')}`);
+      throw new Error('Could not find virtual audio device. Please ensure screen-capture-recorder or VB-CABLE is installed. Tried: ' + triedNames.join(', '));
     }
 
     return { success: true, originalDevice: originalAudioDevice };
