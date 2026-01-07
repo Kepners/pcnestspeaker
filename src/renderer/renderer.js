@@ -816,6 +816,15 @@ async function toggleStereoChannel(index, channel) {
     // One speaker unassigned while streaming - stop streaming
     log('Speaker unassigned - stopping stereo streaming...', 'warning');
     await stopStereoStreaming();
+  } else if (stereoMode.leftSpeaker !== null || stereoMode.rightSpeaker !== null) {
+    // FIX: Only ONE speaker assigned (L or R) - start mono streaming to it!
+    // This is what users expect when clicking L or R on a single speaker
+    const monoSpeakerIndex = stereoMode.leftSpeaker !== null
+      ? stereoMode.leftSpeaker
+      : stereoMode.rightSpeaker;
+    log(`Single speaker assigned - starting mono stream...`, 'success');
+    // Start streaming but preserve stereo state (so user can add second speaker later)
+    await startStreamingToSpeaker(monoSpeakerIndex, false);
   }
 }
 
@@ -840,6 +849,7 @@ async function startStereoStreaming() {
     if (result.success) {
       stereoMode.streaming = true;
       stereoMode.enabled = true;
+      setStreamingState(true); // Update status indicator
       log('Stereo streaming started!', 'success');
       renderSpeakers();
 
@@ -875,6 +885,7 @@ async function stopStereoStreaming() {
 
     if (result.success) {
       stereoMode.streaming = false;
+      setStreamingState(false); // Update status indicator
       log('Stereo streaming stopped', 'success');
       renderSpeakers();
 
@@ -934,8 +945,9 @@ async function selectSpeaker(index) {
   }
 }
 
-// Start streaming to a speaker (called by right-click)
-async function startStreamingToSpeaker(index) {
+// Start streaming to a speaker (called by left-click on speaker row)
+// Set clearStereoState=false when called from stereo toggle to preserve L/R assignments
+async function startStreamingToSpeaker(index, clearStereoState = true) {
   const speaker = speakers[index];
   if (!speaker) return;
 
@@ -952,8 +964,8 @@ async function startStreamingToSpeaker(index) {
     log(`Failed to save speaker: ${error.message}`, 'warning');
   }
 
-  // If stereo mode is active (L/R assigned), stop it first
-  if (stereoMode.streaming || (stereoMode.leftSpeaker !== null && stereoMode.rightSpeaker !== null)) {
+  // If stereo mode is active (L/R assigned), stop it first (unless we're preserving stereo state)
+  if (clearStereoState && (stereoMode.streaming || (stereoMode.leftSpeaker !== null && stereoMode.rightSpeaker !== null))) {
     log('Stopping stereo mode for single speaker stream...');
     try {
       const leftSpeaker = stereoMode.leftSpeaker !== null ? speakers[stereoMode.leftSpeaker] : null;

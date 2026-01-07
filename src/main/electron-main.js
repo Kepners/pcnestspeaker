@@ -1374,6 +1374,15 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
   try {
     sendLog(`Starting stereo separation: L="${leftSpeaker.name}", R="${rightSpeaker.name}"`);
 
+    // Stop any existing mono streaming (ffmpegWebrtcProcess) before starting stereo
+    if (ffmpegWebrtcProcess) {
+      sendLog('Stopping existing mono stream for stereo mode...');
+      try {
+        ffmpegWebrtcProcess.kill('SIGTERM');
+      } catch (e) {}
+      ffmpegWebrtcProcess = null;
+    }
+
     // Switch Windows default audio to virtual device
     try {
       sendLog('Switching Windows audio to virtual device...');
