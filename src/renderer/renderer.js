@@ -667,19 +667,21 @@ function renderSpeakers() {
 
   // Add click handlers for speaker selection (main area, not toggles)
   speakerList.querySelectorAll('.speaker-item').forEach((item) => {
-    // Left-click = select and ping speaker
+    // Left-click = START STREAMING to speaker (what users expect!)
     item.addEventListener('click', (e) => {
-      // Don't select speaker if clicking on stereo toggles
+      // Don't trigger if clicking on stereo toggles
       if (e.target.classList.contains('stereo-toggle')) return;
-      selectSpeaker(parseInt(item.dataset.index));
+      if (e.target.classList.contains('info-btn')) return;
+      startStreamingToSpeaker(parseInt(item.dataset.index));
     });
 
-    // Right-click = start streaming to speaker
+    // Right-click = just ping speaker (for testing connection)
     item.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       if (e.target.classList.contains('stereo-toggle')) return;
       const index = parseInt(item.dataset.index);
-      startStreamingToSpeaker(index);
+      // Just select and ping, don't stream
+      selectSpeaker(index);
     });
   });
 
