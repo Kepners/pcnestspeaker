@@ -152,10 +152,8 @@ function updateTrayState(streaming) {
 
   if (!tray) return;
 
-  // Update icon based on state
-  const iconName = streaming ? 'tray-icon-active.png' : 'tray-icon.png';
-  const fallbackColor = streaming ? '#00FF00' : '#808080'; // Green for streaming, gray for idle
-  const icon = loadIcon(iconName, fallbackColor);
+  // Use same logo icon for both states
+  const icon = loadIcon('tray-icon.png', '#808080');
 
   tray.setImage(icon.resize({ width: 16, height: 16 }));
 
