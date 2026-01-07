@@ -131,9 +131,9 @@ function sendLog(message, type = 'info') {
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 480,
-    height: 780,
+    height: 920,
     minWidth: 420,
-    minHeight: 650,
+    minHeight: 800,
     resizable: true,
     frame: true,
     backgroundColor: '#FFFFFF',

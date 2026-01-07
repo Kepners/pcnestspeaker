@@ -73,9 +73,30 @@
           </div>
         </div>
 
-        <!-- Options (shown when speaker selected) -->
-        <div class="section" id="volume-card" style="display: none;">
+        <!-- Options (always visible) -->
+        <div class="section" id="options-card">
           <h2 class="section-label">OPTIONS</h2>
+
+          <!-- Cast Mode Toggle -->
+          <div class="option-row">
+            <span class="option-label">Cast Mode</span>
+            <div class="cast-mode-toggle">
+              <button class="cast-mode-btn active" id="cast-speakers-btn" data-mode="speakers">Speakers Only</button>
+              <button class="cast-mode-btn" id="cast-all-btn" data-mode="all">PC + Speakers</button>
+            </div>
+          </div>
+          <p class="option-hint" id="cast-mode-hint">Audio only goes to Nest speakers</p>
+
+          <!-- Sync Delay (only shown in PC + Speakers mode) -->
+          <div class="option-row sync-delay-row" id="sync-delay-row" style="display: none;">
+            <span class="option-label">Sync Delay</span>
+            <div class="sync-delay-control">
+              <input type="range" id="sync-delay-slider" min="0" max="2000" value="0" step="50">
+              <span class="sync-delay-value" id="sync-delay-value">0ms</span>
+            </div>
+          </div>
+
+          <!-- Volume Boost -->
           <div class="option-row">
             <span class="option-label">Volume Boost</span>
             <label class="toggle-switch">
@@ -83,14 +104,6 @@
               <span class="toggle-slider"></span>
             </label>
           </div>
-          <div class="option-row sync-delay-row">
-            <span class="option-label">Sync Delay</span>
-            <div class="sync-delay-control">
-              <input type="range" id="sync-delay-slider" min="0" max="2000" value="0" step="50">
-              <span class="sync-delay-value" id="sync-delay-value">0ms</span>
-            </div>
-          </div>
-          <p class="option-hint">Adjust delay to sync PC speakers with Nest audio</p>
         </div>
       </div>
 

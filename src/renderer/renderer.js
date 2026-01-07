@@ -15,9 +15,15 @@ const clearLogBtn = document.getElementById('clear-log-btn');
 const autoConnectToggle = document.getElementById('auto-connect-toggle');
 const autoStartToggle = document.getElementById('auto-start-toggle');
 
-// Volume boost element (slider removed - Windows keys control volume)
-const volumeCard = document.getElementById('volume-card');
+// Options elements
+const optionsCard = document.getElementById('options-card');
 const volumeBoostToggle = document.getElementById('volume-boost-toggle');
+
+// Cast mode elements
+const castSpeakersBtn = document.getElementById('cast-speakers-btn');
+const castAllBtn = document.getElementById('cast-all-btn');
+const castModeHint = document.getElementById('cast-mode-hint');
+const syncDelayRow = document.getElementById('sync-delay-row');
 
 // Sync delay elements
 const syncDelaySlider = document.getElementById('sync-delay-slider');
@@ -42,6 +48,9 @@ let dependencies = {
 
 // Volume boost state (slider removed - Windows keys control volume)
 let volumeBoostEnabled = false; // When true, speaker stays at 100%
+
+// Cast mode state: 'speakers' = Nest only, 'all' = PC + Nest (shows delay)
+let castMode = 'speakers';
 
 // Sync delay state
 let currentSyncDelayMs = 0;
@@ -100,6 +109,11 @@ async function loadSettings() {
         syncDelayValue.textContent = `${currentSyncDelayMs}ms`;
       }
       log(`Sync delay: ${currentSyncDelayMs}ms`);
+    }
+
+    // Apply cast mode state
+    if (settings.castMode) {
+      setCastMode(settings.castMode);
     }
   } catch (error) {
     log(`Failed to load settings: ${error.message}`, 'error');
@@ -318,6 +332,12 @@ function setupEventListeners() {
     });
   }
 
+  // Cast mode toggle buttons
+  if (castSpeakersBtn && castAllBtn) {
+    castSpeakersBtn.addEventListener('click', () => setCastMode('speakers'));
+    castAllBtn.addEventListener('click', () => setCastMode('all'));
+  }
+
   // Listen for auto-connect event from main process
   window.api.onAutoConnect(async (speaker) => {
     log(`Auto-connecting to ${speaker.name}...`, 'info');
@@ -355,6 +375,35 @@ function setupEventListeners() {
       showLicenseModal();
     });
   }
+}
+
+// Set cast mode and update UI
+function setCastMode(mode) {
+  castMode = mode;
+  log(`Cast mode: ${mode === 'speakers' ? 'Speakers Only' : 'PC + Speakers'}`);
+
+  // Update button states
+  if (castSpeakersBtn && castAllBtn) {
+    castSpeakersBtn.classList.toggle('active', mode === 'speakers');
+    castAllBtn.classList.toggle('active', mode === 'all');
+  }
+
+  // Update hint text
+  if (castModeHint) {
+    if (mode === 'speakers') {
+      castModeHint.textContent = 'Audio only goes to Nest speakers';
+    } else {
+      castModeHint.textContent = 'PC speakers + Nest (use delay to sync)';
+    }
+  }
+
+  // Show/hide sync delay row
+  if (syncDelayRow) {
+    syncDelayRow.style.display = mode === 'all' ? 'flex' : 'none';
+  }
+
+  // Save setting
+  window.api.updateSettings({ castMode: mode });
 }
 
 // Check all dependencies

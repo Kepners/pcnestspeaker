@@ -517,6 +517,38 @@ body::before {
   margin-bottom: 14px;
 }
 
+/* ==================== CAST MODE TOGGLE ==================== */
+.cast-mode-toggle {
+  display: flex;
+  gap: 4px;
+  background: rgba(26, 26, 26, 0.06);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.cast-mode-btn {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: transparent;
+  color: rgba(26, 26, 26, 0.5);
+}
+
+.cast-mode-btn:hover {
+  color: rgba(26, 26, 26, 0.8);
+}
+
+.cast-mode-btn.active {
+  background: var(--pink);
+  color: white;
+  box-shadow: 0 2px 8px rgba(239, 71, 111, 0.3);
+}
+
 /* ==================== SYNC DELAY SLIDER ==================== */
 .sync-delay-row {
   flex-direction: column;
