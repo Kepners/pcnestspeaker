@@ -66,20 +66,14 @@
         </div>
       </div>
 
-      <!-- Volume Control (hidden until speaker selected) -->
+      <!-- Volume Boost (shown when streaming) -->
       <div class="card volume-card" id="volume-card" style="display: none;">
-        <h2 class="card-title">VOLUME</h2>
-        <div class="volume-controls">
-          <button class="volume-btn" id="mute-btn" title="Mute/Unmute">🔊</button>
-          <input type="range" class="volume-slider" id="volume-slider" min="0" max="100" value="50">
-          <span class="volume-percentage" id="volume-percentage">50%</span>
-        </div>
         <div class="volume-boost-row">
           <label class="setting-label boost-label">
             <input type="checkbox" id="volume-boost-toggle" class="setting-checkbox">
             <span>Volume Boost</span>
           </label>
-          <span class="boost-description" title="Amplifies audio signal by 25% for louder output without changing Windows or speaker volume.">+25% signal boost</span>
+          <span class="boost-description" title="Amplifies audio signal by 25% for louder output. Use Windows volume keys to control speaker.">+25% signal boost</span>
         </div>
       </div>
 

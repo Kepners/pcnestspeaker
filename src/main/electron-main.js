@@ -1145,35 +1145,18 @@ ipcMain.handle('restart-ffmpeg', async () => {
   }
 });
 
-// Test ping to speaker (isolated test - no streaming) - uses daemon for INSTANT response
+// Test ping to speaker (isolated test - no streaming)
 ipcMain.handle('ping-speaker', async (event, speakerName) => {
   try {
     sendLog(`Pinging "${speakerName}"...`);
+    const result = await runPython(['ping', speakerName]);
 
-    // Get speaker IP for faster daemon connection
-    const speaker = discoveredSpeakers.find(s => s.name === speakerName);
-    const speakerIp = speaker?.ip || null;
-
-    // Use daemon for instant ping (cached connection)
-    if (daemonManager.isDaemonRunning()) {
-      const result = await daemonManager.pingSpeaker(speakerName, speakerIp);
-      if (result.success) {
-        sendLog('Ping sent!', 'success');
-        return { success: true };
-      } else {
-        sendLog(`Ping failed: ${result.error}`, 'error');
-        return { success: false, error: result.error };
-      }
+    if (result.success) {
+      sendLog('Ping sent!', 'success');
+      return { success: true };
     } else {
-      // Fallback to spawning Python
-      const result = await runPython(['ping', speakerName]);
-      if (result.success) {
-        sendLog('Ping sent!', 'success');
-        return { success: true };
-      } else {
-        sendLog(`Ping failed: ${result.error}`, 'error');
-        return { success: false, error: result.error };
-      }
+      sendLog(`Ping failed: ${result.error}`, 'error');
+      return { success: false, error: result.error };
     }
   } catch (error) {
     sendLog(`Ping failed: ${error.message}`, 'error');

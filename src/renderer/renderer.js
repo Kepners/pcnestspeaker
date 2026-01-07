@@ -15,11 +15,8 @@ const clearLogBtn = document.getElementById('clear-log-btn');
 const autoConnectToggle = document.getElementById('auto-connect-toggle');
 const autoStartToggle = document.getElementById('auto-start-toggle');
 
-// Volume control elements
+// Volume boost element (slider removed - Windows keys control volume)
 const volumeCard = document.getElementById('volume-card');
-const volumeSlider = document.getElementById('volume-slider');
-const volumePercentage = document.getElementById('volume-percentage');
-const muteBtn = document.getElementById('mute-btn');
 const volumeBoostToggle = document.getElementById('volume-boost-toggle');
 
 // Trial info elements
@@ -39,10 +36,7 @@ let dependencies = {
   ffmpeg: null
 };
 
-// Volume state
-let currentVolume = 50; // 0-100
-let isMuted = false;
-let previousVolume = 50; // Store volume before muting
+// Volume boost state (slider removed - Windows keys control volume)
 let volumeBoostEnabled = false; // When true, speaker stays at 100%
 
 // Stereo separation state
@@ -257,57 +251,6 @@ function setupEventListeners() {
       }
     }
   });
-
-  // Volume control event listeners with debouncing
-  let volumeDebounceTimer = null;
-
-  if (volumeSlider) {
-    volumeSlider.addEventListener('input', (e) => {
-      const volume = parseInt(e.target.value);
-      currentVolume = volume;
-      updateVolumeDisplay();
-
-      // Debounce: Only send volume after user stops moving slider for 500ms
-      if (volumeDebounceTimer) {
-        clearTimeout(volumeDebounceTimer);
-      }
-
-      volumeDebounceTimer = setTimeout(async () => {
-        const volumeLevel = volume / 100; // pychromecast uses 0.0-1.0
-
-        // Handle stereo mode - set volume on both speakers
-        if (stereoMode.leftSpeaker !== null && stereoMode.rightSpeaker !== null) {
-          try {
-            const leftName = speakers[stereoMode.leftSpeaker].name;
-            const rightName = speakers[stereoMode.rightSpeaker].name;
-            log(`Setting volume to ${volume}% on both speakers...`, 'info');
-            await Promise.all([
-              window.api.setVolume(leftName, volumeLevel),
-              window.api.setVolume(rightName, volumeLevel)
-            ]);
-            log(`Volume set to ${volume}%`, 'success');
-          } catch (error) {
-            log(`Volume set failed: ${error.message}`, 'warning');
-          }
-        } else if (selectedSpeaker) {
-          // Single speaker mode
-          try {
-            log(`Setting volume to ${volume}%...`, 'info');
-            await window.api.setVolume(selectedSpeaker.name, volumeLevel);
-            log(`Volume set to ${volume}%`, 'success');
-          } catch (error) {
-            log(`Volume set failed: ${error.message}`, 'warning');
-          }
-        }
-      }, 500); // Wait 500ms after user stops dragging
-    });
-  }
-
-  if (muteBtn) {
-    muteBtn.addEventListener('click', async () => {
-      await toggleMute();
-    });
-  }
 
   // Purchase button - opens license modal
   if (purchaseBtn) {
@@ -724,22 +667,9 @@ async function startStereoStreaming() {
       renderSpeakers();
 
       // Show volume control for stereo mode
+      // Show volume boost card when streaming
       if (volumeCard) {
         volumeCard.style.display = 'block';
-
-        // Get volume from left speaker as reference
-        try {
-          const volResult = await window.api.getVolume(leftSpeaker.name);
-          if (volResult.success) {
-            currentVolume = Math.round(volResult.volume * 100);
-            isMuted = volResult.muted || false;
-            updateVolumeDisplay();
-            log(`Volume: ${currentVolume}%${isMuted ? ' (muted)' : ''}`, 'info');
-          }
-        } catch (volError) {
-          currentVolume = 50;
-          updateVolumeDisplay();
-        }
       }
     } else {
       throw new Error(result.error || 'Unknown error');
@@ -812,25 +742,9 @@ async function selectSpeaker(index) {
     item.classList.toggle('selected', i === index);
   });
 
-  // Show volume control and get current volume
+  // Show volume boost card when speaker selected
   if (volumeCard) {
     volumeCard.style.display = 'block';
-
-    // Get current volume from speaker
-    try {
-      const result = await window.api.getVolume(selectedSpeaker.name);
-      if (result.success) {
-        currentVolume = Math.round(result.volume * 100); // Convert 0.0-1.0 to 0-100
-        isMuted = result.muted || false;
-        updateVolumeDisplay();
-        log(`Volume: ${currentVolume}%${isMuted ? ' (muted)' : ''}`, 'info');
-      }
-    } catch (error) {
-      log(`Failed to get volume: ${error.message}`, 'warning');
-      // Use default volume if we can't get it
-      currentVolume = 50;
-      updateVolumeDisplay();
-    }
   }
 
   // If already streaming, stop current stream first
@@ -894,73 +808,7 @@ async function selectSpeaker(index) {
   }
 }
 
-// Volume control functions
-function updateVolumeDisplay() {
-  if (!volumeSlider || !volumePercentage || !muteBtn) return;
-
-  volumeSlider.value = currentVolume;
-  volumePercentage.textContent = `${currentVolume}%`;
-
-  if (isMuted) {
-    muteBtn.textContent = '🔇';
-    muteBtn.classList.add('muted');
-    muteBtn.title = 'Unmute';
-  } else {
-    muteBtn.textContent = '🔊';
-    muteBtn.classList.remove('muted');
-    muteBtn.title = 'Mute';
-  }
-}
-
-async function toggleMute() {
-  // Check if we have speakers to control (single or stereo mode)
-  const hasStereo = stereoMode.leftSpeaker !== null && stereoMode.rightSpeaker !== null;
-  if (!selectedSpeaker && !hasStereo) return;
-
-  try {
-    if (isMuted) {
-      // Unmute - restore previous volume
-      currentVolume = previousVolume || 50;
-      const volumeLevel = currentVolume / 100;
-
-      if (hasStereo) {
-        const leftName = speakers[stereoMode.leftSpeaker].name;
-        const rightName = speakers[stereoMode.rightSpeaker].name;
-        await Promise.all([
-          window.api.setVolume(leftName, volumeLevel),
-          window.api.setVolume(rightName, volumeLevel)
-        ]);
-      } else {
-        await window.api.setVolume(selectedSpeaker.name, volumeLevel);
-      }
-
-      isMuted = false;
-      log(`Unmuted: ${currentVolume}%`, 'success');
-    } else {
-      // Mute - save current volume and set to 0
-      previousVolume = currentVolume;
-      currentVolume = 0;
-
-      if (hasStereo) {
-        const leftName = speakers[stereoMode.leftSpeaker].name;
-        const rightName = speakers[stereoMode.rightSpeaker].name;
-        await Promise.all([
-          window.api.setVolume(leftName, 0),
-          window.api.setVolume(rightName, 0)
-        ]);
-      } else {
-        await window.api.setVolume(selectedSpeaker.name, 0);
-      }
-
-      isMuted = true;
-      log('Muted', 'success');
-    }
-
-    updateVolumeDisplay();
-  } catch (error) {
-    log(`Mute toggle failed: ${error.message}`, 'error');
-  }
-}
+// Volume is now controlled by Windows volume keys (no slider/mute UI)
 
 // Trial tracking functions
 async function updateTrialDisplay() {
