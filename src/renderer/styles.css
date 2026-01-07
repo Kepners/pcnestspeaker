@@ -170,6 +170,11 @@ body::before {
   padding: 0;
 }
 
+/* Options section needs more spacing from speaker list */
+#options-card {
+  margin-top: 8px;
+}
+
 .section-label {
   font-size: 0.7rem;
   font-weight: 600;
