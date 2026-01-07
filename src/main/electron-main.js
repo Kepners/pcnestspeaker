@@ -396,11 +396,9 @@ async function startFFmpegWebRTC(audioDevice) {
     // Check if volume boost is enabled
     const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
 
-    // Secret sauce: Always boost by 20% (Windows doesn't know)
-    // Boost toggle: 115% increase (more than double)
-    // Windows 20% → 24% (hidden) or 43% (boost)
-    // Windows 100% → 120% (hidden) or 215% (boost, will clip at max)
-    const boostLevel = volumeBoostEnabled ? 2.15 : 1.20;
+    // Secret sauce: Always boost by 3% (Windows doesn't know)
+    // Boost toggle: 25% increase
+    const boostLevel = volumeBoostEnabled ? 1.25 : 1.03;
 
     const args = [
       '-hide_banner',
@@ -1307,7 +1305,7 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
 
     // Check if volume boost is enabled (same values as main stream)
     const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
-    const boostLevel = volumeBoostEnabled ? 2.15 : 1.20; // 20% hidden, 115% with boost
+    const boostLevel = volumeBoostEnabled ? 1.25 : 1.03; // 3% hidden, 25% with boost
 
     stereoFFmpegProcesses.left = spawn(ffmpegPath, [
       '-hide_banner', '-stats',  // Force progress output for stream monitor
