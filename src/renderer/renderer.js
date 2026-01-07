@@ -591,6 +591,25 @@ async function startStereoStreaming() {
       stereoMode.enabled = true;
       log('Stereo streaming started!', 'success');
       renderSpeakers();
+
+      // Show volume control for stereo mode
+      if (volumeCard) {
+        volumeCard.style.display = 'block';
+
+        // Get volume from left speaker as reference
+        try {
+          const volResult = await window.api.getVolume(leftSpeaker.name);
+          if (volResult.success) {
+            currentVolume = Math.round(volResult.volume * 100);
+            isMuted = volResult.muted || false;
+            updateVolumeDisplay();
+            log(`Volume: ${currentVolume}%${isMuted ? ' (muted)' : ''}`, 'info');
+          }
+        } catch (volError) {
+          currentVolume = 50;
+          updateVolumeDisplay();
+        }
+      }
     } else {
       throw new Error(result.error || 'Unknown error');
     }
@@ -620,6 +639,11 @@ async function stopStereoStreaming() {
       stereoMode.streaming = false;
       log('Stereo streaming stopped', 'success');
       renderSpeakers();
+
+      // Hide volume card if no single speaker is selected
+      if (volumeCard && !selectedSpeaker) {
+        volumeCard.style.display = 'none';
+      }
     } else {
       throw new Error(result.error || 'Unknown error');
     }
