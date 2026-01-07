@@ -19,7 +19,7 @@ function ensureFirewallRule(port) {
 
   return new Promise((resolve) => {
     // Check if rule exists
-    exec(`netsh advfirewall firewall show rule name="PC Nest Speaker HTTP" >nul 2>&1`, (err) => {
+    exec(`netsh advfirewall firewall show rule name="PC Nest Speaker HTTP" >nul 2>&1`, { windowsHide: true }, (err) => {
       if (!err) {
         console.log('Firewall rule already exists');
         resolve();
@@ -28,7 +28,7 @@ function ensureFirewallRule(port) {
 
       // Create rule (will prompt for admin if needed)
       console.log('Creating firewall rule for port', port);
-      exec(`netsh advfirewall firewall add rule name="PC Nest Speaker HTTP" dir=in action=allow protocol=TCP localport=${port}`, (err2) => {
+      exec(`netsh advfirewall firewall add rule name="PC Nest Speaker HTTP" dir=in action=allow protocol=TCP localport=${port}`, { windowsHide: true }, (err2) => {
         if (err2) {
           console.log('Could not create firewall rule (may need admin rights):', err2.message);
         } else {
@@ -104,7 +104,7 @@ class AudioStreamer {
         '-list_devices', 'true',
         '-f', 'dshow',
         '-i', 'dummy'
-      ]);
+      ], { windowsHide: true });
 
       let stderr = '';
       proc.stderr.on('data', (data) => {
@@ -340,6 +340,7 @@ class AudioStreamer {
 
     this.ffmpegProcess = spawn(ffmpeg, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true
     });
 
     this.ffmpegProcess.stdout.on('data', (data) => {
@@ -395,6 +396,7 @@ class AudioStreamer {
 
     this.ffmpegProcess = spawn(ffmpeg, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true
     });
 
     let bytesStreamed = 0;

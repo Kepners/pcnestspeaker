@@ -65,7 +65,7 @@ function getWindowsVolumeFallback() {
   return new Promise((resolve, reject) => {
     // Use nircmd to get volume (returns 0-65535)
     const nircmdPath = path.join(__dirname, '..', '..', 'nircmd', 'nircmd.exe');
-    exec(`"${nircmdPath}" setsysvolume 0`, (error) => {
+    exec(`"${nircmdPath}" setsysvolume 0`, { windowsHide: true }, (error) => {
       // nircmd doesn't have a get volume command, so we'll poll
       resolve(50); // Default to 50% if we can't get it
     });
