@@ -445,8 +445,14 @@ async function startFFmpegWebRTC(audioDevice) {
       }
       // Log ALL FFmpeg output for debugging stream monitor
       if (msg) {
+        // Check for critical errors
+        if (msg.includes('Could not find audio device') || msg.includes('audio device not found') ||
+            msg.includes('No such device') || msg.includes('Invalid data found')) {
+          sendLog(`[FFmpeg ERROR] Audio device not found: ${audioDevice}`, 'error');
+          sendLog(`[FFmpeg] Make sure screen-capture-recorder is installed and virtual-audio-capturer is available`, 'error');
+        }
         // Check if this is stats output we should be parsing
-        if (msg.includes('size=') || msg.includes('time=') || msg.includes('bitrate=')) {
+        else if (msg.includes('size=') || msg.includes('time=') || msg.includes('bitrate=')) {
           sendLog(`[FFmpeg STATS] ${msg}`);
         } else if (!msg.includes('frame=')) {
           sendLog(`[FFmpeg] ${msg}`);
@@ -839,9 +845,68 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
       // Check if pipeline was pre-started in background
       if (webrtcPipelineReady && mediamtxProcess && ffmpegWebrtcProcess && tunnelUrl) {
-        sendLog('Using pre-started WebRTC pipeline (instant start!)', 'success');
+        sendLog('Using pre-started WebRTC pipeline', 'success');
         httpsUrl = tunnelUrl;
-        // Start stream stats monitoring (even for pre-started pipeline)
+
+        // CRITICAL FIX: Restart FFmpeg AFTER audio device switch!
+        // The pre-started FFmpeg was capturing from the OLD default output.
+        // Now that we've switched to Virtual Desktop Audio, we need to restart FFmpeg
+        // so it captures from the NEW default output via WASAPI loopback.
+        sendLog('Restarting FFmpeg to capture from new audio device...');
+
+        // Kill old FFmpeg process
+        if (ffmpegWebrtcProcess) {
+          try {
+            ffmpegWebrtcProcess.kill('SIGTERM');
+          } catch (e) {}
+          ffmpegWebrtcProcess = null;
+        }
+
+        // Wait a moment for WASAPI to recognize the new default device
+        await new Promise(r => setTimeout(r, 500));
+
+        // Determine audio device name for FFmpeg
+        let audioDeviceName = 'virtual-audio-capturer';
+        if (streamingMode === 'webrtc-vbcable') {
+          audioDeviceName = 'CABLE Output (VB-Audio Virtual Cable)';
+        } else {
+          if (!audioStreamer) {
+            audioStreamer = new AudioStreamer();
+          }
+          const devices = await audioStreamer.getAudioDevices();
+          sendLog(`Available DirectShow audio devices: ${devices.join(', ')}`);
+
+          const vacDevice = devices.find(d =>
+            d.toLowerCase().includes('virtual-audio-capturer')
+          );
+          if (vacDevice) {
+            audioDeviceName = vacDevice;
+            sendLog(`Found virtual-audio-capturer: "${audioDeviceName}"`);
+          } else {
+            sendLog('[WARNING] virtual-audio-capturer not found! Checking for alternatives...', 'warning');
+            // Try to find any virtual audio device
+            const virtualDevice = devices.find(d =>
+              d.toLowerCase().includes('virtual') ||
+              d.toLowerCase().includes('cable') ||
+              d.toLowerCase().includes('stereo mix')
+            );
+            if (virtualDevice) {
+              audioDeviceName = virtualDevice;
+              sendLog(`Using alternative device: "${audioDeviceName}"`, 'warning');
+            } else {
+              sendLog('[ERROR] No virtual audio capture device found!', 'error');
+              sendLog('[ERROR] Please install screen-capture-recorder from: https://github.com/rdp/screen-capture-recorder-to-video-windows-free/releases', 'error');
+            }
+          }
+        }
+
+        sendLog(`Using audio device: ${audioDeviceName}`);
+
+        // Start new FFmpeg process
+        await startFFmpegWebRTC(audioDeviceName);
+        sendLog('FFmpeg restarted - now capturing from Virtual Desktop Audio!', 'success');
+
+        // Start stream stats monitoring
         if (streamStats) {
           streamStats.start();
         }
@@ -860,11 +925,29 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
             audioStreamer = new AudioStreamer();
           }
           const devices = await audioStreamer.getAudioDevices();
+          sendLog(`Available DirectShow audio devices: ${devices.join(', ')}`);
+
           const vacDevice = devices.find(d =>
             d.toLowerCase().includes('virtual-audio-capturer')
           );
           if (vacDevice) {
             audioDeviceName = vacDevice;
+            sendLog(`Found virtual-audio-capturer: "${audioDeviceName}"`);
+          } else {
+            sendLog('[WARNING] virtual-audio-capturer not found! Checking for alternatives...', 'warning');
+            // Try to find any virtual audio device
+            const virtualDevice = devices.find(d =>
+              d.toLowerCase().includes('virtual') ||
+              d.toLowerCase().includes('cable') ||
+              d.toLowerCase().includes('stereo mix')
+            );
+            if (virtualDevice) {
+              audioDeviceName = virtualDevice;
+              sendLog(`Using alternative device: "${audioDeviceName}"`, 'warning');
+            } else {
+              sendLog('[ERROR] No virtual audio capture device found!', 'error');
+              sendLog('[ERROR] Please install screen-capture-recorder from: https://github.com/rdp/screen-capture-recorder-to-video-windows-free/releases', 'error');
+            }
           }
         }
 
