@@ -220,10 +220,25 @@ function setupEventListeners() {
       currentVolume = volume;
       updateVolumeDisplay();
 
-      // Set volume on speaker
-      if (selectedSpeaker) {
+      // Set volume on speaker(s)
+      const volumeLevel = volume / 100; // pychromecast uses 0.0-1.0
+
+      // Handle stereo mode - set volume on both speakers
+      if (stereoMode.leftSpeaker !== null && stereoMode.rightSpeaker !== null) {
         try {
-          await window.api.setVolume(selectedSpeaker.name, volume / 100); // pychromecast uses 0.0-1.0
+          const leftName = speakers[stereoMode.leftSpeaker].name;
+          const rightName = speakers[stereoMode.rightSpeaker].name;
+          await Promise.all([
+            window.api.setVolume(leftName, volumeLevel),
+            window.api.setVolume(rightName, volumeLevel)
+          ]);
+        } catch (error) {
+          log(`Volume set failed: ${error.message}`, 'warning');
+        }
+      } else if (selectedSpeaker) {
+        // Single speaker mode
+        try {
+          await window.api.setVolume(selectedSpeaker.name, volumeLevel);
         } catch (error) {
           log(`Volume set failed: ${error.message}`, 'warning');
         }
@@ -773,20 +788,45 @@ function updateVolumeDisplay() {
 }
 
 async function toggleMute() {
-  if (!selectedSpeaker) return;
+  // Check if we have speakers to control (single or stereo mode)
+  const hasStereo = stereoMode.leftSpeaker !== null && stereoMode.rightSpeaker !== null;
+  if (!selectedSpeaker && !hasStereo) return;
 
   try {
     if (isMuted) {
       // Unmute - restore previous volume
       currentVolume = previousVolume || 50;
-      await window.api.setVolume(selectedSpeaker.name, currentVolume / 100);
+      const volumeLevel = currentVolume / 100;
+
+      if (hasStereo) {
+        const leftName = speakers[stereoMode.leftSpeaker].name;
+        const rightName = speakers[stereoMode.rightSpeaker].name;
+        await Promise.all([
+          window.api.setVolume(leftName, volumeLevel),
+          window.api.setVolume(rightName, volumeLevel)
+        ]);
+      } else {
+        await window.api.setVolume(selectedSpeaker.name, volumeLevel);
+      }
+
       isMuted = false;
       log(`Unmuted: ${currentVolume}%`, 'success');
     } else {
       // Mute - save current volume and set to 0
       previousVolume = currentVolume;
       currentVolume = 0;
-      await window.api.setVolume(selectedSpeaker.name, 0);
+
+      if (hasStereo) {
+        const leftName = speakers[stereoMode.leftSpeaker].name;
+        const rightName = speakers[stereoMode.rightSpeaker].name;
+        await Promise.all([
+          window.api.setVolume(leftName, 0),
+          window.api.setVolume(rightName, 0)
+        ]);
+      } else {
+        await window.api.setVolume(selectedSpeaker.name, 0);
+      }
+
       isMuted = true;
       log('Muted', 'success');
     }
