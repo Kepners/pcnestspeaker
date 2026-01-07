@@ -213,36 +213,48 @@ function setupEventListeners() {
     }
   });
 
-  // Volume control event listeners
+  // Volume control event listeners with debouncing
+  let volumeDebounceTimer = null;
+
   if (volumeSlider) {
-    volumeSlider.addEventListener('input', async (e) => {
+    volumeSlider.addEventListener('input', (e) => {
       const volume = parseInt(e.target.value);
       currentVolume = volume;
       updateVolumeDisplay();
 
-      // Set volume on speaker(s)
-      const volumeLevel = volume / 100; // pychromecast uses 0.0-1.0
-
-      // Handle stereo mode - set volume on both speakers
-      if (stereoMode.leftSpeaker !== null && stereoMode.rightSpeaker !== null) {
-        try {
-          const leftName = speakers[stereoMode.leftSpeaker].name;
-          const rightName = speakers[stereoMode.rightSpeaker].name;
-          await Promise.all([
-            window.api.setVolume(leftName, volumeLevel),
-            window.api.setVolume(rightName, volumeLevel)
-          ]);
-        } catch (error) {
-          log(`Volume set failed: ${error.message}`, 'warning');
-        }
-      } else if (selectedSpeaker) {
-        // Single speaker mode
-        try {
-          await window.api.setVolume(selectedSpeaker.name, volumeLevel);
-        } catch (error) {
-          log(`Volume set failed: ${error.message}`, 'warning');
-        }
+      // Debounce: Only send volume after user stops moving slider for 500ms
+      if (volumeDebounceTimer) {
+        clearTimeout(volumeDebounceTimer);
       }
+
+      volumeDebounceTimer = setTimeout(async () => {
+        const volumeLevel = volume / 100; // pychromecast uses 0.0-1.0
+
+        // Handle stereo mode - set volume on both speakers
+        if (stereoMode.leftSpeaker !== null && stereoMode.rightSpeaker !== null) {
+          try {
+            const leftName = speakers[stereoMode.leftSpeaker].name;
+            const rightName = speakers[stereoMode.rightSpeaker].name;
+            log(`Setting volume to ${volume}% on both speakers...`, 'info');
+            await Promise.all([
+              window.api.setVolume(leftName, volumeLevel),
+              window.api.setVolume(rightName, volumeLevel)
+            ]);
+            log(`Volume set to ${volume}%`, 'success');
+          } catch (error) {
+            log(`Volume set failed: ${error.message}`, 'warning');
+          }
+        } else if (selectedSpeaker) {
+          // Single speaker mode
+          try {
+            log(`Setting volume to ${volume}%...`, 'info');
+            await window.api.setVolume(selectedSpeaker.name, volumeLevel);
+            log(`Volume set to ${volume}%`, 'success');
+          } catch (error) {
+            log(`Volume set failed: ${error.message}`, 'warning');
+          }
+        }
+      }, 500); // Wait 500ms after user stops dragging
     });
   }
 

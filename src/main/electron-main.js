@@ -1042,10 +1042,14 @@ ipcMain.handle('get-volume', async (event, speakerName) => {
   }
 });
 
-// Set speaker volume (0.0 - 1.0)
+// Set speaker volume (0.0 - 1.0) - uses cached IP for speed
 ipcMain.handle('set-volume', async (event, speakerName, volume) => {
   try {
-    const result = await runPython(['set-volume', speakerName, volume.toString()]);
+    // Find cached IP for this speaker (avoids slow network scan)
+    const speaker = discoveredSpeakers.find(s => s.name === speakerName);
+    const speakerIp = speaker ? speaker.ip : '';
+
+    const result = await runPython(['set-volume-fast', speakerName, volume.toString(), speakerIp]);
 
     if (result.success) {
       return { success: true, volume: result.volume };
