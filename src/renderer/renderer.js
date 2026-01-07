@@ -191,6 +191,27 @@ function setupEventListeners() {
     window.api.openExternal('https://choppedonions.xyz');
   });
 
+  // Bottom tab navigation
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.tab-content');
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tabId = btn.dataset.tab;
+
+      // Remove active class from all tabs and content
+      tabBtns.forEach(b => b.classList.remove('active'));
+      tabContents.forEach(c => c.classList.remove('active'));
+
+      // Add active class to clicked tab and corresponding content
+      btn.classList.add('active');
+      const tabContent = document.getElementById(`tab-${tabId}`);
+      if (tabContent) {
+        tabContent.classList.add('active');
+      }
+    });
+  });
+
   // Clear log button
   if (clearLogBtn) {
     clearLogBtn.addEventListener('click', () => {

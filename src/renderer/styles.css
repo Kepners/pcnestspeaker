@@ -105,6 +105,11 @@ body::before {
   letter-spacing: 1px;
 }
 
+.tagline .highlight {
+  color: var(--pink);
+  font-weight: 600;
+}
+
 /* ==================== MAIN ==================== */
 .main {
   flex: 1;
@@ -198,10 +203,9 @@ body::before {
 
 /* ==================== STREAM MONITOR ==================== */
 .stream-monitor {
-  background: rgba(41, 191, 18, 0.03);
-  border: 1px solid rgba(41, 191, 18, 0.15);
-  border-radius: 12px;
-  padding: 18px;
+  background: transparent;
+  border: none;
+  padding: 0;
 }
 
 .stream-monitor .section-label,
@@ -227,7 +231,7 @@ body::before {
 .visualizer-bar {
   flex: 1;
   background: linear-gradient(to top, var(--green), var(--cyan));
-  border-radius: 3px 3px 0 0;
+  border-radius: 0;
   min-height: 4px;
   height: 15%;
   transition: height 0.1s ease;
@@ -252,8 +256,7 @@ body::before {
   align-items: center;
   text-align: center;
   padding: 10px 8px;
-  background: rgba(10, 9, 8, 0.5);
-  border-radius: 8px;
+  background: transparent;
 }
 
 .stat-label {
@@ -289,29 +292,27 @@ body::before {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
-  background: rgba(242, 244, 243, 0.03);
-  border: 1px solid rgba(242, 244, 243, 0.08);
-  border-radius: 10px;
+  padding: 14px 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(242, 244, 243, 0.06);
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .speaker-item:hover {
-  background: rgba(239, 71, 111, 0.06);
-  border-color: rgba(239, 71, 111, 0.3);
+  background: transparent;
 }
 
 .speaker-item.selected {
-  background: rgba(41, 191, 18, 0.08);
-  border-color: rgba(41, 191, 18, 0.4);
+  background: transparent;
 }
 
 .speaker-icon {
   width: 40px;
   height: 40px;
   background: linear-gradient(135deg, var(--cyan), var(--pink));
-  border-radius: 8px;
+  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -365,7 +366,7 @@ body::before {
 .stereo-toggle {
   width: 32px;
   height: 32px;
-  border-radius: 6px;
+  border-radius: 0;
   border: 1px solid rgba(242, 244, 243, 0.15);
   background: rgba(242, 244, 243, 0.03);
   color: rgba(242, 244, 243, 0.4);
@@ -401,7 +402,7 @@ body::before {
 .stereo-badge {
   background: rgba(85, 130, 139, 0.15);
   border: 1px solid rgba(85, 130, 139, 0.4);
-  border-radius: 4px;
+  border-radius: 0;
   padding: 4px 8px;
   font-size: 9px;
   font-weight: 700;
@@ -496,10 +497,9 @@ body::before {
 
 /* ==================== VOLUME CARD ==================== */
 #volume-card {
-  background: rgba(41, 191, 18, 0.03);
-  border: 1px solid rgba(41, 191, 18, 0.15);
-  border-radius: 12px;
-  padding: 18px;
+  background: transparent;
+  border: none;
+  padding: 0;
 }
 
 #volume-card .section-label,
@@ -531,7 +531,7 @@ body::before {
   -webkit-appearance: none;
   appearance: none;
   background: rgba(242, 244, 243, 0.1);
-  border-radius: 8px;
+  border-radius: 0;
   height: 8px;
   cursor: pointer;
 }
@@ -589,7 +589,7 @@ body::before {
   gap: 8px;
   padding: 10px 18px;
   border: none;
-  border-radius: 8px;
+  border-radius: 0;
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
@@ -652,7 +652,7 @@ body::before {
   transition: all 0.2s ease;
   text-transform: uppercase;
   letter-spacing: 2px;
-  border-radius: 10px;
+  border-radius: 0;
   margin-top: 10px;
 }
 
@@ -695,10 +695,9 @@ body::before {
 
 /* ==================== TRIAL SECTION ==================== */
 .trial-section {
-  background: rgba(239, 71, 111, 0.05);
-  border: 1px solid rgba(239, 71, 111, 0.2);
-  border-radius: 12px;
-  padding: 18px;
+  background: transparent;
+  border: none;
+  padding: 0;
 }
 
 .trial-row {
@@ -721,16 +720,15 @@ body::before {
 
 /* ==================== DEBUG SECTION ==================== */
 .debug-section {
-  background: rgba(10, 9, 8, 0.5);
-  border: 1px solid rgba(242, 244, 243, 0.08);
-  border-radius: 12px;
-  padding: 18px;
+  background: transparent;
+  border: none;
+  padding: 0;
 }
 
 .debug-log {
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(242, 244, 243, 0.08);
-  border-radius: 6px;
+  border-radius: 0;
   padding: 10px;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 0.7rem;
@@ -771,7 +769,7 @@ body::before {
 .modal-box {
   background: var(--black);
   border: 1px solid var(--pink);
-  border-radius: 14px;
+  border-radius: 0;
   padding: 28px;
   max-width: 400px;
   width: 90%;
@@ -799,7 +797,7 @@ body::before {
   padding: 14px;
   background: rgba(242, 244, 243, 0.03);
   border: 1px solid rgba(242, 244, 243, 0.15);
-  border-radius: 8px;
+  border-radius: 0;
   color: var(--green);
   font-size: 1rem;
   font-family: 'Courier New', monospace;
@@ -826,7 +824,7 @@ body::before {
   margin: -6px 0 14px;
   padding: 8px;
   background: rgba(239, 71, 111, 0.08);
-  border-radius: 6px;
+  border-radius: 0;
 }
 
 .modal-buttons {
@@ -874,7 +872,7 @@ body::before {
 .stereo-info-popup .popup-content {
   background: var(--black);
   border: 1px solid var(--pink);
-  border-radius: 14px;
+  border-radius: 0;
   padding: 24px;
   max-width: 380px;
   width: 90%;
@@ -943,7 +941,7 @@ body::before {
   margin: 12px 0;
   font-size: 0.75rem;
   color: var(--color-warning);
-  border-radius: 0 6px 6px 0;
+  border-radius: 0;
 }
 
 .stereo-info-popup .popup-ok {
@@ -951,7 +949,7 @@ body::before {
   padding: 12px;
   background: linear-gradient(135deg, var(--pink), var(--cyan));
   border: none;
-  border-radius: 8px;
+  border-radius: 0;
   color: white;
   font-weight: 600;
   font-size: 0.85rem;
@@ -1036,7 +1034,7 @@ body::before {
 .splash-video {
   width: 50%;
   max-width: 360px;
-  border-radius: 10px;
+  border-radius: 0;
   box-shadow: 0 0 50px rgba(239, 71, 111, 0.4);
 }
 
@@ -1078,4 +1076,69 @@ body::before {
 /* Hidden elements */
 .mode-selector {
   display: none;
+}
+
+/* ==================== BOTTOM TAB NAVIGATION ==================== */
+.bottom-tabs {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-around;
+  background: var(--black);
+  border-top: 1px solid rgba(242, 244, 243, 0.08);
+  padding: 8px 0 12px;
+  z-index: 100;
+}
+
+.tab-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: rgba(242, 244, 243, 0.4);
+  cursor: pointer;
+  padding: 8px 16px;
+  transition: all 0.2s ease;
+}
+
+.tab-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.tab-btn span {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.tab-btn:hover {
+  color: rgba(242, 244, 243, 0.7);
+}
+
+.tab-btn.active {
+  color: var(--pink);
+}
+
+.tab-btn.active svg {
+  filter: drop-shadow(0 0 6px rgba(239, 71, 111, 0.5));
+}
+
+/* Tab Content Sections */
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+/* Add padding to main for bottom tabs */
+.main {
+  padding-bottom: 80px;
 }
