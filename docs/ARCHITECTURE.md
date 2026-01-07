@@ -1,10 +1,10 @@
-# PC Nest Speaker - Architecture
+# PC Nest Speaker - System Architecture
 
-A desktop application that streams Windows system audio to Google Nest speakers over Wi-Fi.
+A desktop application that streams Windows system audio to Google Nest speakers over Wi-Fi using WebRTC technology.
 
 ---
 
-## System Overview Diagram
+## System Overview
 
 ```
 +------------------------------------------------------------------------------+
@@ -17,22 +17,26 @@ A desktop application that streams Windows system audio to Google Nest speakers 
 |  |  +--------------------+         +----------------------------------+  |   |
 |  |  |   Main Process     |  IPC    |        Renderer Process         |  |   |
 |  |  |                    |<------->|                                  |  |   |
-|  |  |  * License mgmt    |         |  * UI (app.html)                 |  |   |
+|  |  |  * License mgmt    |         |  * UI (index.html)              |  |   |
 |  |  |  * FFmpeg control  |         |  * Speaker selection             |  |   |
-|  |  |  * Chromecast API  |         |  * Volume controls               |  |   |
-|  |  |  * Stream server   |         |  * Status display                |  |   |
-|  |  |  * IPC handlers    |         |  * Settings panel                |  |   |
+|  |  |  * MediaMTX        |         |  * Volume controls               |  |   |
+|  |  |  * cloudflared     |         |  * Stream monitor                |  |   |
+|  |  |  * Python bridge   |         |  * Settings panel                |  |   |
+|  |  |  * Audio device    |         |  * License card                  |  |   |
+|  |  |  * Windows volume  |         |  * Trial display                 |  |   |
 |  |  +--------+-----------+         +----------------------------------+  |   |
 |  |           |                                                            |   |
 |  +-----------+------------------------------------------------------------+   |
 |              |                                                               |
 |              v                                                               |
-|  +----------------------+    +----------------------+    +----------------+ |
-|  |  license.json        |    |  settings.json       |    |  HTTP Server   | |
-|  |  (AppData)           |    |  (preferences)       |    |  (Port 8000)   | |
-|  +----------------------+    +----------------------+    +--------+-------+ |
-|                                                                   |         |
-+-------------------------------------------------------------------+---------+
+|  +-------------------+  +-------------------+  +-------------------+         |
+|  |  MediaMTX         |  |  cloudflared      |  |  Python           |         |
+|  |  RTSP->WebRTC     |  |  HTTPS Tunnel     |  |  pychromecast     |         |
+|  |  Ports: 8554,     |  |  Dynamic URL      |  |  Cast control     |         |
+|  |  8889, 9997       |  |                   |  |                   |         |
+|  +-------------------+  +-------------------+  +-------------------+         |
+|                                                                              |
++-------------------------------------------------------------------+----------+
                 |                                                    |
                 | HTTPS                                              | Wi-Fi
                 v                                                    v
@@ -43,215 +47,315 @@ A desktop application that streams Windows system audio to Google Nest speakers 
 |  +-----------------------------+  |    |  +--------------------------+   |
 |  |   VERCEL (Serverless)       |  |    |  |   Google Nest Speakers    |  |
 |  |   https://pcnestspeaker.app |  |    |  |                          |   |
-|  |                             |  |    |  |  * Cast protocol         |   |
-|  |  /api/validate-license      |  |    |  |  * HLS/MP3 playback      |   |
-|  |  /api/stripe-webhook        |  |    |  |  * Stereo pair support   |   |
-|  |                             |  |    |  |                          |   |
-|  +-------------+---------------+  |    |  +--------------------------+   |
-|                |                  |    |                                  |
-|                v                  |    +----------------------------------+
-|  +-----------------------------+  |
+|  |                             |  |    |  |  * Custom Cast Receiver  |   |
+|  |  /api/validate-license      |  |    |  |  * WebRTC/WHEP playback  |   |
+|  |  /api/verify-session        |  |    |  |  * Stereo pair support   |   |
+|  +-----------------------------+  |    |  |  * MP3 fallback          |   |
+|              |                    |    |  +--------------------------+   |
+|              v                    |    |                                  |
+|  +-----------------------------+  |    +----------------------------------+
 |  |           STRIPE            |  |
-|  |                             |  |
-|  |  * Payment Links            |  |
-|  |  * Customer Metadata        |  |
-|  |  * Webhooks                 |  |
-|  +-----------------------------+  |
+|  |                             |  |    +----------------------------------+
+|  |  * Payment Links            |  |    |  CLOUDFLARE TUNNEL               |
+|  |  * Customer Metadata        |  |    |  *.trycloudflare.com             |
+|  |  * License Storage          |  |    |  HTTPS for Cast receiver         |
+|  +-----------------------------+  |    +----------------------------------+
 |                                   |
 +-----------------------------------+
 ```
 
 ---
 
-## Audio Pipeline - Three Streaming Modes
+## Audio Pipeline - WebRTC Mode (Primary)
 
-The app supports **three streaming modes** to accommodate different setups and latency requirements:
-
-### Mode 1: HTTP MP3 Streaming (Most Reliable)
+**Latency:** Sub-1 second (imperceptible)
 
 ```
-+---------------+     +------------------+     +---------------+     +------------+
-|  System Audio | --> |    VB-CABLE      | --> |    FFmpeg     | --> | HTTP Server|
-|  (All Apps)   |     | (Virtual Audio)  |     |   MP3 Encode  |     | Port 8000  |
-+---------------+     +------------------+     +---------------+     +-----+------+
-                                                                          |
-                        Wi-Fi Network (same subnet)                       |
-                                                                          v
-+---------------+     +------------------+     +---------------+     +------------+
-| Nest Speaker  | <-- |   Cast Protocol  | <-- | MP3 URL       | <-- | pychromecast|
-| Audio Output  |     |   (mDNS/HTTP)    |     | Streaming     |     |  Library   |
-+---------------+     +------------------+     +---------------+     +------------+
++---------------+     +----------------------+     +---------------+
+|  Windows      | --> | virtual-audio-       | --> |    FFmpeg     |
+|  System Audio |     | capturer (DirectShow)|     |  Opus Encode  |
+|  (All Apps)   |     +----------------------+     +-------+-------+
++---------------+                                          |
+                                                          | RTSP
+                                                          v
++---------------+     +------------------+     +-------------------+
+|  Nest Speaker | <-- |  Custom Cast     | <-- |     MediaMTX      |
+|  Audio Output |     |  Receiver (WHEP) |     |   RTSP->WebRTC    |
++---------------+     +--------+---------+     +-------------------+
+                               ^
+                               | HTTPS
+                               |
+                      +--------+--------+
+                      |   cloudflared   |
+                      | HTTPS Tunnel    |
+                      +-----------------+
 ```
 
-**Latency:** ~8 seconds | **Reliability:** Excellent | **Setup:** Medium (requires VB-CABLE as audio output)
+### Pipeline Details
+
+| Step | Component | Protocol | Purpose |
+|------|-----------|----------|---------|
+| 1 | Windows Audio | N/A | Source audio from any app |
+| 2 | virtual-audio-capturer | DirectShow | Capture system audio |
+| 3 | FFmpeg | Opus 128kbps | Encode audio to Opus |
+| 4 | RTSP Stream | TCP :8554 | Send to MediaMTX |
+| 5 | MediaMTX | RTSP/WebRTC | Convert RTSP to WebRTC |
+| 6 | cloudflared | HTTPS | Secure tunnel for Cast |
+| 7 | Cast Receiver | WHEP | Receive WebRTC audio |
+| 8 | Nest Speaker | Cast Protocol | Play audio |
 
 ---
 
-### Mode 2: WebRTC with System Audio Capture (Low Latency)
+## Audio Pipeline - HTTP/MP3 Mode (Fallback)
+
+**Latency:** ~8 seconds (Cast buffer limitation)
 
 ```
-+---------------+     +----------------------+     +------------------+
-|  System Audio | --> | screen-capture-      | --> | webrtc-streamer  |
-|  (All Apps)   |     | recorder             |     | (audiocap://1)   |
-+---------------+     | (virtual-audio-      |     +--------+---------+
-                      |  capturer)           |              |
-                      +----------------------+              | WebRTC
-                                                           v
-+---------------+     +------------------+     +------------------------+
-| Nest Speaker  | <-- |   Cast Protocol  | <-- | Custom Cast Receiver   |
-| Audio Output  |     |   (mDNS/HTTP)    |     | (WebRTC → Audio)       |
-+---------------+     +------------------+     +------------------------+
++---------------+     +----------------------+     +---------------+
+|  Windows      | --> | virtual-audio-       | --> |    FFmpeg     |
+|  System Audio |     | capturer             |     |  MP3 320kbps  |
++---------------+     +----------------------+     +-------+-------+
+                                                          |
+                                                          | HTTP Pipe
+                                                          v
++---------------+     +------------------+     +-------------------+
+|  Nest Speaker | <-- |  Default Media   | <-- |   HTTP Server     |
+|  Audio Output |     |  Receiver        |     |   Port 8000       |
++---------------+     +------------------+     +-------------------+
 ```
-
-**Latency:** <1 second | **Reliability:** Good | **Setup:** Auto (dependencies installed automatically)
 
 ---
 
-### Mode 3: WebRTC with VB-CABLE (Low Latency, Manual Routing)
+## Stereo Mode Pipeline
+
+Splits audio into two mono channels for separate speakers.
 
 ```
-+---------------+     +------------------+     +------------------+
-|  System Audio | --> |    VB-CABLE      | --> | webrtc-streamer  |
-| (User routes  |     | (User sets as    |     | (audiocap://3)   |
-|  audio here)  |     |  output device)  |     +--------+---------+
-+---------------+     +------------------+              |
-                                                       | WebRTC
-                                                       v
-+---------------+     +------------------+     +------------------------+
-| Nest Speaker  | <-- |   Cast Protocol  | <-- | Custom Cast Receiver   |
-| Audio Output  |     |   (mDNS/HTTP)    |     | (WebRTC → Audio)       |
-+---------------+     +------------------+     +------------------------+
+                                    +-> FFmpeg (pan=mono|c0=c0) -> RTSP /left  -> MediaMTX -> Left Speaker
+                                   /
+virtual-audio-capturer -> FFmpeg -+
+                                   \
+                                    +-> FFmpeg (pan=mono|c0=c1) -> RTSP /right -> MediaMTX -> Right Speaker
 ```
-
-**Latency:** <1 second | **Reliability:** Excellent | **Setup:** Manual (user must configure audio output)
 
 ---
 
-### Streaming Mode Comparison
+## Component Architecture
 
-| Mode | Latency | Setup | Audio Routing | Dependencies |
-|------|---------|-------|---------------|--------------|
-| **HTTP MP3** | ~8 sec | Auto | Requires VB-CABLE as output | VB-CABLE, FFmpeg |
-| **WebRTC System** | <1 sec | Auto | Captures any audio output | screen-capture-recorder, webrtc-streamer |
-| **WebRTC VB-CABLE** | <1 sec | Manual | User sets VB-CABLE as output | VB-CABLE, webrtc-streamer |
+### Main Process Modules
+
+```
+src/main/
+├── electron-main.js       # Main entry point, IPC handlers, process management
+├── preload.js             # IPC bridge for renderer
+├── audio-streamer.js      # FFmpeg + HTTP server for MP3 fallback
+├── chromecast.js          # Node.js Cast discovery (legacy)
+├── cast-helper.py         # Python pychromecast control (primary)
+├── stream-stats.js        # Real-time streaming statistics
+├── settings-manager.js    # JSON settings persistence
+├── usage-tracker.js       # Trial time tracking (10 hours)
+├── tray-manager.js        # System tray icon and menu
+├── auto-start-manager.js  # Windows startup registration
+├── audio-device-manager.js # Windows audio device switching
+├── windows-volume-sync.js # PC volume keys -> Nest sync
+├── daemon-manager.js      # Python daemon for fast volume
+└── firewall-setup.js      # Windows firewall rules
+```
+
+### Renderer Process
+
+```
+src/renderer/
+├── index.html            # Main UI structure
+├── styles.css            # DMT-style CSS (Coolors palette)
+├── renderer.js           # UI logic and IPC communication
+└── webrtc-client.js      # WebRTC signaling (testing)
+```
+
+### External Dependencies
+
+```
+mediamtx/
+├── mediamtx.exe          # MediaMTX v1.15.6 Windows binary
+└── mediamtx-audio.yml    # Audio-optimized WebRTC config
+
+ffmpeg/
+└── ffmpeg.exe            # FFmpeg binary (bundled)
+
+cast-receiver/
+└── receiver.html         # Custom Cast receiver (WHEP)
+
+docs/
+└── receiver.html         # GitHub Pages deployment
+```
 
 ---
 
-## Dependency Management
+## IPC Communication Flow
 
-### Dependencies by Mode
+### Main -> Renderer Events
 
-| Dependency | HTTP MP3 | WebRTC System | WebRTC VB-CABLE |
-|------------|----------|---------------|-----------------|
-| FFmpeg | Required | - | - |
-| VB-CABLE | Required | - | Required |
-| screen-capture-recorder | - | Required | - |
-| webrtc-streamer | - | Required | Required |
-| localtunnel (HTTPS) | - | Required | Required |
+| Event | Data | Purpose |
+|-------|------|---------|
+| `speakers-found` | `[{name, model, ip}]` | Discovery results |
+| `stream-started` | `{mode, tunnelUrl}` | Streaming active |
+| `stream-stopped` | - | Streaming ended |
+| `stream-error` | `{message}` | Error occurred |
+| `stream-stats` | `{bitrate, data, levels}` | Monitor updates |
+| `settings-loaded` | `{settings}` | Initial settings |
+| `license-status` | `{key, valid}` | License state |
+| `usage-update` | `{used, remaining}` | Trial time |
+| `volume-synced` | `{volume}` | Windows volume changed |
+| `auto-connect` | `{speaker}` | Trigger auto-connect |
+| `tray-stop` | - | Tray menu stop clicked |
 
-### Automatic Installation (First Run)
+### Renderer -> Main Requests
 
+| Request | Data | Purpose |
+|---------|------|---------|
+| `discover-speakers` | - | Scan network |
+| `start-streaming` | `{speaker}` | Begin WebRTC stream |
+| `stop-streaming` | - | End stream |
+| `start-stereo-streaming` | `{left, right}` | Stereo mode |
+| `stop-stereo-streaming` | - | End stereo |
+| `get-volume` | `{speaker}` | Get speaker volume |
+| `set-volume` | `{speaker, volume}` | Set speaker volume |
+| `activate-license` | `{key}` | Activate license |
+| `deactivate-license` | - | Remove license |
+| `get-license` | - | Get current license |
+| `get-usage` | - | Get trial stats |
+| `update-settings` | `{settings}` | Save settings |
+| `get-settings` | - | Load settings |
+| `toggle-auto-start` | - | Toggle Windows startup |
+
+---
+
+## Port Usage
+
+| Port | Service | Protocol | Purpose |
+|------|---------|----------|---------|
+| 8000 | HTTP Server | TCP | MP3 fallback streaming |
+| 8554 | MediaMTX RTSP | TCP | FFmpeg input |
+| 8889 | MediaMTX WebRTC | TCP | WHEP output |
+| 9997 | MediaMTX API | HTTP | Health/status |
+| Dynamic | cloudflared | HTTPS | Cast receiver tunnel |
+
+---
+
+## Data Storage
+
+### Settings (`%APPDATA%/pc-nest-speaker/settings.json`)
+
+```json
+{
+  "lastSpeaker": { "name": "Den pair", "model": "Google Cast Group" },
+  "autoConnect": true,
+  "autoStart": false,
+  "volumeBoost": false,
+  "usageSeconds": 12345,
+  "trialExpired": false,
+  "licenseKey": null
+}
 ```
-App First Launch
-       |
-       v
-+-------------------+
-| Check Dependencies|
-+-------------------+
-       |
-       +---> FFmpeg bundled? -----> NO ---> Extract bundled FFmpeg
-       |
-       +---> VB-CABLE installed? -> NO ---> Prompt: "Install VB-CABLE for HTTP mode?"
-       |                                          |
-       |                                          v
-       |                                    Download & Run Installer
-       |
-       +---> screen-capture-recorder? -> NO ---> Prompt: "Install for WebRTC mode?"
-       |                                              |
-       |                                              v
-       |                                    Download & Run Installer
-       |
-       +---> webrtc-streamer bundled? -> NO ---> Extract bundled webrtc-streamer
-       |
-       v
-+-------------------+
-| Dependencies Ready|
-+-------------------+
+
+### License (`%APPDATA%/pc-nest-speaker/license.json`)
+
+```json
+{
+  "licenseKey": "PNS-XXXX-XXXX-XXXX-XXXX",
+  "activatedAt": "2026-01-07T12:00:00.000Z"
+}
 ```
 
-### Startup Lifecycle
+---
+
+## Startup Sequence
 
 ```
 App Start
     |
     v
-+-------------------------+
-| 1. Check all deps exist |
-+-------------------------+
++---------------------------+
+| 1. Load settings          |
+|    - Read settings.json   |
+|    - Read license.json    |
++---------------------------+
     |
     v
-+-------------------------+
-| 2. Verify audio devices |
-|    - List DirectShow    |
-|    - Check VB-CABLE     |
-|    - Check virtual-     |
-|      audio-capturer     |
-+-------------------------+
++---------------------------+
+| 2. Initialize tray icon   |
+|    - Create system tray   |
+|    - Set idle state       |
++---------------------------+
     |
     v
-+-------------------------+
-| 3. Start webrtc-streamer|
-|    (if WebRTC mode)     |
-|    Port 8443            |
-+-------------------------+
++---------------------------+
+| 3. Create main window     |
+|    - Load index.html      |
+|    - Send settings        |
++---------------------------+
     |
     v
-+-------------------------+
-| 4. Start localtunnel    |
-|    (for HTTPS to Cast)  |
-+-------------------------+
++---------------------------+
+| 4. Start MediaMTX         |
+|    - Spawn process        |
+|    - Wait for ready       |
++---------------------------+
     |
     v
-+-------------------------+
-| 5. Verify connectivity  |
-|    - Ping server APIs   |
-|    - Test tunnel        |
-+-------------------------+
++---------------------------+
+| 5. Start cloudflared      |
+|    - Create HTTPS tunnel  |
+|    - Get tunnel URL       |
++---------------------------+
     |
     v
-+-------------------------+
-| 6. UI Ready - Show Mode |
-+-------------------------+
++---------------------------+
+| 6. Discover speakers      |
+|    - Python pychromecast  |
+|    - Send to renderer     |
++---------------------------+
+    |
+    v
++---------------------------+
+| 7. Auto-connect (if set)  |
+|    - Wait 5 seconds       |
+|    - Connect to last      |
++---------------------------+
 ```
 
-### Shutdown Lifecycle
+---
+
+## Shutdown Sequence
 
 ```
 App Close / Window Close
          |
          v
 +---------------------------+
-| 1. Stop active Cast       |
-|    - pychromecast stop    |
+| 1. Stop streaming         |
+|    - Stop FFmpeg          |
+|    - Stop Cast playback   |
 +---------------------------+
          |
          v
 +---------------------------+
-| 2. Stop webrtc-streamer   |
+| 2. Restore audio device   |
+|    - Switch back to       |
+|      original output      |
++---------------------------+
+         |
+         v
++---------------------------+
+| 3. Stop MediaMTX          |
 |    - Kill process         |
-|    - Release port 8443    |
+|    - Release ports        |
 +---------------------------+
          |
          v
 +---------------------------+
-| 3. Stop localtunnel       |
+| 4. Stop cloudflared       |
 |    - Kill tunnel process  |
-+---------------------------+
-         |
-         v
-+---------------------------+
-| 4. Stop FFmpeg            |
-|    (if HTTP mode active)  |
 +---------------------------+
          |
          v
@@ -263,7 +367,7 @@ App Close / Window Close
          v
 +---------------------------+
 | 6. Save settings          |
-|    - Last used mode       |
+|    - Usage time           |
 |    - Last speaker         |
 +---------------------------+
          |
@@ -273,344 +377,125 @@ App Close / Window Close
 
 ---
 
-## Component Details
+## Cast Receiver Architecture
 
-### 1. Desktop Application (Electron)
+### Custom Receiver (FCAA4619)
 
-```
-electron-main.js (Main Process)
-+-- Window Management
-|   +-- createWindow() - BrowserWindow setup
-+-- License Management
-|   +-- getLicenseData() - Read from license.json
-|   +-- saveLicenseData() - Write to license.json
-|   +-- validateLicenseFormat() - PNS-XXXX-XXXX-XXXX-XXXX
-+-- Audio Streaming
-|   +-- startFFmpeg() - Launch FFmpeg capture
-|   +-- startHTTPServer() - Serve HLS/MP3 streams
-|   +-- startWebRTCStreamer() - Launch webrtc-streamer
-|   +-- startLocalTunnel() - Create HTTPS tunnel
-|   +-- stopStreaming() - Cleanup all processes
-+-- Chromecast Control
-|   +-- discoverSpeakers() - Find Nest devices
-|   +-- castToSpeaker() - Start playback
-|   +-- stopCasting() - Stop playback
-+-- Dependency Management
-|   +-- checkDependencies() - Verify all deps exist
-|   +-- installVBCable() - Download and install
-|   +-- installScreenCaptureRecorder() - Download and install
-|   +-- extractBundledDeps() - Unpack FFmpeg, webrtc-streamer
-+-- IPC Handlers
-    +-- 'activate-license' - Validate & save
-    +-- 'start-streaming' - Begin audio cast
-    +-- 'stop-streaming' - End audio cast
-    +-- 'get-speakers' - List available devices
-    +-- 'select-speaker' - Set target device
-    +-- 'get-streaming-mode' - Current mode
-    +-- 'set-streaming-mode' - Change mode
-    +-- 'check-dependencies' - Verify deps
+Hosted at: `https://kepners.github.io/pcnestspeaker/receiver.html`
 
-app.html (Renderer Process)
-+-- UI Components
-|   +-- Streaming mode selector (3 options)
-|   +-- Speaker selection dropdown
-|   +-- Start/Stop button
-|   +-- Volume slider
-|   +-- Status indicator
-|   +-- Settings panel
-|   +-- License card (collapsible)
-|   +-- Dependency status indicators
-+-- State Management
-|   +-- isStreaming, selectedSpeaker, volume
-|   +-- streamingMode, dependencies
-+-- IPC Communication
-    +-- ipcRenderer.send() / .on()
-```
+```javascript
+// WHEP Protocol Implementation
+1. Create RTCPeerConnection
+2. Add audio track
+3. Create SDP offer
+4. POST offer to MediaMTX /pcaudio/whep
+5. Receive SDP answer
+6. Set remote description
+7. Audio streams to speaker
 
-### 2. Serverless API (Vercel)
-
-```
-api/
-+-- validate-license.js
-|   +-- Input: POST { licenseKey: "PNS-XXXX-..." }
-|   +-- Process: Search Stripe customers for metadata match
-|   +-- Output: { valid: true/false, email: "...", error: "..." }
-|
-+-- stripe-webhook.js
-    +-- Verify webhook signature
-    +-- Handle checkout.session.completed
-    |   +-- Generate license: PNS-XXXX-XXXX-XXXX-XXXX
-    |   +-- Update customer metadata
-    +-- Handle charge.refunded
-        +-- Set license_status: "revoked"
-```
-
-### 3. External Dependencies
-
-```
-Bundled with App:
-+-- FFmpeg
-|   +-- Audio capture from DirectShow device
-|   +-- MP3 encoding for HTTP mode
-|   +-- Streaming output
-+-- webrtc-streamer (mpromonet)
-|   +-- WebRTC server for low-latency streaming
-|   +-- Captures audio via DirectShow/audiocap
-|   +-- Serves WebRTC offers/answers via HTTP API
-
-Installed During Setup:
-+-- VB-CABLE (optional)
-|   +-- Virtual audio device
-|   +-- Routes system audio for capture
-|   +-- Download: https://vb-audio.com/Cable/
-+-- screen-capture-recorder (optional)
-    +-- Provides virtual-audio-capturer device
-    +-- Captures any system audio output
-    +-- Download: https://github.com/rdp/screen-capture-recorder-to-video-windows-free
+// Message Handling
+- Namespace: urn:x-cast:com.pcnestspeaker.webrtc
+- Receives: { type: 'OFFER', tunnelUrl: 'https://...' }
+- Responds: { type: 'CONNECTED' } or { type: 'ERROR' }
 ```
 
 ---
 
-## Data Flow Diagrams
-
-### Streaming Start Flow (WebRTC Mode)
+## License Validation Flow
 
 ```
-User                App (Renderer)    App (Main)         webrtc-streamer    Cast Receiver    Nest Speaker
- |                   |                 |                    |                   |               |
- |  Click "Start"    |                 |                    |                   |               |
- |------------------>|                 |                    |                   |               |
- |                   |  IPC: start     |                    |                   |               |
- |                   |---------------->|                    |                   |               |
- |                   |                 |                    |                   |               |
- |                   |                 |  Start webrtc-     |                   |               |
- |                   |                 |  streamer if not   |                   |               |
- |                   |                 |  running           |                   |               |
- |                   |                 |------------------->|                   |               |
- |                   |                 |                    |                   |               |
- |                   |                 |  Start localtunnel |                   |               |
- |                   |                 |  (HTTPS proxy)     |                   |               |
- |                   |                 |                    |                   |               |
- |                   |                 |  Cast to speaker   |                   |               |
- |                   |                 |  with receiver URL |                   |               |
- |                   |                 |------------------------------------------->|           |
- |                   |                 |                    |                   |               |
- |                   |                 |                    |  Receiver loads   |               |
- |                   |                 |                    |<------------------|               |
- |                   |                 |                    |                   |               |
- |                   |                 |                    |  WebRTC signaling |               |
- |                   |                 |                    |<----------------->|               |
- |                   |                 |                    |                   |               |
- |                   |                 |                    |  Audio stream     |               |
- |                   |                 |                    |------------------>|  Play audio   |
- |                   |                 |                    |                   |-------------->|
- |                   |                 |                    |                   |               |
- |                   |  IPC: status    |                    |                   |               |
- |                   |<----------------|                    |                   |               |
- |                   |                 |                    |                   |               |
- |  UI Updated       |                 |                    |                   |               |
- |<------------------|                 |                    |                   |               |
-```
-
-### Streaming Start Flow (HTTP MP3 Mode)
-
-```
-User                App (Renderer)    App (Main)         Nest Speaker
- |                   |                 |                    |
- |  Click "Start"    |                 |                    |
- |------------------>|                 |                    |
- |                   |  IPC: start     |                    |
- |                   |---------------->|                    |
- |                   |                 |                    |
- |                   |                 |  Start FFmpeg      |
- |                   |                 |  Start HTTP Server |
- |                   |                 |                    |
- |                   |                 |  Get Local IP      |
- |                   |                 |  Build URL         |
- |                   |                 |                    |
- |                   |                 |  Cast URL          |
- |                   |                 |------------------->|
- |                   |                 |                    |
- |                   |                 |  Playback Started  |
- |                   |                 |<-------------------|
- |                   |                 |                    |
- |                   |  IPC: status    |                    |
- |                   |<----------------|                    |
- |                   |                 |                    |
- |  UI Updated       |                 |                    |
- |<------------------|                 |                    |
-```
-
-### License Purchase Flow
-
-```
-User                App              Stripe           Vercel/Webhook
- |                   |                 |                    |
- |  Click "Buy"      |                 |                    |
- |------------------>|                 |                    |
- |                   |  Open Payment   |                    |
- |                   |  Link URL       |                    |
- |<------------------|                 |                    |
- |                   |                 |                    |
- |  Complete Payment |                 |                    |
- |---------------------------------->|                    |
- |                   |                 |                    |
- |                   |                 |  Webhook Event     |
- |                   |                 |------------------->|
- |                   |                 |                    |
- |                   |                 |  Generate License  |
- |                   |                 |  Store in Metadata |
- |                   |                 |<-------------------|
- |                   |                 |                    |
- |  Receipt + Key    |                 |                    |
- |<----------------------------------|                    |
+User Enters Key
+       |
+       v
++-------------------+
+| Format Check      |
+| ^PNS-[A-Z0-9]{4}- |
+| [A-Z0-9]{4}-...   |
++-------------------+
+       |
+       v
++-------------------+
+| API Validation    |
+| POST /api/        |
+| validate-license  |
++-------------------+
+       |
+       v
++-------------------+
+| Stripe Search     |
+| metadata[license] |
++-------------------+
+       |
+       +-> Valid: Save locally, activate
+       |
+       +-> Invalid: Show error
+       |
+       +-> Offline: Check local cache
 ```
 
 ---
 
-## Project Setup Checklist
+## Windows Integration
 
-### Phase 1: Foundation
-- [x] Initialize Git repository
-- [x] Create package.json with proper metadata
-- [x] Set up .gitignore (node_modules, dist, .env)
-- [x] Create basic Electron app structure
-- [x] Design UI mockup with Warm Neutral colors
+### Auto Audio Device Switching
 
-### Phase 2: Core Streaming
-- [x] Port Python FFmpeg logic to Node.js
-- [x] Implement HTTP server for HLS/MP3
-- [x] Integrate pychromecast for Chromecast
-- [x] Create speaker discovery system
-- [x] Implement start/stop streaming controls
-- [x] Test with actual Nest speakers
-- [ ] Add WebRTC streaming mode
-- [ ] Bundle webrtc-streamer
-- [ ] Add streaming mode selector UI
+```
+Stream Start:
+1. Get current audio device (WMIC)
+2. Save to memory
+3. Switch to virtual-audio-capturer (NirCmd)
+4. Start streaming
 
-### Phase 3: Dependency Management
-- [ ] Create dependency checker module
-- [ ] Add VB-CABLE auto-installer
-- [ ] Add screen-capture-recorder auto-installer
-- [ ] Bundle FFmpeg and webrtc-streamer
-- [ ] Add startup verification flow
-- [ ] Add clean shutdown handlers
-
-### Phase 4: Licensing System
-- [ ] Create Stripe account/product
-- [ ] Set up Payment Link
-- [ ] Create Vercel project
-- [ ] Deploy webhook handler
-- [ ] Deploy validation API
-- [ ] Configure Stripe webhooks
-- [ ] Add environment variables to Vercel
-- [ ] Implement license UI in app
-
-### Phase 5: Build & Distribution
-- [ ] Configure electron-builder
-- [ ] Bundle all dependencies with app
-- [ ] Set up GitHub Actions for CI/CD
-- [ ] Create app icons (ico, icns)
-- [ ] Test builds on Windows/Mac
-- [ ] Create GitHub Release
-
-### Phase 6: Launch
-- [ ] Set up pcnestspeaker.app domain
-- [ ] Test complete purchase flow
-- [ ] Test streaming on multiple networks
-- [ ] Write user documentation
-- [ ] Publish release
-
----
-
-## Key Files Template
-
-### vercel.json
-```json
-{
-  "version": 2,
-  "builds": [
-    { "src": "api/*.js", "use": "@vercel/node" }
-  ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" }
-  ]
-}
+Stream Stop:
+1. Stop streaming
+2. Restore original device (NirCmd)
 ```
 
-### License Key Format
-```
-Pattern: PNS-XXXX-XXXX-XXXX-XXXX
-Example: PNS-A1B2-C3D4-E5F6-G7H8
+### Windows Volume Sync
 
-Generation:
-const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-const segment = () => Array(4).fill(0).map(() =>
-  chars[Math.floor(Math.random() * chars.length)]
-).join('');
-const key = `PNS-${segment()}-${segment()}-${segment()}-${segment()}`;
+```
+PC Volume Keys Pressed:
+1. PowerShell monitors volume (1s interval)
+2. Volume change detected
+3. Send to Python pychromecast
+4. Nest speaker volume updated
 ```
 
-### FFmpeg Commands (Reference)
+### Auto-Start with Windows
 
-**MP3 Streaming (HTTP Mode):**
-```bash
-ffmpeg -f dshow -i audio="CABLE Output (VB-Audio Virtual Cable)" \
-  -c:a libmp3lame -b:a 192k -ar 48000 -ac 2 \
-  -f mp3 pipe:1
 ```
-
-### webrtc-streamer Commands (Reference)
-
-**Start with system audio capture:**
-```bash
-webrtc-streamer.exe -v -n "pcaudio" -U "audiocap://1" -H 0.0.0.0:8443
-```
-
-**Audio device indices:**
-- `audiocap://0` - Default microphone
-- `audiocap://1` - virtual-audio-capturer (screen-capture-recorder)
-- `audiocap://3` - VB-CABLE Output
-
----
-
-## Environment Variables Reference
-
-### Vercel (Production)
-```
-STRIPE_API_KEY=sk_live_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-```
-
-### Local Development
-```
-STRIPE_API_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_... (from Stripe CLI)
+Registry Key:
+HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+Name: PCNestSpeaker
+Value: "path\to\electron.exe" "path\to\app"
 ```
 
 ---
 
-## Security Checklist
+## Security Considerations
 
-- [ ] License validated server-side (not just client)
-- [ ] Stripe webhook signatures verified
-- [ ] No secrets in client-side code
-- [ ] No secrets committed to Git
-- [ ] Environment variables for all credentials
-- [ ] API endpoints validate input format
-- [ ] Error messages don't leak internal details
-- [ ] Local HTTP server bound to localhost only when possible
+- License validated server-side via Stripe
+- Stripe webhook signatures verified
+- No secrets in client-side code
+- Environment variables for credentials
+- Local HTTP server on 0.0.0.0 (firewall protected)
+- HTTPS tunnel for Cast receiver communication
 
 ---
 
-## Design System Reference
+## Design System
 
-See [CLAUDE.md](../CLAUDE.md) for color scheme:
+### DMT-Style Colors (Coolors Palette)
 
 | Name | Hex | Usage |
 |------|-----|-------|
+| Jet | #2E2E2E | Primary background |
 | Dim Grey | #6B6D76 | Secondary text, borders |
-| Khaki Beige | #A69888 | Backgrounds, cards |
-| Powder Blush | #FCBFB7 | Primary accent, CTAs |
-| Charcoal Blue | #334E58 | Headers, primary text |
-| Dark Coffee | #33261D | Deep backgrounds |
+| Powder Blush | #FCBFB7 | Accent, CTAs |
+| Buff | #D9A566 | Highlights |
+| Deep Taupe | #7A6062 | Cards, sections |
+| Gunmetal | #263238 | Dark backgrounds |
+
+---
+
+*Last Updated: January 7, 2026*

@@ -2,62 +2,127 @@
 
 ## Overview
 
-**PC Nest Speaker** is a desktop application that streams all Windows system audio to Google Nest speakers and stereo pairs over Wi-Fi, without requiring Bluetooth.
+**PC Nest Speaker** is a desktop application that streams Windows system audio to Google Nest speakers over Wi-Fi with sub-second latency using WebRTC technology.
 
-**Version:** 1.0.0 (Development)
-**Developer:** ChoppedOnions.xyz
-**Platforms:** Windows, macOS (planned)
+| Item | Value |
+|------|-------|
+| **Version** | 1.0.0 |
+| **Developer** | ChoppedOnions.xyz |
+| **Platform** | Windows (macOS planned) |
+| **Cast App ID** | FCAA4619 |
+| **License Format** | PNS-XXXX-XXXX-XXXX-XXXX |
 
 ---
 
 ## Features
 
-### Core Functionality
-- **System Audio Streaming**: Capture all PC audio (games, music, videos)
-- **Google Nest Support**: Stream to any Nest speaker or stereo pair
-- **Dual Protocol**: HLS primary streaming with MP3 fallback
-- **Low Latency**: ~1.5-3 second delay depending on protocol
-- **Wi-Fi Only**: No Bluetooth pairing required
+### Core Streaming
 
-### Streaming Protocols
-| Protocol | Latency | Reliability | Best For |
-|----------|---------|-------------|----------|
-| HLS (Primary) | ~1.5s | Good | Music, videos |
-| MP3 (Fallback) | ~2-3s | Excellent | General use |
+| Feature | Description |
+|---------|-------------|
+| **WebRTC Streaming** | Sub-second latency via MediaMTX + custom Cast receiver |
+| **HTTP/MP3 Fallback** | ~8 second latency for older devices |
+| **System Audio Capture** | Captures all PC audio via virtual-audio-capturer |
+| **Stereo Mode** | Split L/R channels to separate speakers |
+| **Volume Boost** | +25% signal boost toggle (3% always-on hidden boost) |
 
 ### Speaker Management
-- **Auto-Discovery**: Find all Nest speakers on network
-- **Stereo Pair Support**: Cast to grouped speakers
-- **Volume Control**: Adjust speaker volume from app
-- **Quick Selection**: Save preferred speaker
 
-### License System
-- One-time purchase, lifetime access
-- 2 device activation limit
-- Server-validated via Stripe
+| Feature | Description |
+|---------|-------------|
+| **Auto-Discovery** | Finds all Nest/Cast devices on network via mDNS |
+| **Stereo Pairs** | Full support for Cast speaker groups |
+| **Volume Control** | Adjust speaker volume from app (syncs with Windows) |
+| **Speaker Memory** | Remembers last selected speaker |
+
+### Windows Integration
+
+| Feature | Description |
+|---------|-------------|
+| **Auto Audio Switch** | Automatically switches to virtual audio device when streaming |
+| **Auto Restore** | Restores original audio device when stopping |
+| **Windows Volume Sync** | PC volume keys control Nest speaker volume |
+| **Auto-Start** | Launch with Windows boot |
+| **Auto-Connect** | Connect to last speaker on startup |
+| **System Tray** | Minimize to tray, tray menu controls |
+
+### Stream Monitor
+
+| Feature | Description |
+|---------|-------------|
+| **Audio Visualizer** | 8-bar animated visualizer showing stream activity |
+| **Bitrate Display** | Real-time bitrate from FFmpeg |
+| **Data Counter** | Total MB streamed |
+| **Connection Status** | Active/Inactive indicator |
+
+### Licensing
+
+| Feature | Description |
+|---------|-------------|
+| **10-Hour Trial** | Free trial tracks streaming time only |
+| **One-Time Purchase** | Lifetime license, no subscription |
+| **2 Device Limit** | License works on 2 computers |
+| **Stripe Integration** | Payment Links, Customer Metadata storage |
+| **Offline Mode** | Works offline after initial activation |
 
 ---
 
-## Technical Stack
+## Technical Architecture
 
-### Desktop App
-- **Framework**: Electron 28.x
-- **Audio Capture**: FFmpeg (DirectShow on Windows)
-- **Casting**: node-castv2-client / pychromecast
-- **UI**: Custom HTML/CSS (Warm Neutral design)
+### Audio Pipeline (WebRTC Mode)
 
-### Backend (Vercel Serverless)
-- **License Validation API**: `/api/validate-license`
-- **Stripe Webhook**: `/api/stripe-webhook`
+```
+Windows Audio Output
+        |
+        v
+virtual-audio-capturer (DirectShow device)
+        |
+        v
+FFmpeg (Opus encoding, RTSP output)
+        |
+        v
+MediaMTX (RTSP to WebRTC bridge)
+        |
+        v
+Cloudflare Tunnel (HTTPS)
+        |
+        v
+Custom Cast Receiver (WHEP protocol)
+        |
+        v
+Google Nest Speaker
+```
 
-### Payment Processing
-- **Provider**: Stripe
-- **Method**: Payment Links
-- **License Storage**: Stripe Customer Metadata
+### Audio Pipeline (HTTP/MP3 Mode)
 
-### Audio Requirements
-- **Virtual Audio Device**: VB-CABLE or Voicemeeter
-- **Encoder**: FFmpeg (bundled or user-installed)
+```
+Windows Audio Output
+        |
+        v
+virtual-audio-capturer
+        |
+        v
+FFmpeg (MP3 encoding, 320kbps)
+        |
+        v
+HTTP Server (port 8000)
+        |
+        v
+pychromecast (Default Media Receiver)
+        |
+        v
+Google Nest Speaker
+```
+
+### Key Components
+
+| Component | Purpose | Port |
+|-----------|---------|------|
+| MediaMTX | RTSP to WebRTC bridge | 8554 (RTSP), 8889 (WHEP), 9997 (API) |
+| FFmpeg | Audio capture & encoding | N/A |
+| cloudflared | HTTPS tunnel for Cast | Dynamic |
+| HTTP Server | MP3 streaming fallback | 8000 |
+| Python cast-helper | Chromecast control | N/A |
 
 ---
 
@@ -65,308 +130,304 @@
 
 ```
 pcnestspeaker/
-+-- electron-main.js      # Main Electron process
-+-- app.html              # UI (renderer process)
-+-- package.json          # Dependencies & build config
-+-- icon.ico              # Windows icon
-+-- icon.icns             # macOS icon
-+-- vercel.json           # Vercel deployment config
-+-- api/
-|   +-- validate-license.js   # License validation endpoint
-|   +-- stripe-webhook.js     # Stripe webhook handler
-+-- lib/
-|   +-- ffmpeg.js             # FFmpeg control module
-|   +-- streaming.js          # HLS/MP3 server module
-|   +-- chromecast.js         # Speaker discovery & control
-+-- assets/
-|   +-- ffmpeg/               # Bundled FFmpeg (optional)
-+-- .github/
-|   +-- workflows/
-|       +-- build.yml     # GitHub Actions CI/CD
-+-- docs/
-|   +-- ARCHITECTURE.md   # System architecture
-|   +-- APP_DOCUMENTATION.md  # This file
-+-- dist/                 # Build output
+├── src/
+│   ├── main/
+│   │   ├── electron-main.js      # Main Electron process
+│   │   ├── preload.js            # IPC bridge
+│   │   ├── audio-streamer.js     # FFmpeg + HTTP streaming
+│   │   ├── cast-helper.py        # Python pychromecast control
+│   │   ├── stream-stats.js       # Stream monitor stats
+│   │   ├── settings-manager.js   # JSON settings persistence
+│   │   ├── usage-tracker.js      # Trial time tracking
+│   │   ├── tray-manager.js       # System tray icon
+│   │   ├── auto-start-manager.js # Windows startup
+│   │   ├── audio-device-manager.js # Audio device switching
+│   │   ├── windows-volume-sync.js  # Volume key sync
+│   │   ├── firewall-setup.js     # Auto firewall rules
+│   │   ├── daemon-manager.js     # Python daemon for fast volume
+│   │   └── chromecast.js         # Node.js Cast client
+│   └── renderer/
+│       ├── index.html            # UI
+│       ├── styles.css            # DMT-style theme
+│       ├── renderer.js           # UI logic
+│       └── webrtc-client.js      # WebRTC signaling
+├── mediamtx/
+│   ├── mediamtx.exe              # MediaMTX v1.15.6
+│   └── mediamtx-audio.yml        # Audio-optimized config
+├── cast-receiver/
+│   └── receiver.html             # Custom Cast receiver (WHEP)
+├── docs/
+│   ├── receiver.html             # GitHub Pages deployment
+│   ├── ARCHITECTURE.md           # System architecture
+│   └── APP_DOCUMENTATION.md      # This file
+├── ffmpeg/
+│   └── ffmpeg.exe                # Bundled FFmpeg
+├── assets/
+│   ├── icon.ico                  # Windows icon
+│   ├── icon.icns                 # macOS icon
+│   ├── splash.mp4                # Splash video
+│   └── tray-icon.png             # Tray icon
+├── reference/python/             # Original Python implementations
+├── package.json                  # Dependencies & build config
+├── start-app.bat                 # Launch script
+└── README.md                     # Quick start guide
 ```
 
 ---
 
 ## Configuration
 
-### Environment Variables (Vercel)
+### Settings (settings.json)
 
-| Variable | Description |
-|----------|-------------|
-| `STRIPE_API_KEY` | Stripe Secret Key (sk_live_...) |
-| `STRIPE_WEBHOOK_SECRET` | Webhook signing secret (whsec_...) |
-
-### User Settings (settings.json)
+Stored in `%APPDATA%/pc-nest-speaker/settings.json`:
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `speaker` | string | null | Selected Nest speaker name |
-| `protocol` | string | "hls" | Streaming protocol (hls/mp3) |
-| `audioDevice` | string | "CABLE Output" | Virtual audio device |
-| `port` | number | 8000 | HTTP server port |
-| `autoStart` | boolean | false | Stream on app launch |
+| `lastSpeaker` | object | null | Last selected speaker |
+| `autoConnect` | boolean | false | Auto-connect on startup |
+| `autoStart` | boolean | false | Start with Windows |
+| `volumeBoost` | boolean | false | +25% volume boost |
+| `usageSeconds` | number | 0 | Trial time used |
+| `trialExpired` | boolean | false | Trial limit reached |
+| `licenseKey` | string | null | Activated license |
 
-### Build Configuration (package.json)
+### License (license.json)
+
+Stored in `%APPDATA%/pc-nest-speaker/license.json`:
 
 ```json
 {
-  "build": {
-    "appId": "com.choppedonions.pcnestspeaker",
-    "productName": "PC Nest Speaker",
-    "win": {
-      "target": ["portable", "nsis"],
-      "icon": "icon.ico"
-    },
-    "mac": {
-      "target": ["dmg", "zip"],
-      "icon": "icon.icns",
-      "category": "public.app-category.utilities"
-    },
-    "extraResources": [
-      { "from": "assets/ffmpeg", "to": "ffmpeg" }
-    ]
-  }
+  "licenseKey": "PNS-XXXX-XXXX-XXXX-XXXX",
+  "activatedAt": "2026-01-07T..."
 }
 ```
 
----
+### MediaMTX Config (mediamtx-audio.yml)
 
-## License System Flow
-
-### Purchase Flow
+```yaml
+rtsp: yes
+rtspAddress: :8554
+webrtc: yes
+webrtcAddress: :8889
+api: yes
+apiAddress: :9997
+paths:
+  pcaudio:
+    source: publisher
+  left:
+    source: publisher
+  right:
+    source: publisher
 ```
-1. User clicks "Buy License" in app
-   |
-   v
-2. Opens Stripe Payment Link
-   |
-   v
-3. User completes payment
-   |
-   v
-4. Stripe webhook fires (checkout.session.completed)
-   |
-   v
-5. Webhook generates license key: PNS-XXXX-XXXX-XXXX-XXXX
-   |
-   v
-6. License stored in Stripe customer metadata
-   |
-   v
-7. User receives license key (via receipt/email)
-```
-
-### Activation Flow
-```
-1. User enters license key in app
-   |
-   v
-2. App validates format locally (PNS-XXXX-XXXX-XXXX-XXXX)
-   |
-   v
-3. App calls API: POST /api/validate-license
-   |
-   v
-4. API searches Stripe customers for matching license_key metadata
-   |
-   v
-5. If valid: Returns { valid: true, email: "..." }
-   |
-   v
-6. App saves license locally to: %APPDATA%/pcnestspeaker/license.json
-   |
-   v
-7. UI unlocks, streaming features enabled
-```
-
-### Offline Support
-- License validated once, then cached locally
-- App works offline after initial activation
-- Re-validation only on license change
 
 ---
 
 ## IPC Communication
 
-### Main Process -> Renderer
+### Main -> Renderer
+
 | Channel | Data | Description |
 |---------|------|-------------|
-| `license-status` | `{licenseKey, email}` | License state on startup |
-| `speakers-found` | `[{name, address}]` | Available Nest speakers |
-| `streaming-status` | `{active, protocol, url}` | Stream state |
-| `streaming-error` | `{message}` | Error notification |
-| `volume-changed` | `{level}` | Speaker volume update |
+| `speakers-found` | `[{name, model, ip}]` | Discovered speakers |
+| `stream-started` | `{mode, url}` | Stream active |
+| `stream-stopped` | - | Stream ended |
+| `stream-error` | `{message}` | Error occurred |
+| `stream-stats` | `{bitrate, data, levels}` | Monitor stats |
+| `settings-loaded` | `{settings}` | Initial settings |
+| `license-status` | `{key, valid}` | License state |
+| `usage-update` | `{used, remaining}` | Trial time |
+| `volume-synced` | `{volume}` | Windows volume changed |
+| `auto-connect` | `{speaker}` | Trigger auto-connect |
+| `tray-stop` | - | Tray menu stop clicked |
 
-### Renderer -> Main Process
+### Renderer -> Main
+
 | Channel | Data | Description |
 |---------|------|-------------|
-| `start-streaming` | `{speaker, protocol}` | Begin audio cast |
-| `stop-streaming` | - | End audio cast |
-| `discover-speakers` | - | Scan for Nest devices |
-| `set-volume` | `{level}` | Adjust speaker volume |
-| `activate-license` | `licenseKey` | Validate & save license |
-| `deactivate-license` | - | Remove local license |
-| `open-external` | `url` | Open URL in browser |
+| `discover-speakers` | - | Scan network |
+| `start-streaming` | `{speaker}` | Begin WebRTC stream |
+| `stop-streaming` | - | End stream |
+| `start-stereo-streaming` | `{left, right}` | Stereo mode |
+| `stop-stereo-streaming` | - | End stereo |
+| `get-volume` | `{speaker}` | Get speaker volume |
+| `set-volume` | `{speaker, volume}` | Set speaker volume |
+| `activate-license` | `{key}` | Activate license |
+| `deactivate-license` | - | Remove license |
+| `get-license` | - | Get current license |
+| `get-usage` | - | Get trial stats |
+| `update-settings` | `{settings}` | Save settings |
+| `get-settings` | - | Load settings |
+| `toggle-auto-start` | - | Toggle Windows startup |
 
 ---
 
-## Streaming Technical Details
+## Streaming Modes
 
-### HLS Mode (Primary)
+### WebRTC Mode (Default)
 
-```
-Audio Flow:
-Windows Audio -> VB-CABLE Input -> CABLE Output -> FFmpeg -> HLS Segments
+- **Latency**: Sub-1 second
+- **Codec**: Opus 128kbps
+- **Transport**: WebRTC via WHEP protocol
+- **Devices**: Requires custom Cast receiver support
+- **Tunnel**: cloudflared (HTTPS required for Cast)
 
-FFmpeg Settings:
-- Codec: AAC (aac)
-- Bitrate: 192kbps
-- Sample Rate: 48000 Hz
-- Channels: 2 (Stereo)
-- Segment Duration: 0.5 seconds
-- Playlist Size: 3 segments (1.5s buffer)
-- Flags: delete_segments (truly live)
+### HTTP/MP3 Mode (Fallback)
 
-Output: http://{local_ip}:8000/stream.m3u8
-```
+- **Latency**: ~8 seconds (due to Cast buffer)
+- **Codec**: MP3 320kbps
+- **Transport**: Progressive HTTP streaming
+- **Devices**: Works on ALL Cast devices
+- **Server**: Local HTTP on port 8000
 
-### MP3 Mode (Fallback)
+### Stereo Mode
 
-```
-Audio Flow:
-Windows Audio -> VB-CABLE Input -> CABLE Output -> FFmpeg -> HTTP Stream
-
-FFmpeg Settings:
-- Codec: libmp3lame
-- Bitrate: 192kbps
-- Sample Rate: 48000 Hz
-- Channels: 2 (Stereo)
-- Chunk Size: 8192 bytes
-- Buffer: 100ms
-
-Output: http://{local_ip}:8000/live.mp3
-```
-
-### Chromecast Integration
-
-```
-Discovery:
-- mDNS scan for _googlecast._tcp
-- Filter for Google Nest devices
-- Parse device friendly names
-
-Casting:
-- Connect via Cast protocol
-- Send media URL with content type
-- Monitor playback state
-- Handle disconnections
-```
+- **Left Channel**: `rtsp://localhost:8554/left`
+- **Right Channel**: `rtsp://localhost:8554/right`
+- **FFmpeg Filter**: `pan=mono|c0=c0` (left), `pan=mono|c0=c1` (right)
+- **Speakers**: Two separate Cast devices
 
 ---
 
-## Security Measures
+## Device Compatibility
 
-### License Protection
-- Server-side validation (can't be bypassed locally)
-- License key format validation
-- Stripe metadata as source of truth
-- UI disabled without valid license
+### WebRTC Mode (Custom Receiver)
 
-### Network Safety
-- HTTP server binds to local IP only
-- No external ports exposed
-- Audio never leaves local network
-- No cloud streaming
+| Device | Status | Notes |
+|--------|--------|-------|
+| Google Nest Hub | Working | cast_type: "cast" |
+| NVIDIA SHIELD | Working | cast_type: "cast" |
+| Google Nest Mini | Working* | Firmware dependent |
+| Cast Groups | Working | cast_type: "group" |
+| Chromecast | Working | cast_type: "cast" |
 
----
+*Some older Nest Mini units may not support custom receivers.
 
-## Build & Deployment
+### HTTP/MP3 Mode (All Devices)
 
-### Local Development
-```bash
-npm install
-npm start          # Run in development
-npm run build      # Build Windows executables
-```
-
-### Production Build (GitHub Actions)
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-# Triggers build for Windows + Mac
-# Creates draft release with artifacts
-```
-
-### Vercel Deployment
-- Auto-deploys on push to main
-- API endpoints at: https://pcnestspeaker.app/api/*
-
----
-
-## URLs & Endpoints
-
-| Purpose | URL |
-|---------|-----|
-| Website | https://pcnestspeaker.app |
-| Buy License | TBD (Stripe Payment Link) |
-| Validate License | https://pcnestspeaker.app/api/validate-license |
-| Stripe Webhook | https://pcnestspeaker.app/api/stripe-webhook |
-| GitHub Repo | https://github.com/Kepners/pcnestspeaker |
+Works on ALL Google Cast devices including:
+- All Nest speakers (Mini, Audio, Hub, Max)
+- Chromecast (all generations)
+- Cast-enabled TVs
+- Speaker groups
+- Older firmware devices
 
 ---
 
 ## Troubleshooting
 
 ### "No speakers found"
-1. Ensure PC and Nest are on same Wi-Fi network
-2. Check firewall allows app through (both TCP/UDP)
-3. Verify Nest speaker is powered on
-4. Try restarting the app
 
-### "No audio captured"
-1. Verify VB-CABLE is installed
-2. Set Windows output to "CABLE Input"
-3. Check audio is playing from some source
-4. Try Voicemeeter as alternative
+1. Ensure PC and Nest on same Wi-Fi network
+2. Check firewall allows app (ports 8000, 8554, 8889, 9997)
+3. Restart the app
+4. Try restarting Nest speaker
 
-### "Stream stutters or drops"
-1. Reduce Wi-Fi interference
-2. Try MP3 protocol instead of HLS
-3. Check network bandwidth
-4. Ensure no VPN is active
+### "No audio on speaker"
 
-### "License not valid"
-1. Check internet connection
-2. Verify license key format (PNS-XXXX-XXXX-XXXX-XXXX)
-3. Ensure Stripe customer has `license_key` in metadata
+1. Verify audio is playing on PC
+2. Check virtual-audio-capturer is installed
+3. Check Windows audio output isn't muted
+4. Try HTTP/MP3 mode (click speaker multiple times)
 
-### Build Issues (Windows)
-- Add `dist/` folder to Windows Defender exclusions
-- PowerShell (Admin): `Add-MpPreference -ExclusionPath "path\to\dist"`
+### "WebRTC not working on specific speaker"
+
+- Speaker may have old firmware
+- Use HTTP/MP3 fallback (multiple clicks selects fallback)
+- Speaker groups work better than individual Nest Minis
+
+### "Trial expired"
+
+- Purchase license at pcnestspeaker.app
+- Enter license key in app
+- License unlocks unlimited streaming
+
+### "CMD window flashes"
+
+- All processes should be hidden with `windowsHide: true`
+- Update to latest version
+- File a bug report if persists
+
+---
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| Volume Up/Down | Adjusts Nest speaker volume (when streaming) |
+| Mute | Mutes Nest speaker |
+
+---
+
+## Requirements
+
+### System
+
+- Windows 10/11 (64-bit)
+- 4GB RAM minimum
+- Wi-Fi network connection
+
+### Dependencies (Bundled)
+
+- FFmpeg (audio encoding)
+- MediaMTX (WebRTC bridge)
+- Python 3.x (pychromecast)
+
+### Dependencies (Auto-installed)
+
+- virtual-audio-capturer (screen-capture-recorder)
+- cloudflared (Cloudflare tunnel)
 
 ---
 
 ## Version History
 
-### v1.0.0 (Development)
-- Initial Electron app structure
-- HLS streaming with MP3 fallback
-- Speaker discovery and selection
-- Stripe license integration
-- Warm Neutral UI design
+### v1.0.0 (January 2026)
+
+**Core Features:**
+- WebRTC streaming with sub-second latency
+- HTTP/MP3 fallback for compatibility
+- Custom Cast receiver (App ID: FCAA4619)
+- MediaMTX for RTSP-to-WebRTC bridge
+- Stereo mode (split L/R channels)
+
+**Windows Integration:**
+- Auto audio device switching
+- Windows volume keys sync to Nest
+- Auto-start on Windows boot
+- Auto-connect to last speaker
+- System tray icon with controls
+
+**UI/UX:**
+- DMT-style design (Coolors palette)
+- 8-bar audio visualizer
+- Stream stats (bitrate, data, connection)
+- Collapsible license section
+- Splash screen
+
+**Licensing:**
+- 10-hour free trial (streaming time only)
+- Stripe Payment Links
+- License validation API
+- Offline mode after activation
 
 ---
 
-## Original Python Reference
+## Credits
 
-This Electron app is a port of the original Python implementation found at:
-`C:\Users\kepne\OneDrive\Documents\#NestAudioBridge`
+- **FFmpeg**: Audio encoding
+- **MediaMTX**: WebRTC streaming server
+- **pychromecast**: Google Cast control
+- **Electron**: Desktop framework
+- **cloudflared**: HTTPS tunneling
 
-Key files from original:
-- `cast_system_audio_to_nest_improved_FIXED.py` - HLS implementation
-- `cast_system_audio_to_nest_mp3_FIXED.py` - MP3 implementation
-- `cast_system_audio_to_nest_v2.py` - Dual protocol with fallback
+---
+
+## Support
+
+- **GitHub Issues**: https://github.com/Kepners/pcnestspeaker/issues
+- **Website**: https://pcnestspeaker.app
+- **Email**: support@choppedonions.xyz
+
+---
+
+*Last Updated: January 7, 2026*
