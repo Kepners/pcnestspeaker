@@ -1395,6 +1395,81 @@ loadLicenseStatus() - Called on DOMContentLoaded
 - Task #7: Multi-Speaker Streaming (PRO features)
 - Task #10: Match DeleteMyTweets Styling
 
+### January 6, 2026 (Session 13) - License System Testing & Critical Fixes
+**Session Goal:** Test license system implementation and fix app launch issues
+
+#### Critical Bugs Fixed
+
+**Problem 1: settings-manager.js Initialization Error**
+```
+TypeError: Cannot read properties of undefined (reading 'getPath')
+at Object.<anonymous> (settings-manager.js:17:37)
+```
+
+**Root Cause:** Line 17 called `app.getPath('userData')` at module load time before Electron initialized.
+
+**Fix:** Changed constant to lazy initialization function:
+```javascript
+// Before:
+const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
+
+// After:
+function getSettingsFilePath() {
+  return path.join(app.getPath('userData'), 'settings.json');
+}
+```
+
+Updated all references to use the function instead of the constant.
+
+**Problem 2: electron-main.js License Path Error**
+
+Same issue at line 1415:
+```javascript
+const licensePath = path.join(app.getPath('userData'), 'license.json');
+```
+
+**Fix:** Applied same lazy initialization pattern:
+```javascript
+function getLicensePath() {
+  return path.join(app.getPath('userData'), 'license.json');
+}
+```
+
+Updated `getLicenseData()`, `saveLicenseData()`, and `deleteLicenseData()` functions.
+
+#### Files Modified
+- `src/main/settings-manager.js` - Lazy initialization for settings path
+- `src/main/electron-main.js` - Lazy initialization for license path
+
+#### Git Commit
+- `45a22e1` - fix: Resolve app launch failures with lazy initialization
+
+#### Current State
+**Status:** App launch errors FIXED, but app still not opening window (needs further investigation)
+
+**Fixed Issues:**
+✅ `app.getPath()` called before Electron ready - RESOLVED
+✅ settings-manager.js initialization - RESOLVED
+✅ electron-main.js license path initialization - RESOLVED
+✅ No syntax errors
+✅ Dependencies installed
+
+**Remaining Issue:**
+❌ App completes npm run dev without error but no window appears
+❌ No Electron processes running after launch attempt
+
+**Testing Performed:**
+- Verified ELECTRON_RUN_AS_NODE environment variable cleared
+- Confirmed node_modules/electron installed
+- Checked for syntax errors (none found)
+- Verified all lazy initialization fixes applied
+- Attempted multiple launch methods (batch file, npm run dev, cmd)
+
+#### Next Steps
+- Debug why Electron window not appearing (possible silent failure)
+- Test license system once app launches successfully
+- Continue with Task #10 (Match DeleteMyTweets Styling)
+
 ---
 
 *Last Updated: January 6, 2026*
