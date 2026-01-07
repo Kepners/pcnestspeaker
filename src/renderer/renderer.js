@@ -389,9 +389,10 @@ function setupEventListeners() {
 }
 
 // Set cast mode and update UI
-function setCastMode(mode) {
+async function setCastMode(mode) {
   castMode = mode;
-  log(`Cast mode: ${mode === 'speakers' ? 'Speakers Only' : 'PC + Speakers'}`);
+  const modeLabel = mode === 'speakers' ? 'Speakers Only' : 'PC + Speakers';
+  log(`Switching to ${modeLabel} mode...`);
 
   // Update button states
   if (castSpeakersBtn && castAllBtn) {
@@ -411,6 +412,23 @@ function setCastMode(mode) {
   // Show/hide sync delay row
   if (syncDelayRow) {
     syncDelayRow.style.display = mode === 'all' ? 'flex' : 'none';
+  }
+
+  // Actually route the audio by muting/unmuting Windows
+  // WASAPI loopback captures BEFORE Windows volume, so muted PC still sends full audio to Nest
+  try {
+    const result = await window.api.setCastMode(mode);
+    if (result.success) {
+      if (mode === 'speakers') {
+        log(`PC audio muted (saved volume: ${result.savedVolume}%)`);
+      } else {
+        log(`PC audio restored to ${result.restoredVolume}%`);
+      }
+    } else {
+      log(`Cast mode switch failed: ${result.error}`, 'error');
+    }
+  } catch (error) {
+    log(`Cast mode error: ${error.message}`, 'error');
   }
 
   // Save setting

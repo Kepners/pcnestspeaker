@@ -37,6 +37,9 @@ contextBridge.exposeInMainWorld('api', {
   updateSettings: (updates) => ipcRenderer.invoke('update-settings', updates),
   saveLastSpeaker: (speaker) => ipcRenderer.invoke('save-last-speaker', speaker),
 
+  // Cast Mode - controls audio routing (speakers only vs PC + speakers)
+  setCastMode: (mode) => ipcRenderer.invoke('set-cast-mode', mode),
+
   // Auto-start on Windows boot
   isAutoStartEnabled: () => ipcRenderer.invoke('is-auto-start-enabled'),
   toggleAutoStart: () => ipcRenderer.invoke('toggle-auto-start'),

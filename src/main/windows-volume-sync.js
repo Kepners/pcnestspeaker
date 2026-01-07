@@ -261,9 +261,135 @@ async function setVolumeOnSpeakers(volume, runPythonFn) {
   await Promise.all(promises);
 }
 
+// Saved volume for cast mode switching
+let savedVolumeForCastMode = null;
+
+/**
+ * Set Windows master volume (0-100)
+ * Uses Core Audio API via PowerShell
+ */
+function setWindowsVolume(volume) {
+  return new Promise((resolve, reject) => {
+    const fs = require('fs');
+    const os = require('os');
+    const scriptPath = path.join(os.tmpdir(), 'set-volume.ps1');
+
+    const volumeLevel = Math.max(0, Math.min(100, volume)) / 100; // 0.0 to 1.0
+
+    const psScript = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+[Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IAudioEndpointVolume {
+    int f(); int g(); int h(); int i();
+    int SetMasterVolumeLevelScalar(float fLevel, System.Guid pguidEventContext);
+    int j();
+    int GetMasterVolumeLevelScalar(out float pfLevel);
+    int k(); int l(); int m(); int n();
+    int GetVolumeRange(out float pflMin, out float pflMax, out float pflIncr);
+}
+[Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDevice {
+    int Activate(ref System.Guid id, int clsCtx, int activationParams, out IAudioEndpointVolume aev);
+}
+[Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDeviceEnumerator {
+    int f();
+    int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice endpoint);
+}
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
+
+public static class Audio {
+    public static void SetVolume(float level) {
+        var enumerator = new MMDeviceEnumerator() as IMMDeviceEnumerator;
+        IMMDevice dev = null;
+        enumerator.GetDefaultAudioEndpoint(0, 1, out dev);
+        IAudioEndpointVolume epVol = null;
+        var guid = typeof(IAudioEndpointVolume).GUID;
+        dev.Activate(ref guid, 0x17, 0, out epVol);
+        epVol.SetMasterVolumeLevelScalar(level, System.Guid.Empty);
+    }
+}
+"@
+[Audio]::SetVolume(${volumeLevel})
+Write-Output "OK"
+`;
+
+    try {
+      fs.writeFileSync(scriptPath, psScript, 'utf8');
+    } catch (e) {
+      console.error('[VolumeSync] Failed to write set-volume script:', e.message);
+      reject(new Error('Failed to write PowerShell script'));
+      return;
+    }
+
+    exec(
+      `powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}"`,
+      { timeout: 5000, windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error) {
+          console.error('[VolumeSync] Set volume error:', stderr || error.message);
+          reject(new Error(stderr || error.message));
+        } else {
+          console.log(`[VolumeSync] Windows volume set to ${volume}%`);
+          resolve(volume);
+        }
+      }
+    );
+  });
+}
+
+/**
+ * Switch to "Speakers Only" mode - mute PC, save original volume
+ */
+async function switchToSpeakersOnlyMode() {
+  try {
+    // Save current volume before muting
+    const currentVolume = await getWindowsVolumeViaPowerShell();
+    if (currentVolume > 0) {
+      savedVolumeForCastMode = currentVolume;
+      console.log(`[VolumeSync] Saved volume ${currentVolume}% before muting`);
+    }
+
+    // Mute PC (set to 0) - WASAPI loopback still captures audio!
+    await setWindowsVolume(0);
+    console.log('[VolumeSync] Switched to Speakers Only mode (PC muted)');
+
+    return { success: true, savedVolume: savedVolumeForCastMode };
+  } catch (error) {
+    console.error('[VolumeSync] Failed to switch to Speakers Only:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Switch to "PC + Speakers" mode - restore volume
+ */
+async function switchToPCSpeakersMode() {
+  try {
+    // Restore saved volume (or default to 50%)
+    const volumeToRestore = savedVolumeForCastMode || 50;
+    await setWindowsVolume(volumeToRestore);
+    console.log(`[VolumeSync] Restored volume to ${volumeToRestore}%`);
+
+    savedVolumeForCastMode = null;
+    console.log('[VolumeSync] Switched to PC + Speakers mode');
+
+    return { success: true, restoredVolume: volumeToRestore };
+  } catch (error) {
+    console.error('[VolumeSync] Failed to switch to PC + Speakers:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   startMonitoring,
   stopMonitoring,
   getWindowsVolume: getWindowsVolumeViaPowerShell,
-  setVolumeOnSpeakers
+  setWindowsVolume,
+  setVolumeOnSpeakers,
+  switchToSpeakersOnlyMode,
+  switchToPCSpeakersMode
 };

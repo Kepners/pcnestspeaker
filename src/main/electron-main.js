@@ -187,6 +187,11 @@ function cleanup() {
   usageTracker.stopTracking(); // Stop tracking usage time
   volumeSync.stopMonitoring(); // Stop Windows volume sync
 
+  // Restore Windows volume if it was muted (Speakers Only mode)
+  volumeSync.switchToPCSpeakersMode().catch(() => {
+    // Ignore errors on cleanup - volume may not have been saved
+  });
+
   // Stop audio streamer (HTTP mode)
   if (audioStreamer) {
     audioStreamer.stop();
@@ -1558,6 +1563,31 @@ ipcMain.handle('get-settings', () => {
 ipcMain.handle('update-settings', (event, updates) => {
   settingsManager.updateSettings(updates);
   return { success: true };
+});
+
+// Cast Mode handler - controls Windows volume for Speakers Only vs PC + Speakers
+ipcMain.handle('set-cast-mode', async (event, mode) => {
+  console.log(`[Main] Setting cast mode to: ${mode}`);
+
+  try {
+    if (mode === 'speakers') {
+      // Speakers Only mode - mute PC, audio only goes to Nest
+      // WASAPI loopback captures BEFORE Windows volume, so Nest gets full audio!
+      const result = await volumeSync.switchToSpeakersOnlyMode();
+      console.log('[Main] Switched to Speakers Only mode:', result);
+      return result;
+    } else if (mode === 'all') {
+      // PC + Speakers mode - restore Windows volume
+      const result = await volumeSync.switchToPCSpeakersMode();
+      console.log('[Main] Switched to PC + Speakers mode:', result);
+      return result;
+    } else {
+      return { success: false, error: `Unknown mode: ${mode}` };
+    }
+  } catch (error) {
+    console.error('[Main] Failed to set cast mode:', error.message);
+    return { success: false, error: error.message };
+  }
 });
 
 ipcMain.handle('save-last-speaker', (event, speaker) => {
