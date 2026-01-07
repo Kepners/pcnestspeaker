@@ -109,7 +109,9 @@
       "Bash(cmd /c \"copy /y \"\"C:\\\\Users\\\\kepne\\\\Downloads\\\\Untitled design.mp4\"\" \"\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\assets\\\\splash.mp4\"\"\")",
       "Bash(cmd /c dir \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\assets\\\\*.mp4\")",
       "Bash(cmd /c \"start \"\" \"c:UserskepneOneDriveDocumentsGitHubpcnestspeakerstart-app.bat\"\")",
-      "Bash(cmd /c \"start \"\" \"\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\start-app.bat\"\"\")"
+      "Bash(cmd /c \"start \"\" \"\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\start-app.bat\"\"\")",
+      "Bash(\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\nircmd\\\\nircmd.exe\" setdefaultsounddevice \"Virtual Desktop Audio\" 1)",
+      "Bash(del test-audio-switch.ps1)"
     ]
   }
 }

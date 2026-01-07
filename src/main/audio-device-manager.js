@@ -130,37 +130,52 @@ public static class AudioDevice {
  */
 function setDefaultAudioDevice(deviceName) {
   return new Promise((resolve, reject) => {
+    console.log(`[AudioDeviceManager] setDefaultAudioDevice called with: "${deviceName}"`);
+    console.log(`[AudioDeviceManager] NirCmd path: ${NIRCMD_PATH}`);
+    console.log(`[AudioDeviceManager] NirCmd exists: ${fs.existsSync(NIRCMD_PATH)}`);
+
     // Try NirCmd first (faster)
     if (fs.existsSync(NIRCMD_PATH)) {
       const args = ['setdefaultsounddevice', deviceName, '1'];
+      console.log(`[AudioDeviceManager] Running: nircmd ${args.join(' ')}`);
       const process = spawn(NIRCMD_PATH, args, {
         windowsHide: true,
         stdio: 'pipe'
       });
 
       let errorOutput = '';
+      let stdoutOutput = '';
+
+      process.stdout.on('data', (data) => {
+        stdoutOutput += data.toString();
+      });
+
       process.stderr.on('data', (data) => {
         errorOutput += data.toString();
       });
 
       process.on('close', (code) => {
+        console.log(`[AudioDeviceManager] NirCmd exit code: ${code}`);
+        if (stdoutOutput) console.log(`[AudioDeviceManager] NirCmd stdout: ${stdoutOutput}`);
+        if (errorOutput) console.log(`[AudioDeviceManager] NirCmd stderr: ${errorOutput}`);
+
         if (code === 0) {
-          console.log(`[AudioDeviceManager] Switched to (NirCmd): ${deviceName}`);
+          console.log(`[AudioDeviceManager] SUCCESS: Switched to "${deviceName}" via NirCmd`);
           resolve();
         } else {
           // NirCmd failed, try PowerShell fallback
-          console.log('[AudioDeviceManager] NirCmd failed, trying PowerShell...');
+          console.log(`[AudioDeviceManager] NirCmd failed (code ${code}), trying PowerShell...`);
           setDefaultAudioDevicePowerShell(deviceName).then(resolve).catch(reject);
         }
       });
 
       process.on('error', (err) => {
-        console.log('[AudioDeviceManager] NirCmd error, trying PowerShell...');
+        console.log(`[AudioDeviceManager] NirCmd error: ${err.message}, trying PowerShell...`);
         setDefaultAudioDevicePowerShell(deviceName).then(resolve).catch(reject);
       });
     } else {
       // NirCmd not found, use PowerShell
-      console.log('[AudioDeviceManager] NirCmd not found, using PowerShell');
+      console.log('[AudioDeviceManager] NirCmd not found at path, using PowerShell fallback');
       setDefaultAudioDevicePowerShell(deviceName).then(resolve).catch(reject);
     }
   });
