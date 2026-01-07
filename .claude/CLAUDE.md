@@ -1674,6 +1674,40 @@ Also added:
 #### Files Modified
 - `src/main/audio-device-manager.js` - Added device names, improved logging
 
+### January 7, 2026 (Session 17) - NirCmd Bundle Fix
+
+**Session Goal:** Fix audio device not switching - customers still reporting issue
+
+#### Root Cause Found
+The `nircmd/` folder only contained README.md - **nircmd.exe was never actually bundled!**
+- Code checked `fs.existsSync(NIRCMD_PATH)` → returned FALSE
+- Fell back to PowerShell which may have been failing silently
+
+#### Fix Applied
+1. **Downloaded and bundled NirCmd** (47KB utility from NirSoft)
+   - `nircmd.exe` - main executable
+   - `nircmdc.exe` - console version
+   - `NirCmd.chm` - help file
+2. **Added extensive debug logging**:
+   - Logs exact path being checked
+   - Logs whether NirCmd exists
+   - Logs exit code and output
+   - Easy to diagnose future issues
+
+#### Verification
+Tested both methods:
+- NirCmd: `nircmd setdefaultsounddevice "Virtual Desktop Audio" 1` → SUCCESS
+- PowerShell: Core Audio COM interface → SUCCESS
+
+#### Git Commit
+- `c124bbc` - 🔧 fix: Bundle NirCmd for reliable audio device switching
+
+#### Files Added/Modified
+- `nircmd/nircmd.exe` - NEW: NirCmd executable
+- `nircmd/nircmdc.exe` - NEW: Console version
+- `nircmd/NirCmd.chm` - NEW: Help file
+- `src/main/audio-device-manager.js` - MODIFIED: Extensive debug logging
+
 ---
 
 *Last Updated: January 7, 2026*
