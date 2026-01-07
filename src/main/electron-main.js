@@ -1336,7 +1336,7 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
       }
     });
 
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 1000));  // Reduced from 2s to 1s
     sendLog('LEFT channel streaming', 'success');
 
     // 3. Start FFmpeg for RIGHT channel
@@ -1367,7 +1367,7 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
       }
     });
 
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 1000));  // Reduced from 2s to 1s
     sendLog('RIGHT channel streaming', 'success');
 
     // Start stream stats monitoring (for stereo mode)
