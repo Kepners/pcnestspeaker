@@ -436,13 +436,32 @@ body::before {
   color: white;
 }
 
-.stereo-indicator {
+/* Info button column - fixed width for alignment */
+.info-btn {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  width: 72px;
-  justify-content: flex-end;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: rgba(26, 26, 26, 0.3);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 4px;
+}
+
+.info-btn:hover {
+  color: rgba(26, 26, 26, 0.6);
+}
+
+/* Placeholder to maintain alignment when no info button */
+.info-btn-placeholder {
+  width: 24px;
+  flex-shrink: 0;
+  margin-left: 4px;
 }
 
 .stereo-badge {

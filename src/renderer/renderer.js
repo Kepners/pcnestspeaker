@@ -635,15 +635,17 @@ function renderSpeakers() {
 
     // For stereo devices: show "STEREO" indicator with type badge
     // For mono speakers: show L/R buttons for manual stereo separation
+    // Info button is in its own column for alignment
     const stereoControls = isStereoDevice
-      ? `<div class="stereo-indicator">
+      ? `<div class="stereo-toggles">
            <span class="stereo-badge">${castType === 'group' ? 'GROUP' : 'STEREO'}</span>
-           <button class="info-btn" data-index="${index}" title="Stereo info">ⓘ</button>
-         </div>`
+         </div>
+         <button class="info-btn" data-index="${index}" title="Stereo info">ⓘ</button>`
       : `<div class="stereo-toggles">
            <button class="stereo-toggle ${isLeft ? 'active' : ''}" data-index="${index}" data-channel="left">L</button>
            <button class="stereo-toggle ${isRight ? 'active' : ''}" data-index="${index}" data-channel="right">R</button>
-         </div>`;
+         </div>
+         <div class="info-btn-placeholder"></div>`;
 
     return `
     <div class="speaker-item ${isSelected ? 'selected' : ''} ${isLeft ? 'speaker-left' : ''} ${isRight ? 'speaker-right' : ''}" data-index="${index}">
