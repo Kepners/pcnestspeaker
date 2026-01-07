@@ -1470,6 +1470,100 @@ Updated `getLicenseData()`, `saveLicenseData()`, and `deleteLicenseData()` funct
 - Test license system once app launches successfully
 - Continue with Task #10 (Match DeleteMyTweets Styling)
 
+### January 7, 2026 (Session 14) - Volume Control & Fixes
+
+**Session Goal:** Fix volume control issues, make PC volume keys control Nest speakers
+
+#### What Was Completed
+- ✅ Fixed duplicate IPC handler crash (`set-volume` registered twice)
+- ✅ Fixed volume control for stereo mode (now controls both L/R speakers)
+- ✅ Fixed volume card not showing in stereo mode
+- ✅ Added 500ms debouncing to volume slider (prevents spam)
+- ✅ Started Windows volume sync module (incomplete)
+
+#### Bugs Fixed This Session
+1. **Duplicate IPC handler** - `set-volume` was defined at lines 1046 AND 1351 → Removed duplicate (Commit `2b27a31`)
+2. **Volume not working in stereo** - Code only checked `selectedSpeaker` (null in stereo) → Added stereo mode checks (Commit `be0b55f`)
+3. **Volume card hidden in stereo** - Card only shown in `selectSpeaker()` → Added show on stereo stream start (Commit `0784959`)
+
+#### In Progress - PICK UP HERE TOMORROW
+
+**User Request:** "i dont want my app to control the volumn i want the PC to do it"
+
+**Problem:** `virtual-audio-capturer` captures audio BEFORE Windows master volume is applied.
+Changing Windows volume has NO effect on what gets streamed to Nest.
+
+**Solution in progress:** Hook Windows volume changes → sync to Nest speaker
+
+**Files created/modified:**
+1. `src/main/windows-volume-sync.js` - NEW: Polls Windows volume, triggers callback on change (INCOMPLETE)
+2. `src/main/electron-main.js` - MODIFIED: `set-volume` handler now passes cached IP for faster connection
+3. `src/renderer/renderer.js` - MODIFIED: Added volume debouncing for stereo mode
+
+**Still TODO:**
+1. **Add `set-volume-fast` command to cast-helper.py** - Uses IP directly instead of network scan (critical for speed)
+2. **Integrate windows-volume-sync into electron-main.js** - Start monitoring when streaming starts
+3. **Test Windows volume keys** - Press keyboard volume up/down → Nest volume should follow
+4. **Fix auto-start with Windows** - REG ADD has syntax error with spaces in path
+5. **Fix `streamingMode is not defined`** - JavaScript error in renderer.js
+
+**Why volume is slow (10 seconds):**
+- Current Python `set_volume()` does full network discovery every call
+- `pychromecast.get_listed_chromecasts()` takes 5-10 seconds
+- Solution: Pass cached IP directly → `pychromecast.Chromecast(ip)` connects instantly
+
+**Python function needed in cast-helper.py:**
+```python
+def set_volume_fast(speaker_name, volume_level, speaker_ip):
+    """Fast volume set using direct IP connection (no discovery)."""
+    try:
+        if speaker_ip:
+            # Direct connection - no network scan!
+            cast = pychromecast.Chromecast(speaker_ip)
+            cast.wait(timeout=5)
+        else:
+            # Fallback to discovery
+            chromecasts, browser = pychromecast.get_listed_chromecasts(
+                friendly_names=[speaker_name], timeout=10
+            )
+            if not chromecasts:
+                return {"success": False, "error": "Speaker not found"}
+            cast = chromecasts[0]
+            cast.wait()
+            browser.stop_discovery()
+
+        volume = max(0.0, min(1.0, float(volume_level)))
+        cast.set_volume(volume)
+        return {"success": True, "volume": volume}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+```
+
+**And add CLI handler:**
+```python
+elif command == "set-volume-fast" and len(sys.argv) >= 4:
+    speaker = sys.argv[2]
+    volume = float(sys.argv[3])
+    ip = sys.argv[4] if len(sys.argv) > 4 else None
+    result = set_volume_fast(speaker, volume, ip)
+    print(json.dumps(result))
+```
+
+#### Git Commit
+- `edac15a` - 🚧 WIP: Windows volume sync for Nest speakers
+
+#### Progress Summary
+| Task | Status |
+|------|--------|
+| License system | ✅ Complete |
+| Trial timer | ✅ Complete |
+| System tray | ✅ Complete |
+| Volume control UI | ✅ Complete |
+| Volume stereo mode | ✅ Fixed |
+| Windows volume sync | 🚧 In Progress |
+| set-volume-fast Python | ❌ Not started |
+| Auto-start Windows | ❌ Broken (REG ADD syntax) |
+
 ---
 
-*Last Updated: January 6, 2026*
+*Last Updated: January 7, 2026*
