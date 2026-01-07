@@ -1104,9 +1104,13 @@ ipcMain.handle('restart-ffmpeg', async () => {
     const audioDevice = 'virtual-audio-capturer';
     sendLog('Restarting FFmpeg with new settings...');
 
-    // Stop current FFmpeg
+    // Stop current FFmpeg (on Windows, SIGTERM doesn't work - just kill it)
     if (ffmpegWebrtcProcess) {
-      ffmpegWebrtcProcess.kill('SIGTERM');
+      try {
+        ffmpegWebrtcProcess.kill();
+      } catch (e) {
+        // Process might already be dead
+      }
       ffmpegWebrtcProcess = null;
       await new Promise(resolve => setTimeout(resolve, 500)); // Wait for clean shutdown
     }
