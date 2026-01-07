@@ -1710,4 +1710,54 @@ Tested both methods:
 
 ---
 
+### January 7, 2026 (Session 18) - CRITICAL: Mono Streaming Fix
+
+**Session Goal:** Fix mono speaker streaming (single speakers not getting audio)
+
+#### Problem Discovered
+- **Stereo pairs (two speakers for L/R)**: WORKING
+- **Single mono speakers**: NO AUDIO
+
+Investigation revealed critical difference:
+- **Stereo mode**: Uses `http://${localIp}:8889` (local HTTP directly on network)
+- **Mono mode**: Uses cloudflared tunnel (`https://xxx.trycloudflare.com`)
+
+The cloudflared tunnel was unreliable - Cast receiver couldn't consistently fetch audio through it.
+
+#### The Fix
+Changed mono streaming to use local HTTP URL (same as stereo mode):
+
+```javascript
+// BEFORE (broken):
+let httpsUrl = tunnelUrl; // cloudflared tunnel
+
+// AFTER (working):
+const localIp = getLocalIp();
+let webrtcUrl = `http://${localIp}:8889`;
+```
+
+#### Why This Works
+1. Cast receivers on local network can directly access `http://192.168.x.x:8889`
+2. No external tunnel means no network latency or connection issues
+3. MediaMTX WebRTC endpoint is directly accessible on port 8889
+4. This matches exactly how stereo mode works (and stereo works!)
+
+#### Also Fixed
+- Audio device caching (30-second TTL to avoid repeated FFmpeg spawns)
+- Removed dead `checkAudioDeviceExists()` function
+- Consolidated dependency checks to single audio device scan
+
+#### Git Commits
+- `76019ea` - 🧹 cleanup: Cache audio devices + remove duplicate scans
+- `210e07f` - 🔥 fix: Mono streaming now uses local HTTP instead of cloudflared tunnel
+
+#### Files Modified
+- `src/main/electron-main.js` - Mono streaming uses local HTTP URL
+- `src/main/audio-streamer.js` - Added 30-second cache to getAudioDevices()
+
+#### Key Insight
+**Local HTTP works for Cast devices on the same network.** The tunnel was unnecessary overhead that introduced unreliability. Stereo mode proved the local approach works.
+
+---
+
 *Last Updated: January 7, 2026*
