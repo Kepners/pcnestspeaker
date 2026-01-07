@@ -208,9 +208,18 @@ function setupEventListeners() {
 
   // Listen for tray stop streaming event
   window.api.onTrayStopStreaming(async () => {
-    log('Stop requested from tray menu');
+    log('Stop requested from tray menu', 'info');
     if (isStreaming) {
       await stopStreaming();
+    } else {
+      // Try stopping anyway - backend might have different state
+      log('No active stream detected, sending stop anyway...', 'info');
+      try {
+        await window.api.stopStreaming();
+        setStreamingState(false);
+      } catch (e) {
+        log(`Stop from tray failed: ${e.message}`, 'warning');
+      }
     }
   });
 
@@ -959,6 +968,13 @@ async function updateTrialDisplay() {
 }
 
 function updateStreamButtonState() {
+  // UI elements that may not exist (removed in simplified UI)
+  const streamBtn = document.getElementById('stream-btn');
+  const pingBtn = document.getElementById('ping-btn');
+
+  // Only update if elements exist
+  if (!streamBtn) return;
+
   const hasSpeaker = selectedSpeaker !== null;
   const missingDeps = getMissingDepsForMode(streamingMode);
   const hasRequiredDeps = missingDeps.length === 0;
@@ -967,7 +983,7 @@ function updateStreamButtonState() {
   const hasAudioDevice = true;
 
   streamBtn.disabled = !hasSpeaker || !hasRequiredDeps || !hasAudioDevice;
-  pingBtn.disabled = !hasSpeaker;
+  if (pingBtn) pingBtn.disabled = !hasSpeaker;
 
   // Update button text if deps missing
   if (!hasRequiredDeps) {

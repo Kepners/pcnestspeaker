@@ -53,11 +53,21 @@ function createFallbackIcon(color) {
  */
 function loadIcon(filename, fallbackColor) {
   const fs = require('fs');
-  const iconPath = path.join(__dirname, '../../assets', filename);
+  const assetsPath = path.join(__dirname, '../../assets');
 
-  // Try to load PNG file
-  if (fs.existsSync(iconPath)) {
-    return nativeImage.createFromPath(iconPath);
+  // Try ICO first (preferred on Windows), then PNG
+  const baseName = filename.replace(/\.(png|ico)$/, '');
+  const icoPath = path.join(assetsPath, `${baseName}.ico`);
+  const pngPath = path.join(assetsPath, `${baseName}.png`);
+
+  if (fs.existsSync(icoPath)) {
+    console.log(`[Tray] Loading icon: ${baseName}.ico`);
+    return nativeImage.createFromPath(icoPath);
+  }
+
+  if (fs.existsSync(pngPath)) {
+    console.log(`[Tray] Loading icon: ${baseName}.png`);
+    return nativeImage.createFromPath(pngPath);
   }
 
   // Create fallback icon

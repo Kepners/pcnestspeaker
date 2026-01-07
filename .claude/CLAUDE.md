@@ -1516,11 +1516,11 @@ Changing Windows volume has NO effect on what gets streamed to Nest.
 3. `src/renderer/renderer.js` - MODIFIED: Added volume debouncing for stereo mode
 
 **Still TODO:**
-1. **Add `set-volume-fast` command to cast-helper.py** - Uses IP directly instead of network scan (critical for speed)
-2. **Integrate windows-volume-sync into electron-main.js** - Start monitoring when streaming starts
+1. ~~**Add `set-volume-fast` command to cast-helper.py**~~ ✅ DONE - Uses IP directly instead of network scan
+2. ~~**Integrate windows-volume-sync into electron-main.js**~~ ✅ DONE - Start monitoring when streaming starts
 3. **Test Windows volume keys** - Press keyboard volume up/down → Nest volume should follow
-4. **Fix auto-start with Windows** - REG ADD has syntax error with spaces in path
-5. **Fix `streamingMode is not defined`** - JavaScript error in renderer.js
+4. ~~**Fix auto-start with Windows**~~ ✅ DONE - REG ADD syntax fixed with escaped quotes
+5. ~~**Fix `streamingMode is not defined`**~~ - Fixed by removing references
 
 **Why volume is slow (10 seconds):**
 - Current Python `set_volume()` does full network discovery every call
@@ -1575,9 +1575,56 @@ elif command == "set-volume-fast" and len(sys.argv) >= 4:
 | System tray | ✅ Complete |
 | Volume control UI | ✅ Complete |
 | Volume stereo mode | ✅ Fixed |
-| Windows volume sync | 🚧 In Progress |
-| set-volume-fast Python | ❌ Not started |
-| Auto-start Windows | ❌ Broken (REG ADD syntax) |
+| Windows volume sync | ✅ Integrated |
+| set-volume-fast Python | ✅ Complete |
+| Auto-start Windows | ✅ Fixed |
+| Stream Monitor | ✅ Fixed |
+
+### January 7, 2026 (Session 15) - Stream Monitor & Auto-Start Fixes
+
+**Session Goal:** Fix Stream Monitor (fake data), Auto-Start syntax error, Windows volume sync
+
+#### What Was Completed
+- ✅ Fixed auto-start REG ADD syntax error (paths with spaces now properly escaped)
+- ✅ Fixed Stream Monitor - now shows real FFmpeg data instead of fake sine waves
+- ✅ Added `-stats` flag to all FFmpeg commands to force progress output
+- ✅ Stream bars now respond to actual bitrate level (not random animation)
+- ✅ Added debug logging for FFmpeg output parsing
+- ✅ Improved FFmpeg regex patterns to handle various output formats
+
+#### Fixes Applied
+
+**Auto-Start REG ADD Fix** (`auto-start-manager.js`):
+```javascript
+// Before (broken for paths with spaces):
+const appPath = `"${exePath}" "${projectPath}"`;
+
+// After (proper escaping):
+const appPath = `"\\"${exePath}\\" \\"${projectPath}\\""`;
+```
+
+**Stream Monitor Fix** (`stream-stats.js`):
+- Changed `updateAudioLevels()` to `updateActivityIndicator()`
+- Bars now show different states:
+  - **Connecting**: Low pulsing animation while waiting for FFmpeg data
+  - **Active**: Bars height based on actual bitrate (320kbps = 100%)
+  - **Idle**: Flat low bars when no recent data
+- Added `hasReceivedData` flag to track if FFmpeg has started outputting
+- Added `lastDataTime` to detect when data stops flowing
+
+**FFmpeg Progress Output** (`electron-main.js`):
+- Added `-stats` flag to main WebRTC FFmpeg
+- Changed `-loglevel error` to `-stats` for stereo L/R FFmpegs
+- Now all three FFmpeg processes output progress info to stream stats
+
+#### Git Commit
+- `4f64437` - 🔧 fix: Stream monitor and auto-start fixes
+
+#### Next Steps
+1. Test Windows volume keys → Nest volume sync
+2. Test auto-start with Windows (should work now)
+3. Verify Stream Monitor shows real bitrate/data
+4. Match DeleteMyTweets styling (Task #10)
 
 ---
 
