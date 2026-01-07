@@ -90,7 +90,7 @@ function killLeftoverProcesses() {
   if (process.platform === 'win32') {
     try {
       // Kill any existing MediaMTX processes
-      execSync('taskkill /F /IM mediamtx.exe 2>nul', { stdio: 'ignore' });
+      execSync('taskkill /F /IM mediamtx.exe 2>nul', { stdio: 'ignore', windowsHide: true });
       console.log('[Main] Killed leftover mediamtx');
     } catch (e) {
       // Process not running - that's fine
@@ -98,14 +98,14 @@ function killLeftoverProcesses() {
 
     try {
       // Kill any localtunnel processes
-      execSync('taskkill /F /IM lt.exe 2>nul', { stdio: 'ignore' });
+      execSync('taskkill /F /IM lt.exe 2>nul', { stdio: 'ignore', windowsHide: true });
     } catch (e) {
       // Process not running - that's fine
     }
 
     try {
       // Kill any cloudflared processes
-      execSync('taskkill /F /IM cloudflared.exe 2>nul', { stdio: 'ignore' });
+      execSync('taskkill /F /IM cloudflared.exe 2>nul', { stdio: 'ignore', windowsHide: true });
     } catch (e) {
       // Process not running - that's fine
     }
@@ -222,7 +222,7 @@ function cleanup() {
   // Also force kill by name in case process handle is lost
   try {
     if (process.platform === 'win32') {
-      execSync('taskkill /F /IM mediamtx.exe', { stdio: 'ignore' });
+      execSync('taskkill /F /IM mediamtx.exe', { stdio: 'ignore', windowsHide: true });
     }
   } catch (e) {
     // Process may already be dead
@@ -487,7 +487,7 @@ function findCloudflared() {
     try {
       if (p === 'cloudflared') {
         // Check if in PATH
-        execSync('where cloudflared', { stdio: 'ignore' });
+        execSync('where cloudflared', { stdio: 'ignore', windowsHide: true });
         return 'cloudflared';
       } else if (fs.existsSync(p)) {
         return p;
