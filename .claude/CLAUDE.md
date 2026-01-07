@@ -1626,6 +1626,54 @@ const appPath = `"\\"${exePath}\\" \\"${projectPath}\\""`;
 3. Verify Stream Monitor shows real bitrate/data
 4. Match DeleteMyTweets styling (Task #10)
 
+### January 7, 2026 (Session 16) - Virtual Audio Device Name Fix
+
+**Session Goal:** Fix customer-reported bug - audio device not switching to virtual audio
+
+#### Problem
+- Customers reported clicking "Speakers Only" mode but device NOT switching
+- Screenshot showed Windows Sound panel still on physical speakers
+- User's virtual device called "Speakers (Virtual Desktop Audio)"
+- This name was NOT in our device list → switch failed silently
+
+#### Root Cause
+`switchToStreamingDevice()` in `audio-device-manager.js` only tried:
+```javascript
+// OLD - Missing Virtual Desktop Audio!
+const virtualDeviceNames = [
+  'virtual-audio-capturer',
+  'Virtual Audio Capturer',
+  'CABLE Input',
+  'VB-Audio Virtual Cable'
+];
+```
+
+The screen-capture-recorder installs as "Speakers (Virtual Desktop Audio)" - NOT in our list!
+
+#### Fix Applied
+```javascript
+// NEW - Virtual Desktop Audio first (most common)
+const virtualDeviceNames = [
+  'Virtual Desktop Audio',            // Most common - screen-capture-recorder
+  'virtual-audio-capturer',           // Legacy name
+  'Virtual Audio Capturer',           // Case variant
+  'Speakers (Virtual Desktop Audio)', // Full name with prefix
+  'CABLE Input',                      // VB-Audio CABLE
+  'VB-Audio Virtual Cable'            // VB-Audio alternative
+];
+```
+
+Also added:
+- Logging for each device name tried
+- Better error message showing which devices were tried
+- Console output helps debug customer issues
+
+#### Git Commit
+- `fb2081c` - 🔧 fix: Add Virtual Desktop Audio to device name list
+
+#### Files Modified
+- `src/main/audio-device-manager.js` - Added device names, improved logging
+
 ---
 
 *Last Updated: January 7, 2026*
