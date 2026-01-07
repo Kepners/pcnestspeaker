@@ -132,17 +132,28 @@ class StreamStats {
     // If we received FFmpeg data in the last 2 seconds, show activity
     // Otherwise, show minimal activity or flat bars
     if (this.hasReceivedData && timeSinceData < 2000) {
-      // Active streaming - show animated bars based on bitrate
+      // Active streaming - show audio-like randomized bars
       // Use configured bitrate if actual is N/A
       const effectiveBitrate = this.bitrate || CONFIGURED_BITRATE;
       const activityLevel = Math.min(100, (effectiveBitrate / 320) * 100); // 320kbps = 100%
 
       for (let i = 0; i < 8; i++) {
-        // Create wave effect based on bitrate
-        const phase = ((now / 200) + i * 0.5) % (Math.PI * 2);
-        const wave = Math.sin(phase) * 0.3 + 0.7; // 0.4 to 1.0 range
-        const level = Math.max(5, activityLevel * wave);
-        this.audioLevels[i] = Math.round(level);
+        // Audio-like visualization: random spiky bars with smooth decay
+        // Each bar has its own random target and smoothly moves toward it
+        const currentLevel = this.audioLevels[i] || 0;
+
+        // Generate new random target (more variation = more audio-like)
+        // Low frequencies (left bars) tend to be higher, highs (right) more variable
+        const baseLevel = activityLevel * (0.4 + Math.random() * 0.6);
+        const frequencyBias = 1.0 - (i * 0.05); // Left bars slightly higher (bass)
+        const targetLevel = Math.max(10, baseLevel * frequencyBias);
+
+        // Smooth interpolation toward target (fast attack, slower decay)
+        const isRising = targetLevel > currentLevel;
+        const smoothFactor = isRising ? 0.7 : 0.3; // Fast attack, slow decay
+        const newLevel = currentLevel + (targetLevel - currentLevel) * smoothFactor;
+
+        this.audioLevels[i] = Math.round(Math.max(5, Math.min(100, newLevel)));
       }
     } else if (this.isActive && !this.hasReceivedData) {
       // Waiting for data - show pulsing "connecting" animation
