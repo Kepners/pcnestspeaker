@@ -63,9 +63,10 @@ def discover_speakers(timeout=8):
                 "name": cc.name,
                 "model": info.model_name or "Chromecast",
                 "ip": info.host,
-                "port": info.port
+                "port": info.port,
+                "cast_type": info.cast_type  # "audio", "cast", or "group"
             })
-            print(f"Found: {cc.name} ({info.host})", file=sys.stderr)
+            print(f"Found: {cc.name} ({info.host}) [{info.cast_type}]", file=sys.stderr)
 
         browser.stop_discovery()
         return {"success": True, "speakers": speakers}

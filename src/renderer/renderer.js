@@ -273,7 +273,7 @@ function setupEventListeners() {
   window.api.onSpeakersDiscovered((discoveredSpeakers) => {
     log(`Auto-discovered ${discoveredSpeakers.length} speakers`, 'success');
     speakers = discoveredSpeakers;
-    discoveredSpeakers.forEach(s => log(`  - ${s.name} (${s.model})`));
+    discoveredSpeakers.forEach(s => log(`  - ${s.name} (${s.model}) [${s.cast_type || 'audio'}]`));
     renderSpeakers();
   });
 
@@ -611,23 +611,26 @@ function renderSpeakers() {
     const isRight = stereoMode.rightSpeaker === index;
     const isSelected = selectedSpeaker === index;
 
-    // Detect if this is a TV, group, or stereo pair (already outputs stereo)
-    // Nest Mini, Nest Audio, Nest Hub = MONO (show L/R buttons)
-    // TVs, Shields, Groups, Pairs = STEREO (show badge)
+    // Detect if this is a group, TV, or stereo pair (already outputs stereo)
+    // cast_type: "group" = multi-room group OR stereo pair (always stereo)
+    // cast_type: "cast" = Chromecast/TV with display (usually stereo)
+    // cast_type: "audio" = Nest Mini, Nest Audio (mono unless paired)
     const model = (speaker.model || '').toLowerCase();
     const name = (speaker.name || '').toLowerCase();
-    const isStereoDevice = model.includes('tv') ||
-                           model.includes('shield') ||
-                           model.includes('cast group') ||
-                           model.includes('google cast group') ||
-                           name.includes('pair') ||
-                           name.includes(' group');
+    const castType = speaker.cast_type || 'audio';
 
-    // For stereo devices: show "STEREO" indicator with info button
+    // Groups are always treated as stereo (includes stereo pairs)
+    // TVs and Shields have stereo output
+    const isStereoDevice = castType === 'group' ||
+                           model.includes('tv') ||
+                           model.includes('shield') ||
+                           name.includes('pair');
+
+    // For stereo devices: show "STEREO" indicator with type badge
     // For mono speakers: show L/R buttons for manual stereo separation
     const stereoControls = isStereoDevice
       ? `<div class="stereo-indicator">
-           <span class="stereo-badge">STEREO</span>
+           <span class="stereo-badge">${castType === 'group' ? 'GROUP' : 'STEREO'}</span>
            <button class="info-btn" data-index="${index}" title="Stereo info">ⓘ</button>
          </div>`
       : `<div class="stereo-toggles">
