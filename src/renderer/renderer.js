@@ -817,14 +817,36 @@ async function toggleStereoChannel(index, channel) {
     log('Speaker unassigned - stopping stereo streaming...', 'warning');
     await stopStereoStreaming();
   } else if (stereoMode.leftSpeaker !== null || stereoMode.rightSpeaker !== null) {
-    // FIX: Only ONE speaker assigned (L or R) - start mono streaming to it!
+    // FIX: Only ONE speaker assigned (L or R) - start streaming to it!
     // This is what users expect when clicking L or R on a single speaker
-    const monoSpeakerIndex = stereoMode.leftSpeaker !== null
+    const speakerIndex = stereoMode.leftSpeaker !== null
       ? stereoMode.leftSpeaker
       : stereoMode.rightSpeaker;
-    log(`Single speaker assigned - starting mono stream...`, 'success');
-    // Start streaming but preserve stereo state (so user can add second speaker later)
-    await startStreamingToSpeaker(monoSpeakerIndex, false);
+    const speaker = speakers[speakerIndex];
+
+    // Check if this speaker is actually a stereo device (group, TV, stereo pair)
+    // If so, we should send full stereo audio, not prepare for L/R separation
+    const castType = speaker.cast_type || 'audio';
+    const model = (speaker.model || '').toLowerCase();
+    const speakerName = (speaker.name || '').toLowerCase();
+    const isStereoDevice = castType === 'group' ||
+                           model.includes('tv') ||
+                           model.includes('shield') ||
+                           speakerName.includes('pair');
+
+    if (isStereoDevice) {
+      // Stereo device - clear L/R assignment since it doesn't apply
+      log(`"${speaker.name}" is a stereo device - sending full stereo audio`, 'success');
+      stereoMode.leftSpeaker = null;
+      stereoMode.rightSpeaker = null;
+      renderSpeakers(); // Update UI to clear L/R highlights
+      await startStreamingToSpeaker(speakerIndex, true); // Clear stereo state
+    } else {
+      // Mono speaker - start streaming but preserve L/R assignment
+      // so user can add a second speaker for stereo separation
+      log(`Starting stream to "${speaker.name}" (add another for stereo separation)...`, 'success');
+      await startStreamingToSpeaker(speakerIndex, false);
+    }
   }
 }
 
