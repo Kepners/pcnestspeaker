@@ -424,9 +424,14 @@ async function startFFmpegWebRTC(audioDevice) {
       if (streamStats) {
         streamStats.parseFfmpegOutput(msg);
       }
-      // Only log non-progress messages
-      if (msg && !msg.includes('frame=') && !msg.includes('size=')) {
-        sendLog(`[FFmpeg] ${msg}`);
+      // Log ALL FFmpeg output for debugging stream monitor
+      if (msg) {
+        // Check if this is stats output we should be parsing
+        if (msg.includes('size=') || msg.includes('time=') || msg.includes('bitrate=')) {
+          sendLog(`[FFmpeg STATS] ${msg}`);
+        } else if (!msg.includes('frame=')) {
+          sendLog(`[FFmpeg] ${msg}`);
+        }
       }
     });
 
@@ -868,6 +873,10 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       if (webrtcPipelineReady && mediamtxProcess && ffmpegWebrtcProcess && tunnelUrl) {
         sendLog('Using pre-started WebRTC pipeline (instant start!)', 'success');
         httpsUrl = tunnelUrl;
+        // Start stream stats monitoring (even for pre-started pipeline)
+        if (streamStats) {
+          streamStats.start();
+        }
       } else {
         // Pipeline not ready - start it now
         sendLog('Starting WebRTC pipeline...');
