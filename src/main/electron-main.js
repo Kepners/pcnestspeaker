@@ -832,12 +832,13 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       // WebRTC streaming modes using MediaMTX
       // Pipeline: FFmpeg (DirectShow) -> RTSP -> MediaMTX -> WebRTC -> Cast Receiver
 
-      let httpsUrl = tunnelUrl; // Use pre-started tunnel if available
+      // Use local HTTP URL (like stereo mode) - tunnel was causing audio issues!
+      const localIp = getLocalIp();
+      let webrtcUrl = `http://${localIp}:8889`;
 
       // Check if pipeline was pre-started in background
-      if (webrtcPipelineReady && mediamtxProcess && ffmpegWebrtcProcess && tunnelUrl) {
+      if (webrtcPipelineReady && mediamtxProcess && ffmpegWebrtcProcess) {
         sendLog('Using pre-started WebRTC pipeline', 'success');
-        httpsUrl = tunnelUrl;
 
         // CRITICAL FIX: Restart FFmpeg AFTER audio device switch!
         // The pre-started FFmpeg was capturing from the OLD default output.
@@ -957,10 +958,8 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           streamStats.start();
         }
 
-        // Step 3: Start localtunnel for HTTPS (Cast requires HTTPS)
-        // MediaMTX WebRTC endpoint is on port 8889
-        httpsUrl = await startLocalTunnel(8889);
-        sendLog(`HTTPS tunnel ready: ${httpsUrl}`, 'success');
+        // No tunnel needed - using local HTTP URL like stereo mode!
+        sendLog(`WebRTC URL: ${webrtcUrl}`, 'success');
       }
 
       // Step 4: Launch custom receiver on Cast device
@@ -969,7 +968,7 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       const speakerIp = speaker ? speaker.ip : null;
 
       sendLog(`Launching WebRTC receiver on ${speakerName}${speakerIp ? ` (${speakerIp})` : ''}...`);
-      const args = ['webrtc-launch', speakerName, httpsUrl];
+      const args = ['webrtc-launch', speakerName, webrtcUrl];
       if (speakerIp) args.push(speakerIp);
       const result = await runPython(args);
 
@@ -1010,7 +1009,7 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           }
         }
 
-        return { success: true, url: httpsUrl, mode: streamingMode };
+        return { success: true, url: webrtcUrl, mode: streamingMode };
       } else if (result.error_code === 'CUSTOM_RECEIVER_NOT_SUPPORTED') {
         // Custom receiver not supported - automatically fallback to HTTP streaming
         sendLog('Custom receiver not supported on this device', 'warning');

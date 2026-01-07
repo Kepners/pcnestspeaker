@@ -111,7 +111,8 @@
       "Bash(cmd /c \"start \"\" \"c:UserskepneOneDriveDocumentsGitHubpcnestspeakerstart-app.bat\"\")",
       "Bash(cmd /c \"start \"\" \"\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\start-app.bat\"\"\")",
       "Bash(\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\nircmd\\\\nircmd.exe\" setdefaultsounddevice \"Virtual Desktop Audio\" 1)",
-      "Bash(del test-audio-switch.ps1)"
+      "Bash(del test-audio-switch.ps1)",
+      "Bash(cmd /c \"start /b cmd /c \"\"cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && set ELECTRON_RUN_AS_NODE= && npm run dev 2>&1\"\"\")"
     ]
   }
 }
