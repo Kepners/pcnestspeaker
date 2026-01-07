@@ -19,6 +19,10 @@ const autoStartToggle = document.getElementById('auto-start-toggle');
 const volumeCard = document.getElementById('volume-card');
 const volumeBoostToggle = document.getElementById('volume-boost-toggle');
 
+// Sync delay elements
+const syncDelaySlider = document.getElementById('sync-delay-slider');
+const syncDelayValue = document.getElementById('sync-delay-value');
+
 // Trial info elements
 const trialCard = document.getElementById('trial-card');
 const trialTime = document.getElementById('trial-time');
@@ -38,6 +42,12 @@ let dependencies = {
 
 // Volume boost state (slider removed - Windows keys control volume)
 let volumeBoostEnabled = false; // When true, speaker stays at 100%
+
+// Sync delay state
+let currentSyncDelayMs = 0;
+let syncDelayTimeout = null; // Debounce timer
+let audioSyncAvailable = false;
+let audioSyncMethod = null;
 
 // Stereo separation state
 let stereoMode = {
@@ -80,6 +90,16 @@ async function loadSettings() {
       volumeBoostEnabled = settings.volumeBoost || false;
       volumeBoostToggle.checked = volumeBoostEnabled;
       log(`Volume boost: ${volumeBoostEnabled ? 'ON (100%)' : 'OFF'}`);
+    }
+
+    // Apply sync delay slider state
+    if (syncDelaySlider && settings.syncDelayMs !== undefined) {
+      currentSyncDelayMs = settings.syncDelayMs || 0;
+      syncDelaySlider.value = currentSyncDelayMs;
+      if (syncDelayValue) {
+        syncDelayValue.textContent = `${currentSyncDelayMs}ms`;
+      }
+      log(`Sync delay: ${currentSyncDelayMs}ms`);
     }
   } catch (error) {
     log(`Failed to load settings: ${error.message}`, 'error');
@@ -147,6 +167,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Check dependencies first
   await checkDependencies();
+
+  // Initialize audio sync (PC speaker delay)
+  await initAudioSync();
 
   // Check current status
   const status = await window.api.getStatus();
@@ -1412,3 +1435,111 @@ if (licenseInput) {
 
 // Listen for stream stats updates from main process
 window.api.onStreamStats(updateStreamMonitor);
+
+// ===================
+// Audio Sync (PC Speaker Delay)
+// ===================
+
+/**
+ * Initialize audio sync system
+ * Checks for Windows delay support or Equalizer APO
+ */
+async function initAudioSync() {
+  try {
+    const result = await window.api.initAudioSync();
+    audioSyncAvailable = result.supported;
+    audioSyncMethod = result.method;
+
+    if (result.supported) {
+      log(`Audio sync available (${result.method})`, 'success');
+    } else if (result.needsInstall) {
+      log('Audio sync: Equalizer APO not installed', 'warning');
+      // User can install from UI if they want sync feature
+    } else {
+      log('Audio sync: No delay method available', 'info');
+    }
+
+    // Update UI based on availability
+    updateSyncDelayUI();
+  } catch (error) {
+    log(`Audio sync init failed: ${error.message}`, 'error');
+    audioSyncAvailable = false;
+  }
+}
+
+/**
+ * Update sync delay UI based on availability
+ */
+function updateSyncDelayUI() {
+  const syncRow = document.querySelector('.sync-delay-row');
+  if (!syncRow) return;
+
+  if (!audioSyncAvailable) {
+    // Show install prompt instead of slider
+    const hint = syncRow.nextElementSibling;
+    if (hint && hint.classList.contains('option-hint')) {
+      hint.innerHTML = 'Sync requires <a href="#" id="install-apo-link" style="color: var(--color-blush);">Equalizer APO</a> (free). Click to install.';
+
+      // Add click handler for install link
+      const installLink = document.getElementById('install-apo-link');
+      if (installLink) {
+        installLink.addEventListener('click', async (e) => {
+          e.preventDefault();
+          log('Opening Equalizer APO download...');
+          await window.api.installEqualizerApo();
+        });
+      }
+    }
+
+    // Disable slider
+    if (syncDelaySlider) {
+      syncDelaySlider.disabled = true;
+    }
+  } else {
+    // Enable slider
+    if (syncDelaySlider) {
+      syncDelaySlider.disabled = false;
+    }
+  }
+}
+
+/**
+ * Handle sync delay slider change (with debounce)
+ */
+function handleSyncDelayChange(delayMs) {
+  // Update display immediately
+  if (syncDelayValue) {
+    syncDelayValue.textContent = `${delayMs}ms`;
+  }
+
+  // Debounce the actual delay setting (wait 300ms after user stops sliding)
+  if (syncDelayTimeout) {
+    clearTimeout(syncDelayTimeout);
+  }
+
+  syncDelayTimeout = setTimeout(async () => {
+    if (!audioSyncAvailable) {
+      log('Audio sync not available', 'warning');
+      return;
+    }
+
+    try {
+      const result = await window.api.setSyncDelay(delayMs);
+      if (result.success) {
+        currentSyncDelayMs = delayMs;
+        log(`PC speaker delay: ${delayMs}ms`, 'success');
+      } else {
+        log(`Sync delay failed: ${result.error}`, 'error');
+      }
+    } catch (error) {
+      log(`Sync delay error: ${error.message}`, 'error');
+    }
+  }, 300);
+}
+
+// Sync delay slider event listener
+if (syncDelaySlider) {
+  syncDelaySlider.addEventListener('input', (e) => {
+    handleSyncDelayChange(parseInt(e.target.value, 10));
+  });
+}

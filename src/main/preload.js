@@ -53,6 +53,13 @@ contextBridge.exposeInMainWorld('api', {
   activateLicense: (licenseKey) => ipcRenderer.invoke('activate-license', licenseKey),
   deactivateLicense: () => ipcRenderer.invoke('deactivate-license'),
 
+  // Audio Sync (PC speaker delay to match Nest)
+  initAudioSync: () => ipcRenderer.invoke('init-audio-sync'),
+  setSyncDelay: (delayMs) => ipcRenderer.invoke('set-sync-delay', delayMs),
+  getSyncDelay: () => ipcRenderer.invoke('get-sync-delay'),
+  checkEqualizerApo: () => ipcRenderer.invoke('check-equalizer-apo'),
+  installEqualizerApo: () => ipcRenderer.invoke('install-equalizer-apo'),
+
   // Utilities
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 

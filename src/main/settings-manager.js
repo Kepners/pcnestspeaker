@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS = {
   autoStart: false,            // Start app on Windows boot
   streamingMode: 'webrtc-system',  // Default streaming mode
   volumeBoost: false,          // When true, speaker stays at 100%
+  syncDelayMs: 0,              // PC speaker delay in ms (to sync with Nest)
   version: '1.0.0',
 
   // Trial & License

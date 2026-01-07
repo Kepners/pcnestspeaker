@@ -16,6 +16,7 @@ const trayManager = require('./tray-manager');
 const usageTracker = require('./usage-tracker');
 const volumeSync = require('./windows-volume-sync');
 const daemonManager = require('./daemon-manager');
+const audioSyncManager = require('./audio-sync-manager');
 
 // Keep global references
 let mainWindow = null;
@@ -1641,6 +1642,64 @@ ipcMain.handle('toggle-auto-start', async () => {
     return { success: true, enabled };
   } catch (error) {
     sendLog(`Auto-start toggle failed: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// AUDIO SYNC (PC SPEAKER DELAY)
+// ═══════════════════════════════════════════════════════════
+
+// Initialize audio sync on app startup
+ipcMain.handle('init-audio-sync', async () => {
+  try {
+    const result = await audioSyncManager.initialize();
+    sendLog(`Audio sync: method=${result.method || 'none'}, supported=${result.supported}`, 'info');
+    return result;
+  } catch (error) {
+    sendLog(`Audio sync init failed: ${error.message}`, 'error');
+    return { method: null, supported: false, error: error.message };
+  }
+});
+
+// Set PC speaker delay in milliseconds
+ipcMain.handle('set-sync-delay', async (event, delayMs) => {
+  try {
+    const result = await audioSyncManager.setDelay(delayMs);
+    if (result) {
+      sendLog(`Sync delay set to ${delayMs}ms`, 'success');
+      // Save to settings
+      settingsManager.setSetting('syncDelayMs', delayMs);
+    }
+    return { success: result, delayMs };
+  } catch (error) {
+    sendLog(`Sync delay failed: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+// Get current sync delay
+ipcMain.handle('get-sync-delay', () => {
+  return {
+    delayMs: audioSyncManager.getDelay(),
+    method: audioSyncManager.getMethod(),
+    available: audioSyncManager.isAvailable()
+  };
+});
+
+// Check if Equalizer APO is installed (for showing install prompt)
+ipcMain.handle('check-equalizer-apo', () => {
+  return {
+    installed: audioSyncManager.isEqualizerAPOInstalled()
+  };
+});
+
+// Prompt user to install Equalizer APO
+ipcMain.handle('install-equalizer-apo', async () => {
+  try {
+    await audioSyncManager.promptInstallEqualizerAPO();
+    return { success: true };
+  } catch (error) {
     return { success: false, error: error.message };
   }
 });

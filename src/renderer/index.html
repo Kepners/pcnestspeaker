@@ -74,7 +74,7 @@
         </div>
       </div>
 
-      <!-- Volume Boost (shown when streaming) -->
+      <!-- Options (shown when streaming) -->
       <div class="section" id="volume-card" style="display: none;">
         <h2 class="section-label">OPTIONS</h2>
         <div class="option-row">
@@ -85,6 +85,16 @@
           </label>
         </div>
         <p class="option-hint">+25% signal boost. Use Windows volume keys to control speaker.</p>
+
+        <!-- Sync Delay Slider -->
+        <div class="option-row sync-delay-row">
+          <span class="option-label">Sync Delay</span>
+          <div class="sync-delay-control">
+            <input type="range" id="sync-delay-slider" min="0" max="2000" value="0" step="50">
+            <span class="sync-delay-value" id="sync-delay-value">0ms</span>
+          </div>
+        </div>
+        <p class="option-hint">Delay PC speakers to sync with Nest audio. Adjust until both sound together.</p>
       </div>
 
       <!-- Settings -->
