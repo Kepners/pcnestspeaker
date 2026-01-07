@@ -657,10 +657,19 @@ function renderSpeakers() {
 
   // Add click handlers for speaker selection (main area, not toggles)
   speakerList.querySelectorAll('.speaker-item').forEach((item) => {
+    // Left-click = select and ping speaker
     item.addEventListener('click', (e) => {
       // Don't select speaker if clicking on stereo toggles
       if (e.target.classList.contains('stereo-toggle')) return;
       selectSpeaker(parseInt(item.dataset.index));
+    });
+
+    // Right-click = start streaming to speaker
+    item.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (e.target.classList.contains('stereo-toggle')) return;
+      const index = parseInt(item.dataset.index);
+      startStreamingToSpeaker(index);
     });
   });
 
@@ -903,24 +912,51 @@ async function selectSpeaker(index) {
     volumeCard.style.display = 'block';
   }
 
+  // Ping the speaker to test connection (plays a sound)
+  log(`Pinging ${selectedSpeaker.name}...`);
+  try {
+    await window.api.pingSpeaker(selectedSpeaker.name);
+    log(`Ping sent to ${selectedSpeaker.name}`, 'success');
+  } catch (error) {
+    log(`Ping failed: ${error.message}`, 'warning');
+  }
+}
+
+// Start streaming to a speaker (called by right-click)
+async function startStreamingToSpeaker(index) {
+  const speaker = speakers[index];
+  if (!speaker) return;
+
+  // Select the speaker first
+  selectedSpeaker = speaker;
+  speakerList.querySelectorAll('.speaker-item').forEach((item, i) => {
+    item.classList.toggle('selected', i === index);
+  });
+
+  // Save as last speaker for auto-connect
+  try {
+    await window.api.saveLastSpeaker(speaker);
+  } catch (error) {
+    log(`Failed to save speaker: ${error.message}`, 'warning');
+  }
+
   // If already streaming, stop current stream first
   if (isStreaming) {
-    log('Stopping stream...');
+    log('Stopping current stream...');
     try {
       await window.api.stopStreaming();
       setStreamingState(false);
-      log('Stream stopped', 'success');
     } catch (error) {
       log(`Stop failed: ${error.message}`, 'error');
     }
   }
 
-  // Immediately start streaming to selected speaker (WebRTC System Audio only)
-  log(`Starting webrtc-system stream to ${selectedSpeaker.name}...`);
+  // Start streaming to selected speaker
+  log(`Starting stream to ${speaker.name}...`);
 
   try {
     const result = await window.api.startStreaming(
-      selectedSpeaker.name,
+      speaker.name,
       null, // no audio device selection needed
       'webrtc-system' // always use WebRTC System Audio
     );
@@ -946,13 +982,18 @@ async function selectSpeaker(index) {
         speakerCard.appendChild(modeSpan);
       }
 
-      log(`Streaming to ${selectedSpeaker.name} ${modeText}!`, 'success');
+      // Show volume card
+      if (volumeCard) {
+        volumeCard.style.display = 'block';
+      }
+
+      log(`Streaming to ${speaker.name} ${modeText}!`, 'success');
     } else {
       // Check if trial expired
       if (result.trialExpired) {
         log('Trial expired! Please purchase a license to continue.', 'error');
         showError('Your 10-hour trial has expired. Click "Purchase License" to continue using PC Nest Speaker.');
-        await updateTrialDisplay(); // Force update trial display
+        await updateTrialDisplay();
         return;
       }
 
