@@ -30,6 +30,7 @@ const purchaseBtn = document.getElementById('purchase-btn');
 let speakers = [];
 let selectedSpeaker = null;
 let isStreaming = false;
+let streamingMode = 'webrtc-system'; // Default to WebRTC system audio (best latency)
 let dependencies = {
   vbcable: null,      // null = checking, true = installed, false = missing
   screenCapture: null,
@@ -467,6 +468,30 @@ function renderSpeakers() {
     const isRight = stereoMode.rightSpeaker === index;
     const isSelected = selectedSpeaker === index;
 
+    // Detect if this is a TV, group, or stereo pair (already outputs stereo)
+    // Nest Mini, Nest Audio, Nest Hub = MONO (show L/R buttons)
+    // TVs, Shields, Groups, Pairs = STEREO (show badge)
+    const model = (speaker.model || '').toLowerCase();
+    const name = (speaker.name || '').toLowerCase();
+    const isStereoDevice = model.includes('tv') ||
+                           model.includes('shield') ||
+                           model.includes('cast group') ||
+                           model.includes('google cast group') ||
+                           name.includes('pair') ||
+                           name.includes(' group');
+
+    // For stereo devices: show "STEREO" indicator with info button
+    // For mono speakers: show L/R buttons for manual stereo separation
+    const stereoControls = isStereoDevice
+      ? `<div class="stereo-indicator">
+           <span class="stereo-badge">STEREO</span>
+           <button class="info-btn" data-index="${index}" title="Stereo info">ⓘ</button>
+         </div>`
+      : `<div class="stereo-toggles">
+           <button class="stereo-toggle ${isLeft ? 'active' : ''}" data-index="${index}" data-channel="left">L</button>
+           <button class="stereo-toggle ${isRight ? 'active' : ''}" data-index="${index}" data-channel="right">R</button>
+         </div>`;
+
     return `
     <div class="speaker-item ${isSelected ? 'selected' : ''} ${isLeft ? 'speaker-left' : ''} ${isRight ? 'speaker-right' : ''}" data-index="${index}">
       <div class="speaker-icon">
@@ -480,10 +505,7 @@ function renderSpeakers() {
         <div class="speaker-name">${speaker.name}</div>
         <div class="speaker-model">${speaker.model || 'Chromecast'}</div>
       </div>
-      <div class="stereo-toggles">
-        <button class="stereo-toggle ${isLeft ? 'active' : ''}" data-index="${index}" data-channel="left">L</button>
-        <button class="stereo-toggle ${isRight ? 'active' : ''}" data-index="${index}" data-channel="right">R</button>
-      </div>
+      ${stereoControls}
       <svg class="speaker-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
         <polyline points="20 6 9 17 4 12"/>
       </svg>
@@ -507,6 +529,51 @@ function renderSpeakers() {
       const channel = toggle.dataset.channel;
       toggleStereoChannel(index, channel);
     });
+  });
+
+  // Add click handlers for stereo info buttons
+  speakerList.querySelectorAll('.info-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation(); // Prevent speaker selection
+      showStereoInfoPopup();
+    });
+  });
+}
+
+/**
+ * Show popup explaining stereo options for grouped speakers
+ */
+function showStereoInfoPopup() {
+  // Remove existing popup if any
+  const existing = document.querySelector('.stereo-info-popup');
+  if (existing) existing.remove();
+
+  const popup = document.createElement('div');
+  popup.className = 'stereo-info-popup';
+  popup.innerHTML = `
+    <div class="popup-content">
+      <button class="popup-close">&times;</button>
+      <h3>Stereo Audio Options</h3>
+      <p>This device already outputs <strong>stereo audio</strong> when you click to stream.</p>
+      <hr>
+      <h4>Want true stereo separation?</h4>
+      <p>To send left audio to one speaker and right to another:</p>
+      <ol>
+        <li><strong>Option A:</strong> Create a "Stereo pair" in the Google Home app (best quality)</li>
+        <li><strong>Option B:</strong> Use our L/R buttons on individual Nest speakers</li>
+      </ol>
+      <p class="popup-note">Note: If you have a Google Home "group", ungroup it first to use individual speakers with L/R buttons.</p>
+      <button class="popup-ok">Got it</button>
+    </div>
+  `;
+
+  document.body.appendChild(popup);
+
+  // Close handlers
+  popup.querySelector('.popup-close').addEventListener('click', () => popup.remove());
+  popup.querySelector('.popup-ok').addEventListener('click', () => popup.remove());
+  popup.addEventListener('click', (e) => {
+    if (e.target === popup) popup.remove();
   });
 }
 
@@ -668,43 +735,13 @@ async function stopStereoStreaming() {
 }
 
 function renderAudioDevices() {
+  // Audio device selection is automatic (virtual-audio-capturer)
+  // This function just logs available devices for debugging
   if (audioDevices.length === 0) {
-    audioDeviceSelect.innerHTML = '<option value="">No audio devices found</option>';
-    audioDeviceSelect.disabled = true;
+    log('No audio devices found', 'warning');
     return;
   }
-
-  // Find best default device based on mode
-  let defaultIndex = 0;
-
-  if (streamingMode === 'webrtc-vbcable' || streamingMode === 'http') {
-    // Prefer VB-CABLE for these modes
-    const preferredKeywords = ['cable output', 'vb-audio', 'vb-cable'];
-    for (let i = 0; i < audioDevices.length; i++) {
-      const deviceLower = audioDevices[i].toLowerCase();
-      if (preferredKeywords.some(kw => deviceLower.includes(kw))) {
-        defaultIndex = i;
-        break;
-      }
-    }
-  } else if (streamingMode === 'webrtc-system') {
-    // Prefer virtual-audio-capturer for system capture
-    const preferredKeywords = ['virtual-audio-capturer', 'stereo mix', 'what u hear'];
-    for (let i = 0; i < audioDevices.length; i++) {
-      const deviceLower = audioDevices[i].toLowerCase();
-      if (preferredKeywords.some(kw => deviceLower.includes(kw))) {
-        defaultIndex = i;
-        break;
-      }
-    }
-  }
-
-  audioDeviceSelect.innerHTML = audioDevices.map((device, index) =>
-    `<option value="${device}" ${index === defaultIndex ? 'selected' : ''}>${device}</option>`
-  ).join('');
-
-  audioDeviceSelect.disabled = false;
-  updateStreamButtonState();
+  // Devices are auto-selected in the backend (virtual-audio-capturer preferred)
 }
 
 async function selectSpeaker(index) {
@@ -918,11 +955,8 @@ function updateStreamButtonState() {
   const missingDeps = getMissingDepsForMode(streamingMode);
   const hasRequiredDeps = missingDeps.length === 0;
 
-  // For modes that need audio device selection
-  let hasAudioDevice = true;
-  if (streamingMode === 'http' || streamingMode === 'webrtc-vbcable') {
-    hasAudioDevice = audioDeviceSelect.value && !audioDeviceSelect.disabled;
-  }
+  // Audio device is auto-selected (virtual-audio-capturer)
+  const hasAudioDevice = true;
 
   streamBtn.disabled = !hasSpeaker || !hasRequiredDeps || !hasAudioDevice;
   pingBtn.disabled = !hasSpeaker;
@@ -976,20 +1010,10 @@ async function startStreaming() {
     return;
   }
 
-  let audioDevice = null;
-  if (streamingMode === 'http' || streamingMode === 'webrtc-vbcable') {
-    audioDevice = audioDeviceSelect.value;
-    if (!audioDevice) {
-      log('No audio device selected', 'error');
-      showError('Please select an audio source');
-      return;
-    }
-  }
+  // Audio device is auto-selected by backend (virtual-audio-capturer)
+  const audioDevice = null;
 
   log(`Starting ${streamingMode} stream to ${selectedSpeaker.name}...`);
-  if (audioDevice) {
-    log(`Audio source: ${audioDevice}`);
-  }
   showLoading('Starting stream...');
 
   try {

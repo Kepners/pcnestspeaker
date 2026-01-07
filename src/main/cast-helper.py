@@ -676,6 +676,47 @@ def set_volume(speaker_name, volume):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+
+def set_volume_fast(speaker_name, volume_level, speaker_ip=None):
+    """Fast volume set using direct IP connection (no discovery).
+
+    This is 10x faster than set_volume() because it skips network discovery.
+    Use when you have the speaker IP cached.
+
+    Args:
+        speaker_name: Name of the speaker (used for logging/fallback)
+        volume_level: Volume level (0.0 to 1.0)
+        speaker_ip: Direct IP address of the speaker (skips discovery if provided)
+    """
+    try:
+        volume = max(0.0, min(1.0, float(volume_level)))
+
+        if speaker_ip:
+            # Direct connection - no network scan! (< 1 second)
+            print(f"Fast volume: connecting directly to {speaker_ip}", file=sys.stderr)
+            cast = pychromecast.Chromecast(speaker_ip)
+            cast.wait(timeout=5)
+        else:
+            # Fallback to discovery (5-10 seconds)
+            print(f"Fast volume: no IP provided, falling back to discovery", file=sys.stderr)
+            chromecasts, browser = pychromecast.get_listed_chromecasts(
+                friendly_names=[speaker_name], timeout=10
+            )
+            if not chromecasts:
+                browser.stop_discovery()
+                return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
+            cast = chromecasts[0]
+            cast.wait()
+            browser.stop_discovery()
+
+        cast.set_volume(volume)
+        print(f"Volume set to {volume}", file=sys.stderr)
+        return {"success": True, "volume": volume}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(json.dumps({"success": False, "error": "No command specified"}))
@@ -783,26 +824,20 @@ if __name__ == "__main__":
         result = set_volume(speaker, volume)
         print(json.dumps(result))
 
+    elif command == "set-volume-fast" and len(sys.argv) >= 4:
+        # Fast volume set using direct IP (skips discovery)
+        # Args: set-volume-fast <speaker_name> <volume_level> [speaker_ip]
+        speaker = sys.argv[2]
+        volume = float(sys.argv[3])  # 0.0 - 1.0
+        speaker_ip = sys.argv[4] if len(sys.argv) > 4 else None
+        result = set_volume_fast(speaker, volume, speaker_ip)
+        print(json.dumps(result))
+
     elif command == "device-info" and len(sys.argv) >= 3:
         speaker = sys.argv[2]
         result = device_info(speaker)
         print(json.dumps(result, indent=2))
 
-    elif command == "set-volume" and len(sys.argv) >= 4:
-        # Set volume on a speaker
-        # Args: set-volume <speaker_name> <volume_level>
-        speaker = sys.argv[2]
-        volume_level = sys.argv[3]
-        result = set_volume(speaker, volume_level)
-        print(json.dumps(result))
-
-    elif command == "get-volume" and len(sys.argv) >= 3:
-        # Get current volume from a speaker
-        # Args: get-volume <speaker_name>
-        speaker = sys.argv[2]
-        result = get_volume(speaker)
-        print(json.dumps(result))
-
     else:
-        print(json.dumps({"success": False, "error": "Invalid command. Use: discover, cast, webrtc-launch, set-volume, get-volume, device-info, or stop"}))
+        print(json.dumps({"success": False, "error": "Invalid command. Use: discover, ping, cast, webrtc-launch, set-volume, set-volume-fast, get-volume, device-info, or stop"}))
         sys.exit(1)

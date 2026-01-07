@@ -14,6 +14,7 @@ const settingsManager = require('./settings-manager');
 const autoStartManager = require('./auto-start-manager');
 const trayManager = require('./tray-manager');
 const usageTracker = require('./usage-tracker');
+const volumeSync = require('./windows-volume-sync');
 
 // Keep global references
 let mainWindow = null;
@@ -110,11 +111,18 @@ function killLeftoverProcesses() {
   }
 }
 
-// Send log to renderer
+// Send log to renderer (with error handling for EPIPE)
 function sendLog(message, type = 'info') {
   console.log(`[Main] ${message}`);
-  if (mainWindow && mainWindow.webContents) {
-    mainWindow.webContents.send('log', message, type);
+  try {
+    if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send('log', message, type);
+    }
+  } catch (err) {
+    // Ignore EPIPE errors when renderer is disconnected
+    if (err.code !== 'EPIPE') {
+      console.error('[Main] sendLog error:', err.message);
+    }
   }
 }
 
@@ -179,6 +187,7 @@ function cleanup() {
   sendLog('Cleaning up all processes...');
   trayManager.updateTrayState(false); // Update tray to idle state
   usageTracker.stopTracking(); // Stop tracking usage time
+  volumeSync.stopMonitoring(); // Stop Windows volume sync
 
   // Stop audio streamer (HTTP mode)
   if (audioStreamer) {
@@ -824,6 +833,19 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         sendLog('HTTP streaming started!', 'success');
         trayManager.updateTrayState(true); // Update tray to streaming state
         usageTracker.startTracking(); // Start tracking usage time
+
+        // Start Windows volume sync - PC volume keys will control Nest
+        const speaker = discoveredSpeakers.find(s => s.name === speakerName);
+        if (speaker) {
+          volumeSync.startMonitoring(
+            [{ name: speaker.name, ip: speaker.ip }],
+            (volume) => {
+              sendLog(`[VolumeSync] Windows volume: ${volume}%`);
+              runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
+            }
+          );
+        }
+
         return { success: true, url: streamUrl };
       } else {
         await audioStreamer.stop();
@@ -898,6 +920,18 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         sendLog('WebRTC streaming started! (via MediaMTX)', 'success');
         trayManager.updateTrayState(true); // Update tray to streaming state
         usageTracker.startTracking(); // Start tracking usage time
+
+        // Start Windows volume sync - PC volume keys will control Nest
+        if (speaker) {
+          volumeSync.startMonitoring(
+            [{ name: speaker.name, ip: speaker.ip }],
+            (volume) => {
+              sendLog(`[VolumeSync] Windows volume: ${volume}%`);
+              runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
+            }
+          );
+        }
+
         return { success: true, url: httpsUrl, mode: streamingMode };
       } else if (result.error_code === 'CUSTOM_RECEIVER_NOT_SUPPORTED') {
         // Custom receiver not supported - automatically fallback to HTTP streaming
@@ -928,6 +962,18 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           currentStreamingMode = 'http';
           trayManager.updateTrayState(true); // Update tray to streaming state
           usageTracker.startTracking(); // Start tracking usage time
+
+          // Start Windows volume sync - PC volume keys will control Nest
+          if (speaker) {
+            volumeSync.startMonitoring(
+              [{ name: speaker.name, ip: speaker.ip }],
+              (volume) => {
+                sendLog(`[VolumeSync] Windows volume: ${volume}%`);
+                runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
+              }
+            );
+          }
+
           return { success: true, url: streamUrl, mode: 'http', fallback: true };
         } else {
           cleanup();
@@ -973,6 +1019,9 @@ ipcMain.handle('stop-streaming', async (event, speakerName) => {
     if (streamStats) {
       streamStats.stop();
     }
+
+    // Stop Windows volume sync
+    volumeSync.stopMonitoring();
 
     // Restore original Windows audio device
     try {
@@ -1285,6 +1334,24 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     sendLog(`RIGHT speaker connected`, 'success');
 
     sendLog('Stereo separation streaming active!', 'success');
+    trayManager.updateTrayState(true); // Update tray to streaming state
+    usageTracker.startTracking(); // Start tracking usage time
+
+    // Start Windows volume sync - PC volume keys will control BOTH Nest speakers
+    volumeSync.startMonitoring(
+      [
+        { name: leftSpeaker.name, ip: leftSpeaker.ip },
+        { name: rightSpeaker.name, ip: rightSpeaker.ip }
+      ],
+      (volume) => {
+        sendLog(`[VolumeSync] Windows volume: ${volume}%`);
+        // Set volume on both speakers in parallel
+        const volumeLevel = (volume / 100).toString();
+        runPython(['set-volume-fast', leftSpeaker.name, volumeLevel, leftSpeaker.ip || '']).catch(() => {});
+        runPython(['set-volume-fast', rightSpeaker.name, volumeLevel, rightSpeaker.ip || '']).catch(() => {});
+      }
+    );
+
     return { success: true };
 
   } catch (error) {
@@ -1332,6 +1399,9 @@ ipcMain.handle('stop-stereo-streaming', async (event, leftSpeaker, rightSpeaker)
       streamStats.stop();
     }
 
+    // Stop Windows volume sync
+    volumeSync.stopMonitoring();
+
     // Restore original Windows audio device
     try {
       sendLog('Restoring original audio device...');
@@ -1343,10 +1413,14 @@ ipcMain.handle('stop-stereo-streaming', async (event, leftSpeaker, rightSpeaker)
     }
 
     sendLog('Stereo streaming stopped', 'success');
+    trayManager.updateTrayState(false); // Update tray to idle state
+    usageTracker.stopTracking(); // Stop tracking usage time
     return { success: true };
 
   } catch (error) {
     sendLog(`Stop failed: ${error.message}`, 'error');
+    trayManager.updateTrayState(false); // Update tray to idle state
+    usageTracker.stopTracking(); // Stop tracking usage time
     return { success: false, error: error.message };
   }
 });
