@@ -878,6 +878,18 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
               }
             }
           );
+
+          // INITIAL SYNC: Set speaker to current Windows volume immediately (unless boost is ON)
+          if (!settingsManager.getSetting('volumeBoost')) {
+            volumeSync.getWindowsVolume().then((volume) => {
+              sendLog(`[VolumeSync] Initial sync: Setting speaker to ${volume}%`);
+              if (daemonManager.isDaemonRunning()) {
+                daemonManager.setVolumeFast(speaker.name, volume / 100, speaker.ip || null).catch(() => {});
+              } else {
+                runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
+              }
+            }).catch(() => {});
+          }
         }
 
         return { success: true, url: streamUrl };
@@ -977,6 +989,18 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
               }
             }
           );
+
+          // INITIAL SYNC: Set speaker to current Windows volume immediately (unless boost is ON)
+          if (!settingsManager.getSetting('volumeBoost')) {
+            volumeSync.getWindowsVolume().then((volume) => {
+              sendLog(`[VolumeSync] Initial sync: Setting speaker to ${volume}%`);
+              if (daemonManager.isDaemonRunning()) {
+                daemonManager.setVolumeFast(speaker.name, volume / 100, speaker.ip || null).catch(() => {});
+              } else {
+                runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
+              }
+            }).catch(() => {});
+          }
         }
 
         return { success: true, url: httpsUrl, mode: streamingMode };
@@ -1485,6 +1509,22 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
         }
       }
     );
+
+    // INITIAL SYNC: Set both speakers to current Windows volume immediately (unless boost is ON)
+    if (!settingsManager.getSetting('volumeBoost')) {
+      volumeSync.getWindowsVolume().then((volume) => {
+        sendLog(`[VolumeSync] Initial sync: Setting both speakers to ${volume}%`);
+        const volumeLevel = volume / 100;
+        if (daemonManager.isDaemonRunning()) {
+          daemonManager.setVolumeFast(leftSpeaker.name, volumeLevel, leftSpeaker.ip || null).catch(() => {});
+          daemonManager.setVolumeFast(rightSpeaker.name, volumeLevel, rightSpeaker.ip || null).catch(() => {});
+        } else {
+          const volumeStr = volumeLevel.toString();
+          runPython(['set-volume-fast', leftSpeaker.name, volumeStr, leftSpeaker.ip || '']).catch(() => {});
+          runPython(['set-volume-fast', rightSpeaker.name, volumeStr, rightSpeaker.ip || '']).catch(() => {});
+        }
+      }).catch(() => {});
+    }
 
     return { success: true };
 

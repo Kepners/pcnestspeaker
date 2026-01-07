@@ -148,33 +148,21 @@ def get_volume(speaker_name, speaker_ip=None):
 
 
 def ping_speaker(speaker_name, speaker_ip=None):
-    """Play test sound on speaker."""
+    """Verify connection to speaker (no sound - just connection test)."""
     try:
         cast, _ = get_or_create_connection(speaker_name, speaker_ip)
         if not cast:
             return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
 
-        # Save current volume, set to 40%, play sound, restore
-        original_vol = cast.status.volume_level if cast.status else 0.5
-        cast.set_volume(0.4)
+        # Just verify connection is working - no sound
+        volume = cast.status.volume_level if cast.status else None
+        log(f"Connection verified! Volume: {int(volume * 100) if volume else 'N/A'}%")
 
-        cast.media_controller.play_media(
-            "http://commondatastorage.googleapis.com/codeskulptor-assets/Collision8-Bit.ogg",
-            "audio/ogg"
-        )
-
-        # Wait for playback to start
-        for i in range(20):
-            time.sleep(0.1)
-            state = cast.media_controller.status.player_state
-            if state == "PLAYING":
-                break
-
-        # Wait for sound to finish, then restore volume
-        time.sleep(1.5)
-        cast.set_volume(original_vol)
-
-        return {"success": True}
+        return {
+            "success": True,
+            "ip": cast.cast_info.host,
+            "volume": volume
+        }
 
     except Exception as e:
         return {"success": False, "error": str(e)}

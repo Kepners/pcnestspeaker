@@ -756,28 +756,13 @@ if __name__ == "__main__":
                 cast.wait()
                 print(f"Cast type: {cast.cast_type}, Model: {cast.model_name}", file=sys.stderr)
 
-                cast.set_volume(0.4)
-                print("Playing ping sound...", file=sys.stderr)
-                cast.media_controller.play_media(
-                    "http://commondatastorage.googleapis.com/codeskulptor-assets/Collision8-Bit.ogg",
-                    "audio/ogg"
-                )
+                # Verify connection is working (no sound - just connection test)
+                volume = cast.status.volume_level if cast.status else None
+                print(f"Connection verified! Current volume: {int(volume * 100) if volume else 'N/A'}%", file=sys.stderr)
 
-                # Poll for state change (official example pattern)
-                for i in range(50):  # 5 seconds max
-                    time.sleep(0.1)
-                    state = cast.media_controller.status.player_state
-                    if state == "PLAYING":
-                        print(f"Player state: PLAYING", file=sys.stderr)
-                        break
-                    if i == 49:
-                        print(f"Final state: {state}", file=sys.stderr)
-
-                # Wait for sound to finish
-                time.sleep(2)
                 browser.stop_discovery()
-                print("Ping sent!", file=sys.stderr)
-                print(json.dumps({"success": True}))
+                print("Ping successful - speaker is paired!", file=sys.stderr)
+                print(json.dumps({"success": True, "ip": host, "volume": volume}))
             else:
                 browser.stop_discovery()
                 print(json.dumps({"success": False, "error": "Speaker not found"}))
