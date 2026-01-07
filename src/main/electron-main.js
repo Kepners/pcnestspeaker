@@ -393,6 +393,8 @@ async function startFFmpegWebRTC(audioDevice) {
     // Using Opus codec for WebRTC compatibility
     const ffmpegPath = audioStreamer.getFFmpegPath();
     const args = [
+      '-hide_banner',
+      '-stats',  // Force progress output for stream monitor
       '-f', 'dshow',
       '-i', `audio=${audioDevice}`,
       '-c:a', 'libopus',
@@ -1236,7 +1238,7 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     const ffmpegPath = getFFmpegPath();
 
     stereoFFmpegProcesses.left = spawn(ffmpegPath, [
-      '-hide_banner', '-loglevel', 'error',
+      '-hide_banner', '-stats',  // Force progress output for stream monitor
       '-f', 'dshow',
       '-i', 'audio=virtual-audio-capturer',
       '-af', 'pan=mono|c0=c0',  // Extract left channel
@@ -1267,7 +1269,7 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     sendLog('Starting FFmpeg RIGHT channel...');
 
     stereoFFmpegProcesses.right = spawn(ffmpegPath, [
-      '-hide_banner', '-loglevel', 'error',
+      '-hide_banner', '-stats',  // Force progress output for stream monitor
       '-f', 'dshow',
       '-i', 'audio=virtual-audio-capturer',
       '-af', 'pan=mono|c0=c1',  // Extract right channel

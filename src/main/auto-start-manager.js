@@ -44,9 +44,13 @@ function enableAutoStart() {
     // In dev mode, this will be electron.exe
     // In production, this will be "PC Nest Speaker.exe"
     const exePath = process.execPath;
+    const projectPath = path.join(__dirname, '../..');
+
+    // For REG ADD with paths containing spaces, we need to escape the inner quotes
+    // The entire /d value must be wrapped, with inner quotes escaped as \"
     const appPath = app.isPackaged
       ? `"${exePath}"`
-      : `"${exePath}" "${path.join(__dirname, '../..')}"`;
+      : `"\\"${exePath}\\" \\"${projectPath}\\""`;
 
     const cmd = `reg add "${REGISTRY_PATH}" /v ${AUTO_START_KEY_NAME} /t REG_SZ /d ${appPath} /f`;
 
