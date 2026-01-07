@@ -76,6 +76,44 @@ body::before {
   display: none;
 }
 
+/* ==================== WINDOW CONTROLS ==================== */
+.window-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  z-index: 100;
+  -webkit-app-region: no-drag;
+}
+
+.window-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(26, 26, 26, 0.08);
+  color: rgba(26, 26, 26, 0.5);
+  font-size: 16px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.window-btn:hover {
+  background: rgba(26, 26, 26, 0.15);
+  color: rgba(26, 26, 26, 0.8);
+}
+
+.close-btn:hover {
+  background: var(--pink);
+  color: white;
+}
+
 /* ==================== HEADER ==================== */
 .header {
   text-align: right;
@@ -316,7 +354,7 @@ body::before {
 .speaker-icon {
   width: 40px;
   height: 40px;
-  background: linear-gradient(135deg, var(--cyan), var(--pink));
+  background: transparent;
   border-radius: 10px;
   display: flex;
   align-items: center;
@@ -325,9 +363,10 @@ body::before {
 }
 
 .speaker-icon svg {
-  width: 22px;
-  height: 22px;
-  color: white;
+  width: 28px;
+  height: 28px;
+  color: var(--pink);
+  filter: drop-shadow(0 0 8px rgba(239, 71, 111, 0.5));
 }
 
 .speaker-info {
@@ -360,12 +399,13 @@ body::before {
   opacity: 1;
 }
 
-/* Stereo Controls */
+/* Stereo Controls - Fixed width for alignment */
 .stereo-toggles {
   display: flex;
   gap: 4px;
   margin-left: auto;
-  margin-right: 10px;
+  width: 72px;
+  justify-content: flex-end;
 }
 
 .stereo-toggle {
@@ -401,7 +441,8 @@ body::before {
   align-items: center;
   gap: 6px;
   margin-left: auto;
-  margin-right: 10px;
+  width: 72px;
+  justify-content: flex-end;
 }
 
 .stereo-badge {

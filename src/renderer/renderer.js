@@ -200,6 +200,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function setupEventListeners() {
+  // Window controls (frameless window)
+  const minimizeBtn = document.getElementById('minimize-btn');
+  const closeBtn = document.getElementById('close-btn');
+
+  if (minimizeBtn) {
+    minimizeBtn.addEventListener('click', () => window.api.minimizeWindow());
+  }
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => window.api.closeWindow());
+  }
+
   businessLink.addEventListener('click', (e) => {
     e.preventDefault();
     window.api.openExternal('https://choppedonions.xyz');

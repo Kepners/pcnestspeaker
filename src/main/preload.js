@@ -92,6 +92,10 @@ contextBridge.exposeInMainWorld('api', {
   onTrayStopStreaming: (callback) => {
     ipcRenderer.on('tray-stop-streaming', () => callback());
   },
+
+  // Window controls (frameless window)
+  minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
+  closeWindow: () => ipcRenderer.invoke('close-window'),
 });
 
 // Expose WebRTC-specific APIs separately (for low-latency streaming)

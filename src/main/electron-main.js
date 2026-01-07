@@ -135,14 +135,8 @@ function createWindow() {
     minWidth: 420,
     minHeight: 800,
     resizable: true,
-    frame: true,
+    frame: false,
     backgroundColor: '#FFFFFF',
-    titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#FFFFFF',
-      symbolColor: '#1A1A1A',
-      height: 24
-    },
     icon: path.join(__dirname, '../../assets/icon.ico'),
     webPreferences: {
       nodeIntegration: false,
@@ -1201,6 +1195,15 @@ ipcMain.handle('get-usage', () => {
 // Open external link
 ipcMain.handle('open-external', async (event, url) => {
   await shell.openExternal(url);
+});
+
+// Window controls (frameless window)
+ipcMain.handle('minimize-window', () => {
+  if (mainWindow) mainWindow.minimize();
+});
+
+ipcMain.handle('close-window', () => {
+  if (mainWindow) mainWindow.hide();
 });
 
 // Check dependencies
