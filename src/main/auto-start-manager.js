@@ -20,7 +20,7 @@ function isAutoStartEnabled() {
   return new Promise((resolve) => {
     const cmd = `reg query "${REGISTRY_PATH}" /v ${AUTO_START_KEY_NAME}`;
 
-    exec(cmd, (error, stdout, stderr) => {
+    exec(cmd, { windowsHide: true }, (error, stdout, stderr) => {
       if (error) {
         // Key doesn't exist - auto-start is disabled
         resolve(false);
@@ -54,7 +54,7 @@ function enableAutoStart() {
 
     const cmd = `reg add "${REGISTRY_PATH}" /v ${AUTO_START_KEY_NAME} /t REG_SZ /d ${appPath} /f`;
 
-    exec(cmd, (error, stdout, stderr) => {
+    exec(cmd, { windowsHide: true }, (error, stdout, stderr) => {
       if (error) {
         console.error('[AutoStart] Failed to enable:', error);
         reject(error);
@@ -74,7 +74,7 @@ function disableAutoStart() {
   return new Promise((resolve, reject) => {
     const cmd = `reg delete "${REGISTRY_PATH}" /v ${AUTO_START_KEY_NAME} /f`;
 
-    exec(cmd, (error, stdout, stderr) => {
+    exec(cmd, { windowsHide: true }, (error, stdout, stderr) => {
       if (error) {
         // Key might not exist - that's okay
         console.log('[AutoStart] Already disabled or key not found');

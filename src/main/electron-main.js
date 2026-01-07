@@ -135,7 +135,7 @@ function createWindow() {
     minHeight: 500,
     resizable: true,
     frame: true,
-    backgroundColor: '#334E58',
+    backgroundColor: '#0A0908',
     icon: path.join(__dirname, '../../assets/icon.ico'),
     webPreferences: {
       nodeIntegration: false,
@@ -145,10 +145,6 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
-
-  if (process.argv.includes('--dev')) {
-    mainWindow.webContents.openDevTools();
-  }
 
   // Initialize stream stats
   streamStats = new StreamStats();
@@ -309,7 +305,8 @@ async function startMediaMTX() {
     const mtxPath = getMediaMTXPath();
     mediamtxProcess = spawn(mtxPath, [getMediaMTXConfig()], {
       cwd: path.dirname(mtxPath),
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true
     });
 
     mediamtxProcess.stdout.on('data', (data) => {
@@ -427,7 +424,8 @@ async function startFFmpegWebRTC(audioDevice) {
     sendLog(`[FFmpeg] ${ffmpegPath} ${args.join(' ')}`);
 
     ffmpegWebrtcProcess = spawn(ffmpegPath, args, {
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true
     });
 
     ffmpegWebrtcProcess.stdout.on('data', (data) => {
@@ -516,7 +514,8 @@ async function startLocalTunnel(port = 8443) {
 
     return new Promise((resolve, reject) => {
       localTunnelProcess = spawn(cloudflaredPath, ['tunnel', '--url', `http://localhost:${port}`], {
-        stdio: ['ignore', 'pipe', 'pipe']
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true
       });
 
       // Cloudflared outputs to stderr
@@ -582,7 +581,8 @@ async function startLocalTunnelFallback(port = 8443) {
   return new Promise((resolve, reject) => {
     localTunnelProcess = spawn('npx', ['localtunnel', '--port', port.toString()], {
       shell: true,
-      cwd: path.join(__dirname, '../..')
+      cwd: path.join(__dirname, '../..'),
+      windowsHide: true
     });
 
     localTunnelProcess.stdout.on('data', (data) => {
@@ -735,7 +735,7 @@ async function preStartWebRTCPipeline() {
 function runPython(args) {
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(__dirname, 'cast-helper.py');
-    const python = spawn('python', [scriptPath, ...args]);
+    const python = spawn('python', [scriptPath, ...args], { windowsHide: true });
 
     let stdout = '';
     let stderr = '';
@@ -1395,7 +1395,7 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
       '-f', 'rtsp',
       '-rtsp_transport', 'tcp',
       'rtsp://localhost:8554/left'
-    ], { stdio: 'pipe' });
+    ], { stdio: 'pipe', windowsHide: true });
 
     stereoFFmpegProcesses.left.stderr.on('data', (data) => {
       const msg = data.toString();
@@ -1426,7 +1426,7 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
       '-f', 'rtsp',
       '-rtsp_transport', 'tcp',
       'rtsp://localhost:8554/right'
-    ], { stdio: 'pipe' });
+    ], { stdio: 'pipe', windowsHide: true });
 
     stereoFFmpegProcesses.right.stderr.on('data', (data) => {
       const msg = data.toString();

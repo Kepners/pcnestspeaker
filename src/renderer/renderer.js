@@ -86,8 +86,51 @@ async function loadSettings() {
   }
 }
 
+// Splash screen handling
+function initSplashScreen() {
+  const splash = document.getElementById('splash-screen');
+  const video = document.getElementById('splash-video');
+
+  if (!splash || !video) return;
+
+  // When video ends, fade out splash screen
+  video.addEventListener('ended', () => {
+    splash.classList.add('fade-out');
+    setTimeout(() => {
+      splash.style.display = 'none';
+    }, 500);
+  });
+
+  // Fallback: If video fails to play, hide splash after 2 seconds
+  video.addEventListener('error', () => {
+    setTimeout(() => {
+      splash.classList.add('fade-out');
+      setTimeout(() => {
+        splash.style.display = 'none';
+      }, 500);
+    }, 2000);
+  });
+
+  // Start video playback (with audio)
+  video.muted = false;
+  video.play().catch(() => {
+    // Autoplay blocked, try muted
+    video.muted = true;
+    video.play().catch(() => {
+      // Still blocked, hide splash
+      splash.classList.add('fade-out');
+      setTimeout(() => {
+        splash.style.display = 'none';
+      }, 500);
+    });
+  });
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
+  // Start splash screen
+  initSplashScreen();
+
   log('App initialized');
 
   // Load and apply settings
@@ -130,6 +173,15 @@ function setupEventListeners() {
     clearLogBtn.addEventListener('click', () => {
       debugLog.innerHTML = '';
       log('Log cleared');
+    });
+  }
+
+  // Debug log toggle (click copyright symbol)
+  const toggleDebug = document.getElementById('toggle-debug');
+  const debugCard = document.getElementById('debug-card');
+  if (toggleDebug && debugCard) {
+    toggleDebug.addEventListener('click', () => {
+      debugCard.style.display = debugCard.style.display === 'none' ? 'block' : 'none';
     });
   }
 

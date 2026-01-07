@@ -19,6 +19,7 @@ function checkFirewallRule() {
   return new Promise((resolve) => {
     exec(
       `netsh advfirewall firewall show rule name="${RULE_NAME}"`,
+      { windowsHide: true },
       (error, stdout) => {
         if (error || !stdout.includes(RULE_NAME)) {
           resolve(false);

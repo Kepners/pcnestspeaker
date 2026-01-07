@@ -7,6 +7,10 @@ dist/
 out/
 build/
 
+# FFmpeg binary (too large for GitHub - download separately)
+ffmpeg/ffmpeg.exe
+ffmpeg/*.exe
+
 # Test artifacts
 hls_out/
 out_v2/

@@ -105,7 +105,10 @@
       "Bash(cmd /c \"cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && set ELECTRON_RUN_AS_NODE= && npm run dev 2>&1\")",
       "Bash(\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\node_modules\\\\electron\\\\dist\\\\electron.exe\" \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\")",
       "Bash(cmd /c \"echo %ELECTRON_RUN_AS_NODE%\")",
-      "Bash(ELECTRON_RUN_AS_NODE= \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\node_modules\\\\electron\\\\dist\\\\electron.exe\":*)"
+      "Bash(ELECTRON_RUN_AS_NODE= \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\node_modules\\\\electron\\\\dist\\\\electron.exe\":*)",
+      "Bash(cmd /c \"copy /y \"\"C:\\\\Users\\\\kepne\\\\Downloads\\\\Untitled design.mp4\"\" \"\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\assets\\\\splash.mp4\"\"\")",
+      "Bash(cmd /c dir \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\assets\\\\*.mp4\")",
+      "Bash(cmd /c \"start \"\" \"c:UserskepneOneDriveDocumentsGitHubpcnestspeakerstart-app.bat\"\")"
     ]
   }
 }

@@ -26,7 +26,7 @@ function getCurrentAudioDevice() {
     // Use Windows WMIC to get current audio device
     const cmd = 'wmic soundconfig get defaultsoundplayback /value';
 
-    exec(cmd, (error, stdout, stderr) => {
+    exec(cmd, { windowsHide: true }, (error, stdout, stderr) => {
       if (error) {
         reject(error);
         return;
