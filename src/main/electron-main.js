@@ -136,7 +136,13 @@ function createWindow() {
     minHeight: 650,
     resizable: true,
     frame: true,
-    backgroundColor: '#0A0908',
+    backgroundColor: '#FFFFFF',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#FFFFFF',
+      symbolColor: '#1A1A1A',
+      height: 24
+    },
     icon: path.join(__dirname, '../../assets/icon.ico'),
     webPreferences: {
       nodeIntegration: false,
@@ -502,124 +508,54 @@ function findCloudflared() {
   return null;
 }
 
-// Start cloudflared tunnel for HTTPS (replaces localtunnel - no interstitial page)
+// Start cloudflared tunnel for HTTPS
 async function startLocalTunnel(port = 8443) {
   if (localTunnelProcess && tunnelUrl) {
     sendLog(`Tunnel already running at ${tunnelUrl}`);
     return tunnelUrl;
   }
 
-  // First try cloudflared (more reliable, no interstitial)
   const cloudflaredPath = findCloudflared();
-
-  if (cloudflaredPath) {
-    sendLog('Starting cloudflared tunnel (no interstitial)...');
-
-    return new Promise((resolve, reject) => {
-      localTunnelProcess = spawn(cloudflaredPath, ['tunnel', '--url', `http://localhost:${port}`], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true
-      });
-
-      // Cloudflared outputs to stderr
-      localTunnelProcess.stderr.on('data', (data) => {
-        const msg = data.toString();
-
-        // Parse URL from cloudflared output
-        // Format: "https://xxx-xxx-xxx.trycloudflare.com"
-        const urlMatch = msg.match(/(https:\/\/[a-z0-9-]+\.trycloudflare\.com)/i);
-        if (urlMatch && !tunnelUrl) {
-          tunnelUrl = urlMatch[1];
-          sendLog(`Cloudflare tunnel URL: ${tunnelUrl}`, 'success');
-          resolve(tunnelUrl);
-        }
-
-        // Log important messages
-        if (msg.includes('Your quick Tunnel') || msg.includes('trycloudflare.com') || msg.includes('ERR')) {
-          sendLog(`[cloudflared] ${msg.trim()}`);
-        }
-      });
-
-      localTunnelProcess.stdout.on('data', (data) => {
-        const msg = data.toString().trim();
-        if (msg) sendLog(`[cloudflared] ${msg}`);
-      });
-
-      localTunnelProcess.on('error', (err) => {
-        sendLog(`cloudflared error: ${err.message}`, 'error');
-        localTunnelProcess = null;
-        // Fallback to localtunnel
-        startLocalTunnelFallback(port).then(resolve).catch(reject);
-      });
-
-      localTunnelProcess.on('close', (code) => {
-        sendLog(`cloudflared exited with code ${code}`);
-        localTunnelProcess = null;
-        tunnelUrl = null;
-      });
-
-      // Timeout after 30 seconds
-      setTimeout(() => {
-        if (!tunnelUrl) {
-          // Fallback to localtunnel
-          sendLog('cloudflared timed out, trying localtunnel...', 'warn');
-          if (localTunnelProcess) {
-            localTunnelProcess.kill();
-            localTunnelProcess = null;
-          }
-          startLocalTunnelFallback(port).then(resolve).catch(reject);
-        }
-      }, 30000);
-    });
-  } else {
-    sendLog('cloudflared not found, using localtunnel...', 'warn');
-    return startLocalTunnelFallback(port);
+  if (!cloudflaredPath) {
+    throw new Error('cloudflared not installed. Install from https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/');
   }
-}
 
-// Fallback to localtunnel if cloudflared is not available
-async function startLocalTunnelFallback(port = 8443) {
-  sendLog('Starting localtunnel for HTTPS (may have interstitial)...');
+  sendLog('Starting cloudflared tunnel...');
 
   return new Promise((resolve, reject) => {
-    localTunnelProcess = spawn('npx', ['localtunnel', '--port', port.toString()], {
-      shell: true,
-      cwd: path.join(__dirname, '../..'),
+    localTunnelProcess = spawn(cloudflaredPath, ['tunnel', '--url', `http://localhost:${port}`], {
+      stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true
     });
 
-    localTunnelProcess.stdout.on('data', (data) => {
+    localTunnelProcess.stderr.on('data', (data) => {
       const msg = data.toString();
-      sendLog(`[localtunnel] ${msg.trim()}`);
-
-      // Parse URL from output
-      const urlMatch = msg.match(/your url is: (https:\/\/[^\s]+)/i);
-      if (urlMatch) {
+      const urlMatch = msg.match(/(https:\/\/[a-z0-9-]+\.trycloudflare\.com)/i);
+      if (urlMatch && !tunnelUrl) {
         tunnelUrl = urlMatch[1];
         sendLog(`Tunnel URL: ${tunnelUrl}`, 'success');
         resolve(tunnelUrl);
       }
     });
 
-    localTunnelProcess.stderr.on('data', (data) => {
-      sendLog(`[localtunnel] ${data.toString().trim()}`);
-    });
-
     localTunnelProcess.on('error', (err) => {
-      sendLog(`localtunnel error: ${err.message}`, 'error');
+      sendLog(`cloudflared error: ${err.message}`, 'error');
       localTunnelProcess = null;
       reject(err);
     });
 
     localTunnelProcess.on('close', (code) => {
-      sendLog(`localtunnel exited with code ${code}`);
+      sendLog(`cloudflared exited with code ${code}`);
       localTunnelProcess = null;
       tunnelUrl = null;
     });
 
-    // Timeout after 30 seconds
     setTimeout(() => {
       if (!tunnelUrl) {
+        if (localTunnelProcess) {
+          localTunnelProcess.kill();
+          localTunnelProcess = null;
+        }
         reject(new Error('Tunnel startup timed out'));
       }
     }, 30000);

@@ -12,9 +12,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-  --black: #0A0908;
+  --black: #FFFFFF;
   --pink: #EF476F;
-  --white: #F2F4F3;
+  --white: #1A1A1A;
   --cyan: #55828B;
   --green: #29BF12;
 
@@ -38,7 +38,7 @@ body {
   overflow: hidden;
 }
 
-/* Ambient Background Glow - DMT Style */
+/* Ambient Background Glow - Black on White */
 body::before {
   content: '';
   position: fixed;
@@ -47,11 +47,11 @@ body::before {
   right: 0;
   bottom: 0;
   background:
-    radial-gradient(ellipse at 0% 0%, rgba(239, 71, 111, 0.15) 0%, transparent 50%),
-    radial-gradient(ellipse at 100% 0%, rgba(85, 130, 139, 0.12) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 100%, rgba(239, 71, 111, 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 0% 100%, rgba(85, 130, 139, 0.1) 0%, transparent 40%),
-    radial-gradient(ellipse at 100% 100%, rgba(239, 71, 111, 0.1) 0%, transparent 40%);
+    radial-gradient(ellipse at 0% 0%, rgba(0, 0, 0, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 100% 0%, rgba(0, 0, 0, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 100%, rgba(0, 0, 0, 0.05) 0%, transparent 50%),
+    radial-gradient(ellipse at 0% 100%, rgba(0, 0, 0, 0.05) 0%, transparent 40%),
+    radial-gradient(ellipse at 100% 100%, rgba(0, 0, 0, 0.05) 0%, transparent 40%);
   pointer-events: none;
   z-index: 0;
 }
@@ -64,7 +64,7 @@ body::before {
   height: 100vh;
   max-width: 440px;
   margin: 0 auto;
-  padding: 24px 20px 100px;
+  padding: 28px 20px 100px;
   overflow-y: auto;
   overflow-x: hidden;
   -ms-overflow-style: none;
@@ -78,8 +78,9 @@ body::before {
 
 /* ==================== HEADER ==================== */
 .header {
-  text-align: center;
-  padding: 16px 0 28px;
+  text-align: right;
+  padding: 16px 24px 28px 0;
+  -webkit-app-region: drag;
 }
 
 .header-label {
@@ -95,10 +96,10 @@ body::before {
 
 .logo {
   font-family: 'Bebas Neue', sans-serif;
-  font-size: 3rem;
-  font-weight: 400;
-  letter-spacing: 4px;
-  line-height: 0.95;
+  font-size: 4rem;
+  font-weight: 700;
+  letter-spacing: -1px;
+  line-height: 0.9;
   background: linear-gradient(135deg, var(--pink), var(--cyan));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -109,7 +110,7 @@ body::before {
 
 .tagline {
   font-size: 0.8rem;
-  color: rgba(242, 244, 243, 0.5);
+  color: rgba(26, 26, 26, 0.6);
   letter-spacing: 1px;
 }
 
@@ -158,7 +159,7 @@ body::before {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: rgba(242, 244, 243, 0.3);
+  background: rgba(26, 26, 26, 0.3);
   transition: all 0.3s ease;
 }
 
@@ -206,7 +207,7 @@ body::before {
   font-size: 0.9rem;
   font-weight: 500;
   letter-spacing: 1px;
-  color: rgba(242, 244, 243, 0.8);
+  color: rgba(26, 26, 26, 0.85);
 }
 
 /* ==================== STREAM MONITOR ==================== */
@@ -264,7 +265,7 @@ body::before {
 .stat-label {
   display: block;
   font-size: 0.6rem;
-  color: rgba(242, 244, 243, 0.4);
+  color: rgba(26, 26, 26, 0.5);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 4px;
@@ -287,7 +288,7 @@ body::before {
 .loading-text {
   text-align: center;
   padding: 20px;
-  color: rgba(242, 244, 243, 0.4);
+  color: rgba(26, 26, 26, 0.4);
   font-size: 0.85rem;
 }
 
@@ -295,10 +296,11 @@ body::before {
   display: flex;
   align-items: center;
   gap: 12px;
+  border-radius: 12px;
   padding: 14px 0;
   background: transparent;
   border: none;
-  border-bottom: 1px solid rgba(242, 244, 243, 0.06);
+  border-bottom: 1px solid rgba(26, 26, 26, 0.08);
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -315,7 +317,7 @@ body::before {
   width: 40px;
   height: 40px;
   background: linear-gradient(135deg, var(--cyan), var(--pink));
-  border-radius: 0;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -341,7 +343,7 @@ body::before {
 
 .speaker-model {
   font-size: 0.7rem;
-  color: rgba(242, 244, 243, 0.4);
+  color: rgba(26, 26, 26, 0.4);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -369,10 +371,10 @@ body::before {
 .stereo-toggle {
   width: 32px;
   height: 32px;
-  border-radius: 0;
-  border: 1px solid rgba(242, 244, 243, 0.15);
-  background: rgba(242, 244, 243, 0.03);
-  color: rgba(242, 244, 243, 0.4);
+  border-radius: 8px;
+  border: 1px solid rgba(26, 26, 26, 0.15);
+  background: rgba(26, 26, 26, 0.03);
+  color: rgba(26, 26, 26, 0.4);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -405,7 +407,7 @@ body::before {
 .stereo-badge {
   background: rgba(85, 130, 139, 0.15);
   border: 1px solid rgba(85, 130, 139, 0.4);
-  border-radius: 0;
+  border-radius: 6px;
   padding: 4px 8px;
   font-size: 9px;
   font-weight: 700;
@@ -427,7 +429,7 @@ body::before {
   align-items: center;
   justify-content: space-between;
   padding: 12px 0;
-  border-bottom: 1px solid rgba(242, 244, 243, 0.06);
+  border-bottom: 1px solid rgba(26, 26, 26, 0.08);
 }
 
 .option-row:last-child {
@@ -436,13 +438,13 @@ body::before {
 
 .option-label {
   font-size: 0.9rem;
-  color: rgba(242, 244, 243, 0.85);
+  color: rgba(26, 26, 26, 0.9);
   font-weight: 500;
 }
 
 .option-hint {
   font-size: 0.75rem;
-  color: rgba(242, 244, 243, 0.4);
+  color: rgba(26, 26, 26, 0.4);
   margin-top: 8px;
   line-height: 1.4;
 }
@@ -469,10 +471,10 @@ body::before {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(242, 244, 243, 0.1);
+  background: rgba(26, 26, 26, 0.1);
   border-radius: 26px;
   transition: all 0.3s ease;
-  border: 1px solid rgba(242, 244, 243, 0.15);
+  border: 1px solid rgba(26, 26, 26, 0.15);
 }
 
 .toggle-slider::before {
@@ -482,7 +484,7 @@ body::before {
   width: 20px;
   left: 2px;
   bottom: 2px;
-  background: rgba(242, 244, 243, 0.7);
+  background: rgba(26, 26, 26, 0.7);
   border-radius: 50%;
   transition: all 0.3s ease;
 }
@@ -533,8 +535,8 @@ body::before {
   flex: 1;
   -webkit-appearance: none;
   appearance: none;
-  background: rgba(242, 244, 243, 0.1);
-  border-radius: 0;
+  background: rgba(26, 26, 26, 0.1);
+  border-radius: 6px;
   height: 8px;
   cursor: pointer;
 }
@@ -571,7 +573,7 @@ body::before {
 }
 
 #sync-delay-slider:disabled::-webkit-slider-thumb {
-  background: rgba(242, 244, 243, 0.3);
+  background: rgba(26, 26, 26, 0.3);
   cursor: not-allowed;
   box-shadow: none;
 }
@@ -592,7 +594,7 @@ body::before {
   gap: 8px;
   padding: 10px 18px;
   border: none;
-  border-radius: 0;
+  border-radius: 8px;
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
@@ -617,13 +619,13 @@ body::before {
 }
 
 .btn-secondary {
-  background: rgba(242, 244, 243, 0.05);
-  color: rgba(242, 244, 243, 0.7);
-  border: 1px solid rgba(242, 244, 243, 0.15);
+  background: rgba(26, 26, 26, 0.05);
+  color: rgba(26, 26, 26, 0.7);
+  border: 1px solid rgba(26, 26, 26, 0.15);
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(242, 244, 243, 0.1);
+  background: rgba(26, 26, 26, 0.1);
   border-color: var(--pink);
   color: var(--pink);
 }
@@ -655,7 +657,7 @@ body::before {
   transition: all 0.2s ease;
   text-transform: uppercase;
   letter-spacing: 2px;
-  border-radius: 0;
+  border-radius: 10px;
   margin-top: 10px;
 }
 
@@ -711,7 +713,7 @@ body::before {
 
 .trial-label {
   font-size: 0.85rem;
-  color: rgba(242, 244, 243, 0.6);
+  color: rgba(26, 26, 26, 0.6);
 }
 
 .trial-time {
@@ -730,15 +732,15 @@ body::before {
 
 .debug-log {
   background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(242, 244, 243, 0.08);
-  border-radius: 0;
+  border: 1px solid rgba(26, 26, 26, 0.08);
+  border-radius: 10px;
   padding: 10px;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 0.7rem;
   line-height: 1.4;
   height: 140px;
   overflow-y: auto;
-  color: rgba(242, 244, 243, 0.6);
+  color: rgba(26, 26, 26, 0.6);
   margin-bottom: 12px;
 }
 
@@ -772,7 +774,7 @@ body::before {
 .modal-box {
   background: var(--black);
   border: 1px solid var(--pink);
-  border-radius: 0;
+  border-radius: 14px;
   padding: 28px;
   max-width: 400px;
   width: 90%;
@@ -790,7 +792,7 @@ body::before {
 
 .modal-description {
   font-size: 0.8rem;
-  color: rgba(242, 244, 243, 0.5);
+  color: rgba(26, 26, 26, 0.5);
   text-align: center;
   margin-bottom: 20px;
 }
@@ -798,9 +800,9 @@ body::before {
 .modal-input {
   width: 100%;
   padding: 14px;
-  background: rgba(242, 244, 243, 0.03);
-  border: 1px solid rgba(242, 244, 243, 0.15);
-  border-radius: 0;
+  background: rgba(26, 26, 26, 0.03);
+  border: 1px solid rgba(26, 26, 26, 0.15);
+  border-radius: 10px;
   color: var(--green);
   font-size: 1rem;
   font-family: 'Courier New', monospace;
@@ -817,7 +819,7 @@ body::before {
 }
 
 .modal-input::placeholder {
-  color: rgba(242, 244, 243, 0.25);
+  color: rgba(26, 26, 26, 0.25);
 }
 
 .modal-error {
@@ -827,7 +829,7 @@ body::before {
   margin: -6px 0 14px;
   padding: 8px;
   background: rgba(239, 71, 111, 0.08);
-  border-radius: 0;
+  border-radius: 8px;
 }
 
 .modal-buttons {
@@ -843,7 +845,7 @@ body::before {
 
 .modal-footer-text {
   font-size: 0.7rem;
-  color: rgba(242, 244, 243, 0.4);
+  color: rgba(26, 26, 26, 0.4);
   text-align: center;
 }
 
@@ -875,7 +877,7 @@ body::before {
 .stereo-info-popup .popup-content {
   background: var(--black);
   border: 1px solid var(--pink);
-  border-radius: 0;
+  border-radius: 14px;
   padding: 24px;
   max-width: 380px;
   width: 90%;
@@ -890,7 +892,7 @@ body::before {
   height: 28px;
   border: none;
   background: transparent;
-  color: rgba(242, 244, 243, 0.4);
+  color: rgba(26, 26, 26, 0.4);
   font-size: 22px;
   cursor: pointer;
   line-height: 1;
@@ -916,7 +918,7 @@ body::before {
 }
 
 .stereo-info-popup p {
-  color: rgba(242, 244, 243, 0.6);
+  color: rgba(26, 26, 26, 0.6);
   font-size: 0.8rem;
   margin-bottom: 8px;
 }
@@ -928,7 +930,7 @@ body::before {
 }
 
 .stereo-info-popup ol {
-  color: rgba(242, 244, 243, 0.6);
+  color: rgba(26, 26, 26, 0.6);
   font-size: 0.8rem;
   margin: 8px 0 12px 20px;
 }
@@ -944,7 +946,7 @@ body::before {
   margin: 12px 0;
   font-size: 0.75rem;
   color: var(--color-warning);
-  border-radius: 0;
+  border-radius: 6px;
 }
 
 .stereo-info-popup .popup-ok {
@@ -952,7 +954,7 @@ body::before {
   padding: 12px;
   background: linear-gradient(135deg, var(--pink), var(--cyan));
   border: none;
-  border-radius: 0;
+  border-radius: 10px;
   color: white;
   font-weight: 600;
   font-size: 0.85rem;
@@ -974,7 +976,7 @@ body::before {
   height: 24px;
   border: none;
   background: transparent;
-  color: rgba(242, 244, 243, 0.3);
+  color: rgba(26, 26, 26, 0.3);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -992,7 +994,7 @@ body::before {
   text-align: center;
   padding: 20px 0 30px;
   font-size: 0.75rem;
-  color: rgba(242, 244, 243, 0.35);
+  color: rgba(26, 26, 26, 0.4);
   margin-top: auto;
 }
 
@@ -1012,7 +1014,7 @@ body::before {
 
 .footer-copyright {
   font-size: 0.7rem;
-  color: rgba(242, 244, 243, 0.25);
+  color: rgba(26, 26, 26, 0.25);
 }
 
 /* ==================== SPLASH SCREEN ==================== */
@@ -1038,7 +1040,7 @@ body::before {
 .splash-video {
   width: 50%;
   max-width: 360px;
-  border-radius: 0;
+  border-radius: 16px;
   box-shadow: 0 0 50px rgba(239, 71, 111, 0.4);
 }
 
@@ -1091,12 +1093,13 @@ body::before {
   display: flex;
   justify-content: center;
   gap: 8px;
-  background: rgba(10, 9, 8, 0.95);
-  border: 1px solid rgba(242, 244, 243, 0.1);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.15);
   border-radius: 30px;
   padding: 6px 10px;
   z-index: 100;
   backdrop-filter: blur(10px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15), 0 8px 40px rgba(0, 0, 0, 0.08);
 }
 
 .tab-btn {
@@ -1106,7 +1109,7 @@ body::before {
   gap: 2px;
   background: none;
   border: none;
-  color: rgba(242, 244, 243, 0.4);
+  color: rgba(26, 26, 26, 0.5);
   cursor: pointer;
   padding: 8px 14px;
   border-radius: 20px;
@@ -1126,8 +1129,8 @@ body::before {
 }
 
 .tab-btn:hover {
-  color: rgba(242, 244, 243, 0.7);
-  background: rgba(242, 244, 243, 0.05);
+  color: rgba(26, 26, 26, 0.8);
+  background: rgba(26, 26, 26, 0.05);
 }
 
 .tab-btn.active {
