@@ -35,7 +35,7 @@ body {
   color: var(--white);
   min-height: 100vh;
   line-height: 1.5;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 /* Ambient Background Glow - DMT Style */
@@ -61,10 +61,19 @@ body::before {
   z-index: 1;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
   max-width: 440px;
   margin: 0 auto;
-  padding: 24px 20px;
+  padding: 24px 20px 100px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.app::-webkit-scrollbar {
+  width: 0;
+  display: none;
 }
 
 /* ==================== HEADER ==================== */
@@ -95,7 +104,6 @@ body::before {
   -webkit-text-fill-color: transparent;
   background-clip: text;
   text-shadow: none;
-  filter: drop-shadow(0 0 30px rgba(239, 71, 111, 0.4));
   margin-bottom: 10px;
 }
 
@@ -203,64 +211,59 @@ body::before {
 
 /* ==================== STREAM MONITOR ==================== */
 .stream-monitor {
-  background: transparent;
-  border: none;
-  padding: 0;
+  padding: 16px 0;
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgba(41, 191, 18, 0.2);
 }
 
 .stream-monitor .section-label,
 .stream-monitor h2 {
   color: var(--green);
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   font-weight: 600;
-  letter-spacing: 2.5px;
+  letter-spacing: 2px;
   text-transform: uppercase;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
-/* Audio Visualizer */
+/* Audio Visualizer - Simple clean bars */
 .audio-visualizer {
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
-  height: 60px;
-  gap: 6px;
-  margin-bottom: 18px;
+  justify-content: center;
+  height: 50px;
+  gap: 4px;
+  margin-bottom: 16px;
 }
 
 .visualizer-bar {
-  flex: 1;
-  background: linear-gradient(to top, var(--green), var(--cyan));
-  border-radius: 0;
+  width: 6px;
+  background: var(--green);
   min-height: 4px;
   height: 15%;
   transition: height 0.1s ease;
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 .visualizer-bar.active {
   opacity: 1;
-  box-shadow: 0 0 10px var(--green);
 }
 
-/* Stream Stats */
+/* Stream Stats - Clean horizontal layout */
 .stream-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .stat-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  flex: 1;
   text-align: center;
-  padding: 10px 8px;
-  background: transparent;
 }
 
 .stat-label {
-  font-size: 0.65rem;
+  display: block;
+  font-size: 0.6rem;
   color: rgba(242, 244, 243, 0.4);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -987,9 +990,10 @@ body::before {
 /* ==================== FOOTER ==================== */
 .footer {
   text-align: center;
-  padding: 20px 0 10px;
+  padding: 20px 0 30px;
   font-size: 0.75rem;
   color: rgba(242, 244, 243, 0.35);
+  margin-top: auto;
 }
 
 .footer p {
@@ -1081,37 +1085,41 @@ body::before {
 /* ==================== BOTTOM TAB NAVIGATION ==================== */
 .bottom-tabs {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
-  justify-content: space-around;
-  background: var(--black);
-  border-top: 1px solid rgba(242, 244, 243, 0.08);
-  padding: 8px 0 12px;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(10, 9, 8, 0.95);
+  border: 1px solid rgba(242, 244, 243, 0.1);
+  border-radius: 30px;
+  padding: 6px 10px;
   z-index: 100;
+  backdrop-filter: blur(10px);
 }
 
 .tab-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   background: none;
   border: none;
   color: rgba(242, 244, 243, 0.4);
   cursor: pointer;
-  padding: 8px 16px;
+  padding: 8px 14px;
+  border-radius: 20px;
   transition: all 0.2s ease;
 }
 
 .tab-btn svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
 }
 
 .tab-btn span {
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   font-weight: 600;
   letter-spacing: 0.5px;
   text-transform: uppercase;
@@ -1119,14 +1127,13 @@ body::before {
 
 .tab-btn:hover {
   color: rgba(242, 244, 243, 0.7);
+  background: rgba(242, 244, 243, 0.05);
 }
 
 .tab-btn.active {
   color: var(--pink);
-}
-
-.tab-btn.active svg {
-  filter: drop-shadow(0 0 6px rgba(239, 71, 111, 0.5));
+  background: rgba(239, 71, 111, 0.15);
+  box-shadow: 0 0 15px rgba(239, 71, 111, 0.3);
 }
 
 /* Tab Content Sections */
@@ -1136,9 +1143,4 @@ body::before {
 
 .tab-content.active {
   display: block;
-}
-
-/* Add padding to main for bottom tabs */
-.main {
-  padding-bottom: 80px;
 }

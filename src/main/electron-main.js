@@ -130,10 +130,10 @@ function sendLog(message, type = 'info') {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 420,
-    height: 680,
-    minWidth: 380,
-    minHeight: 550,
+    width: 480,
+    height: 780,
+    minWidth: 420,
+    minHeight: 650,
     resizable: true,
     frame: true,
     backgroundColor: '#0A0908',
@@ -426,7 +426,9 @@ async function startFFmpegWebRTC(audioDevice) {
 
     ffmpegWebrtcProcess = spawn(ffmpegPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true
+      windowsHide: true,
+      detached: false,
+      shell: false
     });
 
     ffmpegWebrtcProcess.stdout.on('data', (data) => {
