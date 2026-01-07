@@ -585,6 +585,14 @@ async function toggleStereoChannel(index, channel) {
   const speaker = speakers[index];
   log(`Toggle ${channel.toUpperCase()} for "${speaker.name}"`);
 
+  // Ping the speaker immediately so user gets feedback
+  try {
+    log(`Pinging ${speaker.name}...`, 'info');
+    window.api.pingSpeaker(speaker.name).catch(() => {}); // Fire and forget
+  } catch (e) {
+    // Ignore ping errors
+  }
+
   if (channel === 'left') {
     // Toggle left channel
     if (stereoMode.leftSpeaker === index) {

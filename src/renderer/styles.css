@@ -274,6 +274,152 @@ body {
   border-right: 3px solid var(--color-blush);
 }
 
+/* Stereo indicator for TVs/Groups (already stereo devices) */
+.stereo-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  margin-right: 12px;
+}
+
+.stereo-badge {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--color-grey);
+}
+
+.info-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--color-grey);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  outline: none;
+}
+
+.info-btn:hover {
+  color: var(--color-blush);
+}
+
+/* Stereo Info Popup */
+.stereo-info-popup {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.stereo-info-popup .popup-content {
+  background: var(--color-coffee);
+  border: 1px solid var(--color-beige);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 380px;
+  width: 90%;
+  position: relative;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.stereo-info-popup .popup-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--color-grey);
+  font-size: 24px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.stereo-info-popup .popup-close:hover {
+  color: var(--color-blush);
+}
+
+.stereo-info-popup h3 {
+  color: var(--color-blush);
+  margin-bottom: 12px;
+  font-size: 18px;
+}
+
+.stereo-info-popup h4 {
+  color: var(--color-blush);
+  margin: 12px 0 8px 0;
+  font-size: 14px;
+}
+
+.stereo-info-popup p {
+  color: var(--color-beige);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.stereo-info-popup hr {
+  border: none;
+  border-top: 1px solid var(--color-grey);
+  margin: 16px 0;
+  opacity: 0.3;
+}
+
+.stereo-info-popup ol {
+  color: var(--color-beige);
+  font-size: 13px;
+  margin: 8px 0 12px 20px;
+}
+
+.stereo-info-popup li {
+  margin-bottom: 8px;
+}
+
+.stereo-info-popup .popup-note {
+  background: rgba(255, 183, 77, 0.15);
+  border-left: 3px solid var(--color-warning);
+  padding: 8px 12px;
+  margin: 12px 0;
+  font-size: 12px;
+  color: var(--color-warning);
+}
+
+.stereo-info-popup .popup-ok {
+  width: 100%;
+  padding: 12px;
+  background: var(--color-blush);
+  border: none;
+  border-radius: 8px;
+  color: var(--color-coffee);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: all 0.2s ease;
+}
+
+.stereo-info-popup .popup-ok:hover {
+  background: #f5a8a0;
+  transform: translateY(-1px);
+}
+
 /* Streaming mode indicator */
 .streaming-mode {
   font-size: 0.75rem;

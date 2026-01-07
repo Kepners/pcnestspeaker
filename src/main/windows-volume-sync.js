@@ -121,32 +121,83 @@ async function pollVolume() {
 }
 
 /**
- * Get Windows volume via PowerShell (more reliable)
+ * Get Windows volume via PowerShell using native Core Audio API
+ * Works on any Windows 10/11 without external modules
  */
 function getWindowsVolumeViaPowerShell() {
-  return new Promise((resolve, reject) => {
-    // Simple PowerShell one-liner to get volume
+  return new Promise((resolve) => {
+    // Write the PowerShell script to a temp file to avoid escaping issues
+    const fs = require('fs');
+    const os = require('os');
+    const scriptPath = path.join(os.tmpdir(), 'get-volume.ps1');
+
+    // PowerShell script using Core Audio API directly
+    const psScript = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+[Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IAudioEndpointVolume {
+    int f(); int g(); int h(); int i();
+    int SetMasterVolumeLevelScalar(float fLevel, System.Guid pguidEventContext);
+    int j();
+    int GetMasterVolumeLevelScalar(out float pfLevel);
+    int k(); int l(); int m(); int n();
+    int GetVolumeRange(out float pflMin, out float pflMax, out float pflIncr);
+}
+[Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDevice {
+    int Activate(ref System.Guid id, int clsCtx, int activationParams, out IAudioEndpointVolume aev);
+}
+[Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDeviceEnumerator {
+    int f();
+    int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice endpoint);
+}
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator {}
+
+public static class Audio {
+    public static float GetVolume() {
+        var enumerator = new MMDeviceEnumerator() as IMMDeviceEnumerator;
+        IMMDevice dev = null;
+        enumerator.GetDefaultAudioEndpoint(0, 1, out dev);
+        IAudioEndpointVolume epVol = null;
+        var guid = typeof(IAudioEndpointVolume).GUID;
+        dev.Activate(ref guid, 0x17, 0, out epVol);
+        float v = -1;
+        epVol.GetMasterVolumeLevelScalar(out v);
+        return v;
+    }
+}
+"@
+[int]([Audio]::GetVolume() * 100)
+`;
+
+    try {
+      fs.writeFileSync(scriptPath, psScript, 'utf8');
+    } catch (e) {
+      console.error('[VolumeSync] Failed to write script:', e.message);
+      resolve(lastVolume !== -1 ? lastVolume : 50);
+      return;
+    }
+
     exec(
-      'powershell -NoProfile -Command "(Get-AudioDevice -PlaybackVolume)"',
-      { timeout: 2000, windowsHide: true },
+      `powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}"`,
+      { timeout: 5000, windowsHide: true },
       (error, stdout, stderr) => {
         if (error) {
-          // Fallback: try using .NET directly
-          exec(
-            'powershell -NoProfile -Command "[Audio]::Volume"',
-            { timeout: 2000, windowsHide: true },
-            (err2, stdout2) => {
-              if (err2) {
-                resolve(lastVolume !== -1 ? lastVolume : 50);
-              } else {
-                const vol = parseFloat(stdout2.trim()) * 100;
-                resolve(Math.round(vol));
-              }
-            }
-          );
+          console.error('[VolumeSync] PowerShell error:', stderr || error.message);
+          resolve(lastVolume !== -1 ? lastVolume : 50);
         } else {
           const volume = parseInt(stdout.trim());
-          resolve(isNaN(volume) ? 50 : volume);
+          if (isNaN(volume)) {
+            console.error('[VolumeSync] Invalid volume output:', stdout);
+            resolve(lastVolume !== -1 ? lastVolume : 50);
+          } else {
+            console.log(`[VolumeSync] Windows volume: ${volume}%`);
+            resolve(volume);
+          }
         }
       }
     );

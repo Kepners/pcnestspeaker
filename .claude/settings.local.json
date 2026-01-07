@@ -99,7 +99,13 @@
       "Bash(xargs ls:*)",
       "Bash(start:*)",
       "Bash(cmd /c \"start \"\"\"\" \"\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\start-app.bat\"\"\")",
-      "Bash(cmd /c \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\test-stereo-split.bat\")"
+      "Bash(cmd /c \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\test-stereo-split.bat\")",
+      "Bash(node -c:*)",
+      "Bash(grep:*)",
+      "Bash(cmd /c \"cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && set ELECTRON_RUN_AS_NODE= && npm run dev 2>&1\")",
+      "Bash(\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\node_modules\\\\electron\\\\dist\\\\electron.exe\" \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\")",
+      "Bash(cmd /c \"echo %ELECTRON_RUN_AS_NODE%\")",
+      "Bash(ELECTRON_RUN_AS_NODE= \"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\node_modules\\\\electron\\\\dist\\\\electron.exe\":*)"
     ]
   }
 }

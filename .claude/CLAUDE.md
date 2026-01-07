@@ -203,21 +203,36 @@ pcnestspeaker/
 
 ## CRITICAL: Development Environment Issues
 
-### ELECTRON_RUN_AS_NODE Environment Variable
-**MUST unset this before running Electron or `app` will be undefined!**
+### ⚠️ ELECTRON_RUN_AS_NODE - READ THIS FIRST ⚠️
 
-```bash
-# In Git Bash:
-unset ELECTRON_RUN_AS_NODE && node_modules/.bin/electron . --dev
+**Claude Code sets `ELECTRON_RUN_AS_NODE=1` which BREAKS Electron!**
 
-# In CMD:
-set ELECTRON_RUN_AS_NODE= && npm run dev
+When this env var is set, Electron runs in Node.js mode and `ipcMain`, `app`, `BrowserWindow` etc. are all **undefined**.
 
-# In PowerShell:
-$env:ELECTRON_RUN_AS_NODE = $null; npm run dev
+**ERROR YOU'LL SEE:**
+```
+TypeError: Cannot read properties of undefined (reading 'handle')
+    at Object.<anonymous> (electron-main.js:741:9)
 ```
 
-**Symptom:** `TypeError: Cannot read properties of undefined (reading 'commandLine')` or `ipcMain.handle is not a function`
+**THREE WAYS TO FIX:**
+
+1. **Use the batch file (RECOMMENDED):**
+```bash
+cmd /c start "" "c:\Users\kepne\OneDrive\Documents\GitHub\pcnestspeaker\start-app.bat"
+```
+
+2. **Unset in Git Bash:**
+```bash
+unset ELECTRON_RUN_AS_NODE && npm run dev
+```
+
+3. **Unset in CMD:**
+```cmd
+set ELECTRON_RUN_AS_NODE= && npm run dev
+```
+
+**DO NOT** just run `npm run dev` directly - it will inherit the env var and crash.
 
 ### Launching Electron from Claude Code
 **Use the batch file to launch Electron:**
