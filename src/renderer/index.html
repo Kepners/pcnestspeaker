@@ -66,6 +66,23 @@
         </div>
       </div>
 
+      <!-- Volume Control (hidden until speaker selected) -->
+      <div class="card volume-card" id="volume-card" style="display: none;">
+        <h2 class="card-title">VOLUME</h2>
+        <div class="volume-controls">
+          <button class="volume-btn" id="mute-btn" title="Mute/Unmute">🔊</button>
+          <input type="range" class="volume-slider" id="volume-slider" min="0" max="100" value="50">
+          <span class="volume-percentage" id="volume-percentage">50%</span>
+        </div>
+        <div class="volume-boost-row">
+          <label class="setting-label boost-label">
+            <input type="checkbox" id="volume-boost-toggle" class="setting-checkbox">
+            <span>Volume Boost</span>
+          </label>
+          <span class="boost-description" title="Sets speaker to maximum. Use Windows volume to control loudness.">Speaker at 100%</span>
+        </div>
+      </div>
+
       <!-- Trial Info (hidden by default) -->
       <div class="card trial-card" id="trial-card" style="display: none;">
         <div class="trial-info">

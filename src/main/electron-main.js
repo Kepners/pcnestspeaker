@@ -842,6 +842,10 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           volumeSync.startMonitoring(
             [{ name: speaker.name, ip: speaker.ip }],
             (volume) => {
+              // If boost is enabled, don't sync - speaker stays at 100%
+              if (settingsManager.getSetting('volumeBoost')) {
+                return; // Skip sync when boost is on
+              }
               sendLog(`[VolumeSync] Windows volume: ${volume}%`);
               runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
             }
@@ -928,6 +932,10 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           volumeSync.startMonitoring(
             [{ name: speaker.name, ip: speaker.ip }],
             (volume) => {
+              // If boost is enabled, don't sync - speaker stays at 100%
+              if (settingsManager.getSetting('volumeBoost')) {
+                return; // Skip sync when boost is on
+              }
               sendLog(`[VolumeSync] Windows volume: ${volume}%`);
               runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
             }
@@ -970,6 +978,10 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
             volumeSync.startMonitoring(
               [{ name: speaker.name, ip: speaker.ip }],
               (volume) => {
+                // If boost is enabled, don't sync - speaker stays at 100%
+                if (settingsManager.getSetting('volumeBoost')) {
+                  return; // Skip sync when boost is on
+                }
                 sendLog(`[VolumeSync] Windows volume: ${volume}%`);
                 runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
               }
@@ -1346,6 +1358,10 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
         { name: rightSpeaker.name, ip: rightSpeaker.ip }
       ],
       (volume) => {
+        // If boost is enabled, don't sync - speakers stay at 100%
+        if (settingsManager.getSetting('volumeBoost')) {
+          return; // Skip sync when boost is on
+        }
         sendLog(`[VolumeSync] Windows volume: ${volume}%`);
         // Set volume on both speakers in parallel
         const volumeLevel = (volume / 100).toString();

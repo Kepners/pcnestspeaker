@@ -20,6 +20,7 @@ const volumeCard = document.getElementById('volume-card');
 const volumeSlider = document.getElementById('volume-slider');
 const volumePercentage = document.getElementById('volume-percentage');
 const muteBtn = document.getElementById('mute-btn');
+const volumeBoostToggle = document.getElementById('volume-boost-toggle');
 
 // Trial info elements
 const trialCard = document.getElementById('trial-card');
@@ -42,6 +43,7 @@ let dependencies = {
 let currentVolume = 50; // 0-100
 let isMuted = false;
 let previousVolume = 50; // Store volume before muting
+let volumeBoostEnabled = false; // When true, speaker stays at 100%
 
 // Stereo separation state
 let stereoMode = {
@@ -77,6 +79,13 @@ async function loadSettings() {
     if (autoStartToggle) {
       const autoStartResult = await window.api.isAutoStartEnabled();
       autoStartToggle.checked = autoStartResult.enabled || false;
+    }
+
+    // Apply volume boost checkbox state
+    if (volumeBoostToggle) {
+      volumeBoostEnabled = settings.volumeBoost || false;
+      volumeBoostToggle.checked = volumeBoostEnabled;
+      log(`Volume boost: ${volumeBoostEnabled ? 'ON (100%)' : 'OFF'}`);
     }
   } catch (error) {
     log(`Failed to load settings: ${error.message}`, 'error');
@@ -189,6 +198,39 @@ function setupEventListeners() {
         log(`Auto-start error: ${error.message}`, 'error');
         // Revert checkbox
         autoStartToggle.checked = !enabled;
+      }
+    });
+  }
+
+  // Settings: Volume boost toggle
+  if (volumeBoostToggle) {
+    volumeBoostToggle.addEventListener('change', async (e) => {
+      volumeBoostEnabled = e.target.checked;
+      log(`Volume boost ${volumeBoostEnabled ? 'enabled (100%)' : 'disabled'}`);
+
+      // Save setting
+      await window.api.updateSettings({ volumeBoost: volumeBoostEnabled });
+
+      // Apply boost immediately if streaming
+      if (volumeBoostEnabled && (selectedSpeaker || stereoMode.streaming)) {
+        // Set speaker(s) to 100%
+        try {
+          if (stereoMode.streaming && stereoMode.leftSpeaker !== null && stereoMode.rightSpeaker !== null) {
+            const leftName = speakers[stereoMode.leftSpeaker].name;
+            const rightName = speakers[stereoMode.rightSpeaker].name;
+            log('Boosting both speakers to 100%...', 'info');
+            await Promise.all([
+              window.api.setVolume(leftName, 1.0),
+              window.api.setVolume(rightName, 1.0)
+            ]);
+          } else if (selectedSpeaker) {
+            log('Boosting speaker to 100%...', 'info');
+            await window.api.setVolume(selectedSpeaker.name, 1.0);
+          }
+          log('Volume boost active - speaker at 100%', 'success');
+        } catch (error) {
+          log(`Boost failed: ${error.message}`, 'warning');
+        }
       }
     });
   }

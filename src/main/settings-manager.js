@@ -24,6 +24,7 @@ const DEFAULT_SETTINGS = {
   autoConnect: false,          // Auto-connect to last speaker on startup
   autoStart: false,            // Start app on Windows boot
   streamingMode: 'webrtc-system',  // Default streaming mode
+  volumeBoost: false,          // When true, speaker stays at 100%
   version: '1.0.0',
 
   // Trial & License

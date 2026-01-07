@@ -839,6 +839,39 @@ body {
   text-align: right;
 }
 
+/* Volume Boost Row */
+.volume-boost-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(166, 152, 136, 0.2);
+}
+
+.boost-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.boost-label span {
+  font-size: 0.85rem;
+  color: var(--color-blush);
+}
+
+.boost-description {
+  font-size: 0.75rem;
+  color: var(--color-beige);
+  opacity: 0.7;
+}
+
+.volume-boost-row input[type="checkbox"]:checked + span {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
 /* Trial Info */
 .trial-card {
   background: rgba(252, 191, 183, 0.1);
