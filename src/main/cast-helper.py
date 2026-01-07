@@ -743,7 +743,8 @@ if __name__ == "__main__":
         print(json.dumps(result))
 
     elif command == "ping" and len(sys.argv) >= 3:
-        # Ping - triggers Nest's pairing sound by casting silent audio
+        # Ping - triggers Nest's pairing sound by launching a new Cast session
+        # The pairing "ding" only plays when starting a NEW app, not when playing media
         speaker = sys.argv[2]
         try:
             import time
@@ -755,15 +756,19 @@ if __name__ == "__main__":
                 print(f"Connecting to {host}...", file=sys.stderr)
                 cast.wait()
 
-                # Cast silent audio to trigger the Nest's pairing/ready sound
-                mc = cast.media_controller
-                # 1-second silent MP3 (triggers pairing sound without audible content)
-                silent_mp3 = "https://github.com/anars/blank-audio/raw/master/250-milliseconds-of-silence.mp3"
-                print(f"Triggering pairing sound...", file=sys.stderr)
-                mc.play_media(silent_mp3, "audio/mp3")
-                mc.block_until_active(timeout=10)
-                time.sleep(0.5)
-                mc.stop()
+                # Step 1: Quit any existing app to reset the session
+                print(f"Quitting existing app...", file=sys.stderr)
+                cast.quit_app()
+                time.sleep(1)
+
+                # Step 2: Launch the default media receiver - this triggers the pairing sound!
+                # App ID CC1AD845 is the default media receiver
+                print(f"Launching default receiver (triggers pairing sound)...", file=sys.stderr)
+                cast.start_app("CC1AD845")
+                time.sleep(1.5)  # Give it time to play the chime
+
+                # Step 3: Quit the app so speaker returns to idle
+                cast.quit_app()
 
                 volume = cast.status.volume_level if cast.status else None
                 browser.stop_discovery()
