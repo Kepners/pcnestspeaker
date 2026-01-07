@@ -743,7 +743,7 @@ if __name__ == "__main__":
         print(json.dumps(result))
 
     elif command == "ping" and len(sys.argv) >= 3:
-        # Simple ping test - based on official pychromecast media_example.py
+        # Ping test - plays a short audio chime to confirm speaker works
         speaker = sys.argv[2]
         try:
             import time
@@ -756,12 +756,23 @@ if __name__ == "__main__":
                 cast.wait()
                 print(f"Cast type: {cast.cast_type}, Model: {cast.model_name}", file=sys.stderr)
 
-                # Verify connection is working (no sound - just connection test)
-                volume = cast.status.volume_level if cast.status else None
-                print(f"Connection verified! Current volume: {int(volume * 100) if volume else 'N/A'}%", file=sys.stderr)
+                # Play a short test tone/chime
+                mc = cast.media_controller
+                # Use a short public domain beep sound
+                test_audio_url = "https://www.soundjay.com/buttons/beep-01a.mp3"
+                print(f"Playing test tone...", file=sys.stderr)
+                mc.play_media(test_audio_url, "audio/mp3")
+                mc.block_until_active(timeout=10)
 
+                # Wait for tone to play (it's about 0.5 seconds)
+                time.sleep(1)
+
+                # Stop playback
+                mc.stop()
+
+                volume = cast.status.volume_level if cast.status else None
                 browser.stop_discovery()
-                print("Ping successful - speaker is paired!", file=sys.stderr)
+                print("Ping successful!", file=sys.stderr)
                 print(json.dumps({"success": True, "ip": host, "volume": volume}))
             else:
                 browser.stop_discovery()
