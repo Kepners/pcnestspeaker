@@ -693,27 +693,30 @@ def set_volume_fast(speaker_name, volume_level, speaker_ip=None):
 
         if speaker_ip:
             # Direct connection - no network scan! (< 1 second)
-            print(f"Fast volume: connecting directly to {speaker_ip}", file=sys.stderr)
+            print(f"Fast volume: connecting to {speaker_ip}...", file=sys.stderr)
             cast = pychromecast.Chromecast(speaker_ip)
-            cast.wait(timeout=5)
+            cast.wait(timeout=2)  # Shorter timeout for volume changes
+            print(f"Fast volume: connected, setting to {volume}", file=sys.stderr)
         else:
             # Fallback to discovery (5-10 seconds)
-            print(f"Fast volume: no IP provided, falling back to discovery", file=sys.stderr)
+            print(f"Fast volume: no IP, using discovery...", file=sys.stderr)
             chromecasts, browser = pychromecast.get_listed_chromecasts(
                 friendly_names=[speaker_name], timeout=10
             )
             if not chromecasts:
                 browser.stop_discovery()
+                print(f"Fast volume: FAILED - speaker not found", file=sys.stderr)
                 return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
             cast = chromecasts[0]
             cast.wait()
             browser.stop_discovery()
 
         cast.set_volume(volume)
-        print(f"Volume set to {volume}", file=sys.stderr)
+        print(f"Fast volume: SUCCESS - set to {int(volume * 100)}%", file=sys.stderr)
         return {"success": True, "volume": volume}
 
     except Exception as e:
+        print(f"Fast volume: FAILED - {str(e)}", file=sys.stderr)
         return {"success": False, "error": str(e)}
 
 
