@@ -1760,4 +1760,56 @@ let webrtcUrl = `http://${localIp}:8889`;
 
 ---
 
+### January 7, 2026 (Session 19) - Single Speaker L/R Click Fix
+
+**Session Goal:** Fix single mono speaker click only pings without streaming
+
+#### Problem Discovered
+User reported: "When i select just ONE speaker - ie a mono speaker i get no audio. BUT when i click to select a second mono speaker about 15 seconds later it works."
+
+Logs showed only `Pinging` instead of streaming when clicking a single speaker.
+
+#### Root Cause Analysis
+1. Users click the **L or R button** on a mono speaker
+2. Click handler calls `toggleStereoChannel()` which:
+   - Pings the speaker (user hears sound)
+   - Assigns the channel (L or R)
+   - BUT only starts streaming when **BOTH L AND R are assigned** (line 806)
+3. Single speaker clicks only ping without streaming!
+
+The UX expectation: clicking L or R should start streaming immediately.
+
+#### The Fix
+Modified `toggleStereoChannel()` to start mono streaming when only ONE speaker has L/R assigned:
+
+```javascript
+} else if (stereoMode.leftSpeaker !== null || stereoMode.rightSpeaker !== null) {
+  // FIX: Only ONE speaker assigned (L or R) - start mono streaming to it!
+  const monoSpeakerIndex = stereoMode.leftSpeaker !== null
+    ? stereoMode.leftSpeaker
+    : stereoMode.rightSpeaker;
+  log(`Single speaker assigned - starting mono stream...`, 'success');
+  await startStreamingToSpeaker(monoSpeakerIndex, false);
+}
+```
+
+Also fixed:
+1. Added `clearStereoState` parameter to `startStreamingToSpeaker()` to preserve L/R assignments
+2. Added cleanup in `start-stereo-streaming` handler to stop mono FFmpeg before starting stereo
+3. Fixed `setStreamingState()` calls in stereo start/stop functions
+
+#### New Behavior
+- **Click L on Speaker A** → Mono streaming starts immediately
+- **Click R on Speaker B** → Switches to stereo separation mode
+- **Click L or R again** → Swaps speaker assignment
+
+#### Git Commit
+- `2494a34` - 🔧 fix: Single speaker L/R click now starts mono streaming
+
+#### Files Modified
+- `src/renderer/renderer.js` - Single L/R click starts mono, fixed stereo state tracking
+- `src/main/electron-main.js` - Stop mono stream when switching to stereo
+
+---
+
 *Last Updated: January 7, 2026*
