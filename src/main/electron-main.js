@@ -1347,31 +1347,6 @@ ipcMain.handle('stop-stereo-streaming', async (event, leftSpeaker, rightSpeaker)
   }
 });
 
-// Volume control
-ipcMain.handle('set-volume', async (event, speakerName, volume) => {
-  try {
-    const result = await runPython(['set-volume', speakerName, String(volume)]);
-    if (result.success) {
-      sendLog(`Volume set to ${Math.round(volume * 100)}% on "${speakerName}"`, 'success');
-    } else {
-      sendLog(`Volume set failed: ${result.error}`, 'error');
-    }
-    return result;
-  } catch (error) {
-    sendLog(`Volume control error: ${error.message}`, 'error');
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('get-volume', async (event, speakerName) => {
-  try {
-    const result = await runPython(['get-volume', speakerName]);
-    return result;
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
 // Settings management
 ipcMain.handle('get-settings', () => {
   return settingsManager.getAllSettings();
