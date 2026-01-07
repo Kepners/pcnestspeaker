@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('start-streaming', speakerName, audioDevice, streamingMode),
   stopStreaming: (speakerName) => ipcRenderer.invoke('stop-streaming', speakerName),
   getStatus: () => ipcRenderer.invoke('get-status'),
+  restartFfmpeg: () => ipcRenderer.invoke('restart-ffmpeg'),
 
   // Test ping (plays sound on speaker without streaming)
   pingSpeaker: (speakerName) => ipcRenderer.invoke('ping-speaker', speakerName),

@@ -392,11 +392,28 @@ async function startFFmpegWebRTC(audioDevice) {
     // FFmpeg command to capture audio via DirectShow and publish to MediaMTX RTSP
     // Using Opus codec for WebRTC compatibility
     const ffmpegPath = audioStreamer.getFFmpegPath();
+
+    // Check if volume boost is enabled
+    const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
+
+    // Secret sauce: Always boost by 3% for a slightly "better" sound
+    // With boost toggle: 25% total
+    const boostLevel = volumeBoostEnabled ? 1.25 : 1.03;
+
     const args = [
       '-hide_banner',
       '-stats',  // Force progress output for stream monitor
       '-f', 'dshow',
       '-i', `audio=${audioDevice}`,
+      '-af', `volume=${boostLevel}`  // Always apply volume filter
+    ];
+
+    if (volumeBoostEnabled) {
+      sendLog('[FFmpeg] Volume boost enabled (+25% signal)');
+    }
+
+    // Add output settings
+    args.push(
       '-c:a', 'libopus',
       '-b:a', '128k',
       '-ar', '48000',
@@ -404,7 +421,7 @@ async function startFFmpegWebRTC(audioDevice) {
       '-f', 'rtsp',
       '-rtsp_transport', 'tcp',
       'rtsp://localhost:8554/pcaudio'
-    ];
+    );
 
     sendLog(`[FFmpeg] ${ffmpegPath} ${args.join(' ')}`);
 
@@ -1076,6 +1093,34 @@ ipcMain.handle('get-status', () => {
   };
 });
 
+// Restart FFmpeg with new settings (for volume boost toggle)
+ipcMain.handle('restart-ffmpeg', async () => {
+  try {
+    if (!ffmpegWebrtcProcess) {
+      sendLog('FFmpeg not running, nothing to restart');
+      return { success: false, error: 'Not streaming' };
+    }
+
+    const audioDevice = 'virtual-audio-capturer';
+    sendLog('Restarting FFmpeg with new settings...');
+
+    // Stop current FFmpeg
+    if (ffmpegWebrtcProcess) {
+      ffmpegWebrtcProcess.kill('SIGTERM');
+      ffmpegWebrtcProcess = null;
+      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for clean shutdown
+    }
+
+    // Start FFmpeg again (will pick up new volumeBoost setting)
+    await startFFmpegWebRTC(audioDevice);
+    sendLog('FFmpeg restarted', 'success');
+    return { success: true };
+  } catch (error) {
+    sendLog(`FFmpeg restart failed: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
 // Test ping to speaker (isolated test - no streaming)
 ipcMain.handle('ping-speaker', async (event, speakerName) => {
   try {
@@ -1258,11 +1303,15 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     sendLog('Starting FFmpeg LEFT channel...');
     const ffmpegPath = getFFmpegPath();
 
+    // Check if volume boost is enabled
+    const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
+    const boostLevel = volumeBoostEnabled ? 1.25 : 1.03; // Secret 3% boost always on
+
     stereoFFmpegProcesses.left = spawn(ffmpegPath, [
       '-hide_banner', '-stats',  // Force progress output for stream monitor
       '-f', 'dshow',
       '-i', 'audio=virtual-audio-capturer',
-      '-af', 'pan=mono|c0=c0',  // Extract left channel
+      '-af', `pan=mono|c0=c0,volume=${boostLevel}`,  // Extract left channel + boost
       '-c:a', 'libopus',
       '-b:a', '128k',
       '-ar', '48000',
@@ -1293,7 +1342,7 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
       '-hide_banner', '-stats',  // Force progress output for stream monitor
       '-f', 'dshow',
       '-i', 'audio=virtual-audio-capturer',
-      '-af', 'pan=mono|c0=c1',  // Extract right channel
+      '-af', `pan=mono|c0=c1,volume=${boostLevel}`,  // Extract right channel + boost
       '-c:a', 'libopus',
       '-b:a', '128k',
       '-ar', '48000',

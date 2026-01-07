@@ -202,34 +202,27 @@ function setupEventListeners() {
     });
   }
 
-  // Settings: Volume boost toggle
+  // Settings: Volume boost toggle (signal amplification, not speaker volume)
   if (volumeBoostToggle) {
     volumeBoostToggle.addEventListener('change', async (e) => {
       volumeBoostEnabled = e.target.checked;
-      log(`Volume boost ${volumeBoostEnabled ? 'enabled (100%)' : 'disabled'}`);
+      log(`Volume boost ${volumeBoostEnabled ? 'enabled (+25%)' : 'disabled'}`);
 
       // Save setting
       await window.api.updateSettings({ volumeBoost: volumeBoostEnabled });
 
-      // Apply boost immediately if streaming
-      if (volumeBoostEnabled && (selectedSpeaker || stereoMode.streaming)) {
-        // Set speaker(s) to 100%
+      // If currently streaming, restart FFmpeg to apply the boost
+      if (isStreaming || stereoMode.streaming) {
+        log('Applying boost setting...', 'info');
         try {
-          if (stereoMode.streaming && stereoMode.leftSpeaker !== null && stereoMode.rightSpeaker !== null) {
-            const leftName = speakers[stereoMode.leftSpeaker].name;
-            const rightName = speakers[stereoMode.rightSpeaker].name;
-            log('Boosting both speakers to 100%...', 'info');
-            await Promise.all([
-              window.api.setVolume(leftName, 1.0),
-              window.api.setVolume(rightName, 1.0)
-            ]);
-          } else if (selectedSpeaker) {
-            log('Boosting speaker to 100%...', 'info');
-            await window.api.setVolume(selectedSpeaker.name, 1.0);
+          const result = await window.api.restartFfmpeg();
+          if (result.success) {
+            log(`Boost ${volumeBoostEnabled ? 'activated' : 'deactivated'}`, 'success');
+          } else {
+            log(`Restart failed: ${result.error}`, 'warning');
           }
-          log('Volume boost active - speaker at 100%', 'success');
         } catch (error) {
-          log(`Boost failed: ${error.message}`, 'warning');
+          log(`Boost apply failed: ${error.message}`, 'warning');
         }
       }
     });
