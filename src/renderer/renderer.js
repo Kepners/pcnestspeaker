@@ -389,10 +389,13 @@ function setupEventListeners() {
 }
 
 // Set cast mode and update UI
-async function setCastMode(mode) {
+// NOTE: "Speakers Only" is the DEFAULT when streaming - virtual-audio-capturer has no physical output
+// The device switch in start-streaming already handles making PC speakers silent
+// We do NOT mute Windows volume because virtual-audio-capturer captures AFTER volume is applied
+function setCastMode(mode) {
   castMode = mode;
   const modeLabel = mode === 'speakers' ? 'Speakers Only' : 'PC + Speakers';
-  log(`Switching to ${modeLabel} mode...`);
+  log(`Cast mode: ${modeLabel}`);
 
   // Update button states
   if (castSpeakersBtn && castAllBtn) {
@@ -414,24 +417,7 @@ async function setCastMode(mode) {
     syncDelayRow.style.display = mode === 'all' ? 'flex' : 'none';
   }
 
-  // Actually route the audio by muting/unmuting Windows
-  // WASAPI loopback captures BEFORE Windows volume, so muted PC still sends full audio to Nest
-  try {
-    const result = await window.api.setCastMode(mode);
-    if (result.success) {
-      if (mode === 'speakers') {
-        log(`PC audio muted (saved volume: ${result.savedVolume}%)`);
-      } else {
-        log(`PC audio restored to ${result.restoredVolume}%`);
-      }
-    } else {
-      log(`Cast mode switch failed: ${result.error}`, 'error');
-    }
-  } catch (error) {
-    log(`Cast mode error: ${error.message}`, 'error');
-  }
-
-  // Save setting
+  // Save setting (no volume muting needed - device switch handles it)
   window.api.updateSettings({ castMode: mode });
 }
 
