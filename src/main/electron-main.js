@@ -1052,15 +1052,19 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
   }
 });
 
-// Stop streaming
+// Stop streaming - uses daemon for INSTANT disconnect
 ipcMain.handle('stop-streaming', async (event, speakerName) => {
   try {
     sendLog('Stopping...');
 
-    // Stop Python cast
+    // Disconnect speaker (daemon is instant, fallback spawns Python)
     if (speakerName) {
       try {
-        await runPython(['stop', speakerName]);
+        if (daemonManager.isDaemonRunning()) {
+          await daemonManager.disconnectSpeaker(speakerName);
+        } else {
+          await runPython(['stop', speakerName]);
+        }
       } catch (e) {
         // Ignore stop errors
       }
@@ -1141,18 +1145,35 @@ ipcMain.handle('restart-ffmpeg', async () => {
   }
 });
 
-// Test ping to speaker (isolated test - no streaming)
+// Test ping to speaker (isolated test - no streaming) - uses daemon for INSTANT response
 ipcMain.handle('ping-speaker', async (event, speakerName) => {
   try {
     sendLog(`Pinging "${speakerName}"...`);
-    const result = await runPython(['ping', speakerName]);
 
-    if (result.success) {
-      sendLog('Ping sent!', 'success');
-      return { success: true };
+    // Get speaker IP for faster daemon connection
+    const speaker = discoveredSpeakers.find(s => s.name === speakerName);
+    const speakerIp = speaker?.ip || null;
+
+    // Use daemon for instant ping (cached connection)
+    if (daemonManager.isDaemonRunning()) {
+      const result = await daemonManager.pingSpeaker(speakerName, speakerIp);
+      if (result.success) {
+        sendLog('Ping sent!', 'success');
+        return { success: true };
+      } else {
+        sendLog(`Ping failed: ${result.error}`, 'error');
+        return { success: false, error: result.error };
+      }
     } else {
-      sendLog(`Ping failed: ${result.error}`, 'error');
-      return { success: false, error: result.error };
+      // Fallback to spawning Python
+      const result = await runPython(['ping', speakerName]);
+      if (result.success) {
+        sendLog('Ping sent!', 'success');
+        return { success: true };
+      } else {
+        sendLog(`Ping failed: ${result.error}`, 'error');
+        return { success: false, error: result.error };
+      }
     }
   } catch (error) {
     sendLog(`Ping failed: ${error.message}`, 'error');
@@ -1160,19 +1181,37 @@ ipcMain.handle('ping-speaker', async (event, speakerName) => {
   }
 });
 
-// Get speaker volume
+// Get speaker volume - uses daemon for INSTANT response
 ipcMain.handle('get-volume', async (event, speakerName) => {
   try {
-    const result = await runPython(['get-volume', speakerName]);
+    // Get speaker IP for faster daemon connection
+    const speaker = discoveredSpeakers.find(s => s.name === speakerName);
+    const speakerIp = speaker?.ip || null;
 
-    if (result.success) {
-      return {
-        success: true,
-        volume: result.volume,
-        muted: result.muted
-      };
+    // Use daemon for instant response (cached connection)
+    if (daemonManager.isDaemonRunning()) {
+      const result = await daemonManager.getVolumeFast(speakerName, speakerIp);
+      if (result.success) {
+        return {
+          success: true,
+          volume: result.volume,
+          muted: result.muted
+        };
+      } else {
+        return { success: false, error: result.error };
+      }
     } else {
-      return { success: false, error: result.error };
+      // Fallback to spawning Python
+      const result = await runPython(['get-volume', speakerName]);
+      if (result.success) {
+        return {
+          success: true,
+          volume: result.volume,
+          muted: result.muted
+        };
+      } else {
+        return { success: false, error: result.error };
+      }
     }
   } catch (error) {
     return { success: false, error: error.message };
@@ -1498,12 +1537,21 @@ ipcMain.handle('stop-stereo-streaming', async (event, leftSpeaker, rightSpeaker)
       sendLog('RIGHT channel stopped');
     }
 
-    // Stop casting to both speakers
-    if (leftSpeaker) {
-      await runPython(['stop', leftSpeaker.name]).catch(() => {});
-    }
-    if (rightSpeaker) {
-      await runPython(['stop', rightSpeaker.name]).catch(() => {});
+    // Disconnect both speakers (daemon is instant)
+    if (daemonManager.isDaemonRunning()) {
+      if (leftSpeaker) {
+        await daemonManager.disconnectSpeaker(leftSpeaker.name).catch(() => {});
+      }
+      if (rightSpeaker) {
+        await daemonManager.disconnectSpeaker(rightSpeaker.name).catch(() => {});
+      }
+    } else {
+      if (leftSpeaker) {
+        await runPython(['stop', leftSpeaker.name]).catch(() => {});
+      }
+      if (rightSpeaker) {
+        await runPython(['stop', rightSpeaker.name]).catch(() => {});
+      }
     }
 
     // Stop stream stats
