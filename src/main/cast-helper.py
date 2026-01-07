@@ -743,9 +743,10 @@ if __name__ == "__main__":
         print(json.dumps(result))
 
     elif command == "ping" and len(sys.argv) >= 3:
-        # Silent ping - just test connection, no audio
+        # Ping - triggers Nest's pairing sound by casting silent audio
         speaker = sys.argv[2]
         try:
+            import time
             print(f"Pinging '{speaker}'...", file=sys.stderr)
             chromecasts, browser = pychromecast.get_listed_chromecasts(friendly_names=[speaker])
             if chromecasts:
@@ -754,7 +755,16 @@ if __name__ == "__main__":
                 print(f"Connecting to {host}...", file=sys.stderr)
                 cast.wait()
 
-                # Just verify connection works (no sound)
+                # Cast silent audio to trigger the Nest's pairing/ready sound
+                mc = cast.media_controller
+                # 1-second silent MP3 (triggers pairing sound without audible content)
+                silent_mp3 = "https://github.com/anars/blank-audio/raw/master/250-milliseconds-of-silence.mp3"
+                print(f"Triggering pairing sound...", file=sys.stderr)
+                mc.play_media(silent_mp3, "audio/mp3")
+                mc.block_until_active(timeout=10)
+                time.sleep(0.5)
+                mc.stop()
+
                 volume = cast.status.volume_level if cast.status else None
                 browser.stop_discovery()
                 print("Ping successful!", file=sys.stderr)
