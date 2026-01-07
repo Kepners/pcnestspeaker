@@ -975,6 +975,28 @@ async function startStreamingToSpeaker(index, clearStereoState = true) {
   const speaker = speakers[index];
   if (!speaker) return;
 
+  // TOGGLE BEHAVIOR: If clicking the SAME speaker that's already streaming, STOP it
+  const isSameSpeaker = selectedSpeaker && selectedSpeaker.name === speaker.name;
+  if (isSameSpeaker && isStreaming) {
+    log(`Stopping stream to ${speaker.name}...`, 'info');
+    try {
+      await window.api.stopStreaming(speaker.name);
+      setStreamingState(false);
+
+      // Remove streaming mode indicator
+      const speakerCard = speakerList.querySelector('.speaker-item.selected .speaker-info');
+      if (speakerCard) {
+        const existingMode = speakerCard.querySelector('.streaming-mode');
+        if (existingMode) existingMode.remove();
+      }
+
+      log(`Stopped streaming to ${speaker.name}`, 'success');
+    } catch (error) {
+      log(`Stop failed: ${error.message}`, 'error');
+    }
+    return; // Don't start a new stream
+  }
+
   // Select the speaker first
   selectedSpeaker = speaker;
   speakerList.querySelectorAll('.speaker-item').forEach((item, i) => {
@@ -1007,9 +1029,9 @@ async function startStreamingToSpeaker(index, clearStereoState = true) {
     }
   }
 
-  // If already streaming (regular stream), stop current stream first
+  // If already streaming to a DIFFERENT speaker, stop that first
   if (isStreaming) {
-    log('Stopping current stream...');
+    log('Stopping current stream to switch speakers...');
     try {
       await window.api.stopStreaming();
       setStreamingState(false);
