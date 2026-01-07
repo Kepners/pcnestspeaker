@@ -254,19 +254,6 @@ function cleanup() {
   sendLog('Cleanup complete');
 }
 
-// Check if an audio device exists (VB-CABLE, virtual-audio-capturer)
-async function checkAudioDeviceExists(deviceKeyword) {
-  try {
-    if (!audioStreamer) {
-      audioStreamer = new AudioStreamer();
-    }
-    const devices = await audioStreamer.getAudioDevices();
-    return devices.some(d => d.toLowerCase().includes(deviceKeyword.toLowerCase()));
-  } catch (e) {
-    return false;
-  }
-}
-
 // Check all dependencies
 async function checkAllDependencies() {
   const deps = {
@@ -276,11 +263,15 @@ async function checkAllDependencies() {
     ffmpeg: true // Assume bundled FFmpeg is always available
   };
 
-  // Check VB-CABLE
-  deps.vbcable = await checkAudioDeviceExists('cable output');
-
-  // Check screen-capture-recorder (virtual-audio-capturer)
-  deps.screenCapture = await checkAudioDeviceExists('virtual-audio-capturer');
+  // Get audio devices ONCE and check both (uses cache anyway, but cleaner)
+  try {
+    if (!audioStreamer) audioStreamer = new AudioStreamer();
+    const devices = await audioStreamer.getAudioDevices();
+    deps.vbcable = devices.some(d => d.toLowerCase().includes('cable output'));
+    deps.screenCapture = devices.some(d => d.toLowerCase().includes('virtual-audio-capturer'));
+  } catch (e) {
+    console.error('[Main] Error checking audio devices:', e.message);
+  }
 
   // Check MediaMTX (bundled - replaces webrtc-streamer)
   deps.mediamtx = fs.existsSync(getMediaMTXPath());

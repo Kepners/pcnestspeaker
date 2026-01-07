@@ -97,7 +97,16 @@ class AudioStreamer {
     return 'ffmpeg';
   }
 
-  async getAudioDevices() {
+  async getAudioDevices(forceRefresh = false) {
+    // Cache audio devices for 30 seconds to avoid repeated FFmpeg spawns
+    const CACHE_TTL = 30000;
+    const now = Date.now();
+
+    if (!forceRefresh && this._audioDevicesCache &&
+        (now - this._audioDevicesCacheTime) < CACHE_TTL) {
+      return this._audioDevicesCache;
+    }
+
     return new Promise((resolve, reject) => {
       const ffmpeg = this.getFFmpegPath();
       const proc = spawn(ffmpeg, [
@@ -123,6 +132,10 @@ class AudioStreamer {
             }
           }
         }
+
+        // Cache the result
+        this._audioDevicesCache = audioDevices;
+        this._audioDevicesCacheTime = now;
 
         console.log('Available audio devices:', audioDevices);
         resolve(audioDevices);
