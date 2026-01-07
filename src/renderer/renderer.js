@@ -356,9 +356,12 @@ function setupEventListeners() {
     // Find speaker in list
     const speakerIndex = speakers.findIndex(s => s.name === speaker.name);
     if (speakerIndex !== -1) {
-      await selectSpeaker(speakerIndex);
+      // Use startStreamingToSpeaker() which actually starts streaming
+      // (selectSpeaker only pings without streaming!)
+      await startStreamingToSpeaker(speakerIndex);
     } else {
-      log(`Speaker "${speaker.name}" not found`, 'error');
+      log(`Speaker "${speaker.name}" not found in discovered speakers`, 'error');
+      log('Make sure the speaker is online and on the same network', 'warning');
     }
   });
 
