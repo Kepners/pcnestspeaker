@@ -129,77 +129,60 @@
     const WEBRTC_NAMESPACE = 'urn:x-cast:com.pcnestspeaker.webrtc';
 
     // ===================
-    // Ambient Video System - Free videos from Mixkit.co
+    // Ambient Video System - Free CC0 videos from Pexels (CORS-enabled)
     // ===================
     const ambientVideos = [
       // Ocean & Water
-      'https://assets.mixkit.co/videos/48525/48525-4k.mp4',  // Aerial wave crashing onto shore
-      'https://assets.mixkit.co/videos/44392/44392-4k.mp4',  // Flying low over the sea
-      'https://assets.mixkit.co/videos/1954/1954-4k.mp4',    // Sea waves in a little bay
+      'https://videos.pexels.com/video-files/3571264/3571264-uhd_2560_1440_30fps.mp4',  // Ocean waves aerial
+      'https://videos.pexels.com/video-files/1093662/1093662-uhd_2560_1440_30fps.mp4',  // Beach sunset waves
+      'https://videos.pexels.com/video-files/2098989/2098989-uhd_2560_1440_30fps.mp4',  // Waterfall
+      'https://videos.pexels.com/video-files/1409899/1409899-uhd_2560_1440_25fps.mp4',  // Calm ocean
 
       // Clouds & Sky
-      'https://assets.mixkit.co/videos/51105/51105-4k.mp4',  // White clouds moving quickly
-      'https://assets.mixkit.co/videos/4695/4695-4k.mp4',    // Clouds covering mountains
-      'https://assets.mixkit.co/videos/4132/4132-4k.mp4',    // Alps timelapse with clouds
-
-      // Sunset & Landscapes
-      'https://assets.mixkit.co/videos/2168/2168-4k.mp4',    // Bright orange sunset on beach
-      'https://assets.mixkit.co/videos/4119/4119-4k.mp4',    // Stunning sunset from the sea
-      'https://assets.mixkit.co/videos/3128/3128-4k.mp4',    // Mountains and sunset landscape
-      'https://assets.mixkit.co/videos/4998/4998-4k.mp4',    // Large lake sunset aerial
+      'https://videos.pexels.com/video-files/1918465/1918465-uhd_2560_1440_24fps.mp4',  // Clouds timelapse
+      'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_24fps.mp4',  // Northern lights
+      'https://videos.pexels.com/video-files/857195/857195-hd_1920_1080_25fps.mp4',     // Sunset clouds
 
       // Forest & Nature
-      'https://assets.mixkit.co/videos/50847/50847-4k.mp4',  // Tranquil forest sunny day
-      'https://assets.mixkit.co/videos/2213/2213-4k.mp4',    // Waterfall in forest
-      'https://assets.mixkit.co/videos/41545/41545-4k.mp4',  // Flying over tree-covered mountains
+      'https://videos.pexels.com/video-files/857251/857251-hd_1920_1080_25fps.mp4',     // Forest mist
+      'https://videos.pexels.com/video-files/3125908/3125908-uhd_2560_1440_30fps.mp4',  // Mountain lake
+      'https://videos.pexels.com/video-files/2871916/2871916-uhd_2560_1440_24fps.mp4',  // Green forest aerial
 
-      // Mountains
-      'https://assets.mixkit.co/videos/4396/4396-4k.mp4',    // Fog on snowy mountains
-      'https://assets.mixkit.co/videos/4283/4283-4k.mp4',    // Swiss Alps snow timelapse
-      'https://assets.mixkit.co/videos/4281/4281-4k.mp4',    // Matterhorn landscape
-      'https://assets.mixkit.co/videos/4366/4366-4k.mp4',    // Mountain range landscape
+      // Mountains & Landscapes
+      'https://videos.pexels.com/video-files/1448735/1448735-uhd_2560_1440_24fps.mp4',  // Desert dunes
+      'https://videos.pexels.com/video-files/3015510/3015510-uhd_2560_1440_24fps.mp4',  // Snowy mountains
+      'https://videos.pexels.com/video-files/2169880/2169880-uhd_2560_1440_30fps.mp4',  // Valley mist
 
       // Space & Stars
-      'https://assets.mixkit.co/videos/1610/1610-4k.mp4',    // Stars in space background
-      'https://assets.mixkit.co/videos/14468/14468-4k.mp4',  // Star shower timelapse
-      'https://assets.mixkit.co/videos/4148/4148-4k.mp4',    // Milky way at night
-      'https://assets.mixkit.co/videos/29351/29351-4k.mp4',  // Earth slowly spinning
+      'https://videos.pexels.com/video-files/1851190/1851190-uhd_2560_1440_30fps.mp4',  // Stars timelapse
+      'https://videos.pexels.com/video-files/5765760/5765760-uhd_2560_1440_25fps.mp4',  // Milky way
+      'https://videos.pexels.com/video-files/4770815/4770815-uhd_2560_1440_30fps.mp4',  // Earth from space
 
-      // Underwater & Fish
-      'https://assets.mixkit.co/videos/12816/12816-4k.mp4',  // Diving through a reef
-      'https://assets.mixkit.co/videos/44868/44868-4k.mp4',  // Beautiful coral reef with fish
-      'https://assets.mixkit.co/videos/4291/4291-4k.mp4',    // School of fish swimming
-      'https://assets.mixkit.co/videos/7255/7255-4k.mp4',    // Clown fish and sea anemone
-      'https://assets.mixkit.co/videos/4133/4133-4k.mp4',    // Dolphins underwater
-      'https://assets.mixkit.co/videos/17950/17950-4k.mp4',  // Lion fish swimming
+      // Underwater & Sea Life
+      'https://videos.pexels.com/video-files/855049/855049-hd_1920_1080_30fps.mp4',     // Coral reef fish
+      'https://videos.pexels.com/video-files/4812204/4812204-uhd_2560_1440_25fps.mp4',  // Jellyfish
+      'https://videos.pexels.com/video-files/2556126/2556126-uhd_2560_1440_30fps.mp4',  // Ocean underwater
 
-      // Animals
-      'https://assets.mixkit.co/videos/4681/4681-4k.mp4',    // Flamingos on lake shore
-      'https://assets.mixkit.co/videos/4285/4285-4k.mp4',    // Camels walking in desert
-      'https://assets.mixkit.co/videos/4682/4682-4k.mp4',    // Swans swimming on river
+      // Fire & Abstract
+      'https://videos.pexels.com/video-files/856798/856798-hd_1920_1080_25fps.mp4',     // Campfire flames
+      'https://videos.pexels.com/video-files/2795173/2795173-uhd_2560_1440_25fps.mp4',  // Abstract particles
+      'https://videos.pexels.com/video-files/3129671/3129671-uhd_2560_1440_30fps.mp4',  // City night lights
 
-      // Driving & Roads
-      'https://assets.mixkit.co/videos/45312/45312-4k.mp4',  // Driving through forest bendy road
-      'https://assets.mixkit.co/videos/52450/52450-4k.mp4',  // Curvy asphalt road sunny day
-      'https://assets.mixkit.co/videos/45257/45257-4k.mp4',  // View from car beside mountain
-      'https://assets.mixkit.co/videos/47629/47629-4k.mp4',  // Driving fast through tunnel
+      // Nature & Flowers
+      'https://videos.pexels.com/video-files/2611168/2611168-uhd_2560_1440_25fps.mp4',  // Flowers field
+      'https://videos.pexels.com/video-files/4763830/4763830-uhd_2560_1440_30fps.mp4',  // Cherry blossoms
 
       // Rain & Weather
-      'https://assets.mixkit.co/videos/25375/25375-4k.mp4',  // Soft rain and sunshine
-      'https://assets.mixkit.co/videos/6890/6890-4k.mp4',    // Forest under tropical rain
-      'https://assets.mixkit.co/videos/2846/2846-4k.mp4',    // Window on a rainy day
-      'https://assets.mixkit.co/videos/18312/18312-4k.mp4',  // Rain falling on lake water
+      'https://videos.pexels.com/video-files/2491280/2491280-uhd_2560_1440_24fps.mp4',  // Rain on window
+      'https://videos.pexels.com/video-files/1906831/1906831-uhd_2560_1440_25fps.mp4',  // Storm clouds
 
-      // Fire & Flames
-      'https://assets.mixkit.co/videos/1243/1243-4k.mp4',    // Wood burning in outdoor fire
-      'https://assets.mixkit.co/videos/45676/45676-4k.mp4',  // Bonfire flames against black
-      'https://assets.mixkit.co/videos/4426/4426-4k.mp4',    // Burning lava particles
+      // Driving & Roads
+      'https://videos.pexels.com/video-files/3015509/3015509-uhd_2560_1440_24fps.mp4',  // Mountain road drive
+      'https://videos.pexels.com/video-files/2795401/2795401-uhd_2560_1440_25fps.mp4',  // Highway night
 
-      // Flowers & Gardens
-      'https://assets.mixkit.co/videos/1168/1168-4k.mp4',    // Pink flowers in the breeze
-      'https://assets.mixkit.co/videos/1187/1187-4k.mp4',    // White flowers in the breeze
-      'https://assets.mixkit.co/videos/4881/4881-4k.mp4',    // Sunflower field sunny day
-      'https://assets.mixkit.co/videos/4075/4075-4k.mp4',    // Countryside meadow
+      // Animals
+      'https://videos.pexels.com/video-files/856973/856973-hd_1920_1080_25fps.mp4',     // Birds flying
+      'https://videos.pexels.com/video-files/4091636/4091636-uhd_2560_1440_25fps.mp4',  // Fish school
     ];
 
     let currentVideoIndex = 0;

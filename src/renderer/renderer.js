@@ -616,7 +616,7 @@ function renderSpeakers() {
   speakerList.innerHTML = speakers.map((speaker, index) => {
     const isLeft = stereoMode.leftSpeaker === index;
     const isRight = stereoMode.rightSpeaker === index;
-    const isSelected = selectedSpeaker === index;
+    const isSelected = selectedSpeaker && selectedSpeaker.name === speaker.name;
 
     // Detect if this is a group, TV, or stereo pair (already outputs stereo)
     // cast_type: "group" = multi-room group OR stereo pair (always stereo)
@@ -1052,6 +1052,7 @@ async function startStreamingToSpeaker(index, clearStereoState = true) {
 
     if (result.success) {
       setStreamingState(true);
+      renderSpeakers(); // Update UI to show selected state
 
       // Update UI to show streaming mode
       const modeText = result.fallback ? '(HTTP fallback)' : '(WebRTC)';
