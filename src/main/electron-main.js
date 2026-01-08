@@ -989,9 +989,12 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
       // Step 4: Launch custom receiver - send URL directly (NO PROXY!)
       // Receiver fetches from MediaMTX directly using local HTTP URL
+      sendLog(`[DEBUG] Looking for speaker "${speakerName}" in ${discoveredSpeakers.length} discovered speakers`);
       const speaker = discoveredSpeakers.find(s => s.name === speakerName);
+      sendLog(`[DEBUG] Found speaker: ${speaker ? JSON.stringify({name: speaker.name, cast_type: speaker.cast_type}) : 'NOT FOUND'}`);
       const speakerIp = speaker ? speaker.ip : null;
       const isGroup = speaker && speaker.cast_type === 'group';
+      sendLog(`[DEBUG] isGroup=${isGroup}, speakerIp=${speakerIp}`);
 
       let result;
 
