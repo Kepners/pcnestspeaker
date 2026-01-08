@@ -1087,53 +1087,14 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None):
         host = cast.cast_info.host if hasattr(cast, 'cast_info') else speaker_ip or 'unknown'
         # Use passed model from discovery, fall back to querying device
         model = device_model.lower() if device_model else (cast.cast_info.model_name.lower() if cast.cast_info.model_name else '')
-        is_shield = 'shield' in model
-        print(f"[HLS-TV] Connecting to {host} (model: {model}, is_shield: {is_shield})...", file=sys.stderr)
+        print(f"[HLS-TV] Connecting to {host} (model: {model})...", file=sys.stderr)
         cast.wait(timeout=10)
 
-        # Check if device is on standby and try to wake it
+        # Check standby status (for logging only - cast will wake device via HDMI-CEC)
         if cast.status and cast.status.is_stand_by:
-            print(f"[HLS-TV] Device is on STANDBY - attempting wake...", file=sys.stderr)
-
-            # NVIDIA Shield: Use ADB wake (most reliable for Shield)
-            if is_shield:
-                print(f"[HLS-TV] Detected NVIDIA Shield - trying ADB wake...", file=sys.stderr)
-                try:
-                    import subprocess
-                    # Try to connect and wake via ADB
-                    # First connect (may already be connected)
-                    subprocess.run(['adb', 'connect', host], capture_output=True, timeout=5)
-                    # Send wake keyevent
-                    result = subprocess.run(
-                        ['adb', '-s', f'{host}:5555', 'shell', 'input', 'keyevent', 'KEYCODE_WAKEUP'],
-                        capture_output=True, timeout=5
-                    )
-                    if result.returncode == 0:
-                        print(f"[HLS-TV] ADB wake command sent!", file=sys.stderr)
-                        time.sleep(3)  # Give Shield/TV time to wake
-                    else:
-                        print(f"[HLS-TV] ADB wake failed: {result.stderr.decode()}", file=sys.stderr)
-                        # Fall back to CEC
-                        cast.turn_on()
-                        time.sleep(3)
-                except Exception as adb_err:
-                    print(f"[HLS-TV] ADB not available: {adb_err}", file=sys.stderr)
-                    print(f"[HLS-TV] Falling back to CEC wake...", file=sys.stderr)
-                    try:
-                        cast.turn_on()
-                        time.sleep(3)
-                    except Exception as cec_err:
-                        print(f"[HLS-TV] CEC wake also failed: {cec_err}", file=sys.stderr)
-            else:
-                # Non-Shield: Try CEC wake
-                try:
-                    cast.turn_on()
-                    time.sleep(3)
-                    print(f"[HLS-TV] CEC wake command sent!", file=sys.stderr)
-                except Exception as wake_err:
-                    print(f"[HLS-TV] Wake failed (may not support CEC): {wake_err}", file=sys.stderr)
+            print(f"[HLS-TV] Device is on STANDBY - will wake via HDMI-CEC when casting...", file=sys.stderr)
         else:
-            print(f"[HLS-TV] Device is ACTIVE (not on standby)", file=sys.stderr)
+            print(f"[HLS-TV] Device is ACTIVE", file=sys.stderr)
 
         mc = cast.media_controller
 
