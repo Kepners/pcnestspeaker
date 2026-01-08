@@ -169,6 +169,37 @@ Multiple commits touching receiver.html with different ICE configs, signaling me
 
 ---
 
+## MISTAKE #8: More TURN/STUN Changes Without Understanding (January 8, 2026)
+
+**What happened:**
+- Saw `bytesSent: 0` in MediaMTX API (sessions connected but no data flowing)
+- Immediately started adding more STUN servers, TURN relay fallback, increased timeouts
+- COMMITTED changes (03c02b5, c35f51f) WITHOUT TESTING FIRST
+
+**Why this is MISTAKE #2 repeated:**
+- Same pattern: random TURN/STUN config changes
+- Same problem: didn't understand WHY bytesSent is 0
+- Same violation: committed before testing
+
+**What I SHOULD have done:**
+1. Check MediaMTX logs for actual error messages
+2. Verify FFmpeg is actually outputting data
+3. Check if RTSP streams are publishing (`/v3/paths/list` API)
+4. Look at Cast receiver console for detailed ICE negotiation logs
+5. Test ONE change at a time
+
+**What `bytesSent: 0` actually means:**
+- MediaMTX WebRTC sessions exist but no media data is being sent
+- Possible causes:
+  - ICE negotiation failed (no media path established)
+  - Tracks not added properly
+  - MediaMTX not forwarding from RTSP → WebRTC
+  - Firewall blocking UDP on port 8189
+
+**LESSON REINFORCED:** Don't make random changes. Understand the ACTUAL problem first!
+
+---
+
 ## GIT COMMIT HISTORY (for reference)
 
 ```
