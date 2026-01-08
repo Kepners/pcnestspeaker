@@ -511,10 +511,20 @@ function findCloudflared() {
 }
 
 // Start cloudflared tunnel for HTTPS
+// Uses a shared promise to prevent race conditions when called concurrently
+let tunnelPromise = null;
+
 async function startLocalTunnel(port = 8443) {
-  if (localTunnelProcess && tunnelUrl) {
+  // Already have URL - return immediately
+  if (tunnelUrl) {
     sendLog(`Tunnel already running at ${tunnelUrl}`);
     return tunnelUrl;
+  }
+
+  // Tunnel is starting - wait for the existing promise instead of spawning another
+  if (tunnelPromise) {
+    sendLog('Waiting for tunnel in progress...');
+    return tunnelPromise;
   }
 
   const cloudflaredPath = findCloudflared();
@@ -524,7 +534,7 @@ async function startLocalTunnel(port = 8443) {
 
   sendLog('Starting cloudflared tunnel...');
 
-  return new Promise((resolve, reject) => {
+  tunnelPromise = new Promise((resolve, reject) => {
     localTunnelProcess = spawn(cloudflaredPath, ['tunnel', '--url', `http://localhost:${port}`], {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true
@@ -543,6 +553,7 @@ async function startLocalTunnel(port = 8443) {
     localTunnelProcess.on('error', (err) => {
       sendLog(`cloudflared error: ${err.message}`, 'error');
       localTunnelProcess = null;
+      tunnelPromise = null;
       reject(err);
     });
 
@@ -550,6 +561,7 @@ async function startLocalTunnel(port = 8443) {
       sendLog(`cloudflared exited with code ${code}`);
       localTunnelProcess = null;
       tunnelUrl = null;
+      tunnelPromise = null;
     });
 
     setTimeout(() => {
@@ -558,10 +570,13 @@ async function startLocalTunnel(port = 8443) {
           localTunnelProcess.kill();
           localTunnelProcess = null;
         }
+        tunnelPromise = null;
         reject(new Error('Tunnel startup timed out'));
       }
     }, 30000);
   });
+
+  return tunnelPromise;
 }
 
 // Auto-discover speakers on startup
