@@ -1091,33 +1091,33 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           // Start stream stats
           if (streamStats) streamStats.start();
 
-          // Cast to LEFT speaker with 'left' stream
-          sendLog(`Connecting LEFT speaker: "${leftMember.name}"...`);
-          const leftResult = await runPython([
-            'webrtc-launch',
-            leftMember.name,
-            webrtcUrl,
-            leftMember.ip || '',
-            'left'
-          ]);
-          if (!leftResult.success) {
-            throw new Error(`Left speaker cast failed: ${leftResult.error}`);
+          // Helper function to connect a speaker with retries
+          async function connectSpeakerWithRetry(member, stream, maxRetries = 3) {
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+              sendLog(`Connecting ${stream.toUpperCase()} speaker: "${member.name}" (attempt ${attempt}/${maxRetries})...`);
+              const result = await runPython([
+                'webrtc-launch',
+                member.name,
+                webrtcUrl,
+                member.ip || '',
+                stream
+              ]);
+              if (result.success) {
+                sendLog(`${stream.toUpperCase()} speaker connected`, 'success');
+                return result;
+              }
+              if (attempt < maxRetries) {
+                sendLog(`${stream.toUpperCase()} failed (${result.error}), retrying in 3s...`, 'warning');
+                await new Promise(r => setTimeout(r, 3000));
+              } else {
+                throw new Error(`${stream.toUpperCase()} speaker cast failed after ${maxRetries} attempts: ${result.error}`);
+              }
+            }
           }
-          sendLog(`LEFT speaker connected`, 'success');
 
-          // Cast to RIGHT speaker with 'right' stream
-          sendLog(`Connecting RIGHT speaker: "${rightMember.name}"...`);
-          const rightResult = await runPython([
-            'webrtc-launch',
-            rightMember.name,
-            webrtcUrl,
-            rightMember.ip || '',
-            'right'
-          ]);
-          if (!rightResult.success) {
-            throw new Error(`Right speaker cast failed: ${rightResult.error}`);
-          }
-          sendLog(`RIGHT speaker connected`, 'success');
+          // Connect both speakers with retry logic
+          const leftResult = await connectSpeakerWithRetry(leftMember, 'left');
+          const rightResult = await connectSpeakerWithRetry(rightMember, 'right');
 
           switchingToStereoMode = false;
 
