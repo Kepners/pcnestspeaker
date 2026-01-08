@@ -4,20 +4,230 @@
   <title>PC Nest Speaker - WebRTC Receiver</title>
   <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
   <style>
-    body { background: #334E58; margin: 0; padding: 0; }
-    #player { position: absolute; width: 100%; height: 100%; }
-    #status { color: #FCBFB7; font-family: sans-serif; font-size: 24px; text-align: center; padding-top: 40%; position: relative; z-index: 100; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #334E58; overflow: hidden; }
+
+    /* Ambient video background - fullscreen, behind everything */
+    #ambient-video {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      z-index: 1;
+      opacity: 0;
+      transition: opacity 2s ease-in-out;
+    }
+    #ambient-video.visible { opacity: 1; }
+
+    /* Gradient overlay for text readability */
+    #overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: linear-gradient(
+        to bottom,
+        rgba(51, 78, 88, 0.3) 0%,
+        rgba(51, 78, 88, 0.1) 50%,
+        rgba(51, 78, 88, 0.5) 100%
+      );
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    /* Status text */
+    #status {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #FCBFB7;
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 28px;
+      font-weight: 300;
+      text-align: center;
+      z-index: 10;
+      text-shadow: 0 2px 20px rgba(0,0,0,0.5);
+      padding: 12px 30px;
+      background: rgba(51, 78, 88, 0.6);
+      border-radius: 50px;
+      backdrop-filter: blur(10px);
+    }
+
+    /* App branding - top left */
+    #branding {
+      position: fixed;
+      top: 30px;
+      left: 40px;
+      color: rgba(252, 191, 183, 0.8);
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      z-index: 10;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+
+    /* Audio visualizer dots */
+    #visualizer {
+      position: fixed;
+      bottom: 100px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+    }
+    .viz-dot {
+      width: 8px;
+      height: 8px;
+      background: #FCBFB7;
+      border-radius: 50%;
+      opacity: 0.6;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    .viz-dot:nth-child(1) { animation-delay: 0s; }
+    .viz-dot:nth-child(2) { animation-delay: 0.2s; }
+    .viz-dot:nth-child(3) { animation-delay: 0.4s; }
+    .viz-dot:nth-child(4) { animation-delay: 0.6s; }
+    .viz-dot:nth-child(5) { animation-delay: 0.8s; }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.4; }
+      50% { transform: scale(1.5); opacity: 1; }
+    }
+
+    /* Hide default cast player */
+    #player { display: none; }
   </style>
 </head>
 <body>
   <cast-media-player id="player"></cast-media-player>
-  <div id="status">PC Nest Speaker v2</div>
+
+  <!-- Ambient video background -->
+  <video id="ambient-video" muted loop playsinline></video>
+  <div id="overlay"></div>
+
+  <!-- UI elements -->
+  <div id="branding">PC NEST SPEAKER</div>
+  <div id="visualizer">
+    <div class="viz-dot"></div>
+    <div class="viz-dot"></div>
+    <div class="viz-dot"></div>
+    <div class="viz-dot"></div>
+    <div class="viz-dot"></div>
+  </div>
+  <div id="status">Waiting for connection...</div>
+
+  <!-- WebRTC audio element (invisible) -->
   <audio id="webrtc-audio" autoplay></audio>
 
   <script>
     const WEBRTC_NAMESPACE = 'urn:x-cast:com.pcnestspeaker.webrtc';
 
-    // Cast framework setup
+    // ===================
+    // Ambient Video System - Free CC0 videos from Pexels (CORS-enabled)
+    // ===================
+    const ambientVideos = [
+      // Ocean & Water
+      'https://videos.pexels.com/video-files/3571264/3571264-uhd_2560_1440_30fps.mp4',  // Ocean waves aerial
+      'https://videos.pexels.com/video-files/1093662/1093662-uhd_2560_1440_30fps.mp4',  // Beach sunset waves
+      'https://videos.pexels.com/video-files/2098989/2098989-uhd_2560_1440_30fps.mp4',  // Waterfall
+      'https://videos.pexels.com/video-files/1409899/1409899-uhd_2560_1440_25fps.mp4',  // Calm ocean
+
+      // Clouds & Sky
+      'https://videos.pexels.com/video-files/1918465/1918465-uhd_2560_1440_24fps.mp4',  // Clouds timelapse
+      'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_24fps.mp4',  // Northern lights
+      'https://videos.pexels.com/video-files/857195/857195-hd_1920_1080_25fps.mp4',     // Sunset clouds
+
+      // Forest & Nature
+      'https://videos.pexels.com/video-files/857251/857251-hd_1920_1080_25fps.mp4',     // Forest mist
+      'https://videos.pexels.com/video-files/3125908/3125908-uhd_2560_1440_30fps.mp4',  // Mountain lake
+      'https://videos.pexels.com/video-files/2871916/2871916-uhd_2560_1440_24fps.mp4',  // Green forest aerial
+
+      // Mountains & Landscapes
+      'https://videos.pexels.com/video-files/1448735/1448735-uhd_2560_1440_24fps.mp4',  // Desert dunes
+      'https://videos.pexels.com/video-files/3015510/3015510-uhd_2560_1440_24fps.mp4',  // Snowy mountains
+      'https://videos.pexels.com/video-files/2169880/2169880-uhd_2560_1440_30fps.mp4',  // Valley mist
+
+      // Space & Stars
+      'https://videos.pexels.com/video-files/1851190/1851190-uhd_2560_1440_30fps.mp4',  // Stars timelapse
+      'https://videos.pexels.com/video-files/5765760/5765760-uhd_2560_1440_25fps.mp4',  // Milky way
+      'https://videos.pexels.com/video-files/4770815/4770815-uhd_2560_1440_30fps.mp4',  // Earth from space
+
+      // Underwater & Sea Life
+      'https://videos.pexels.com/video-files/855049/855049-hd_1920_1080_30fps.mp4',     // Coral reef fish
+      'https://videos.pexels.com/video-files/4812204/4812204-uhd_2560_1440_25fps.mp4',  // Jellyfish
+      'https://videos.pexels.com/video-files/2556126/2556126-uhd_2560_1440_30fps.mp4',  // Ocean underwater
+
+      // Fire & Abstract
+      'https://videos.pexels.com/video-files/856798/856798-hd_1920_1080_25fps.mp4',     // Campfire flames
+      'https://videos.pexels.com/video-files/2795173/2795173-uhd_2560_1440_25fps.mp4',  // Abstract particles
+      'https://videos.pexels.com/video-files/3129671/3129671-uhd_2560_1440_30fps.mp4',  // City night lights
+
+      // Nature & Flowers
+      'https://videos.pexels.com/video-files/2611168/2611168-uhd_2560_1440_25fps.mp4',  // Flowers field
+      'https://videos.pexels.com/video-files/4763830/4763830-uhd_2560_1440_30fps.mp4',  // Cherry blossoms
+
+      // Rain & Weather
+      'https://videos.pexels.com/video-files/2491280/2491280-uhd_2560_1440_24fps.mp4',  // Rain on window
+      'https://videos.pexels.com/video-files/1906831/1906831-uhd_2560_1440_25fps.mp4',  // Storm clouds
+
+      // Driving & Roads
+      'https://videos.pexels.com/video-files/3015509/3015509-uhd_2560_1440_24fps.mp4',  // Mountain road drive
+      'https://videos.pexels.com/video-files/2795401/2795401-uhd_2560_1440_25fps.mp4',  // Highway night
+
+      // Animals
+      'https://videos.pexels.com/video-files/856973/856973-hd_1920_1080_25fps.mp4',     // Birds flying
+      'https://videos.pexels.com/video-files/4091636/4091636-uhd_2560_1440_25fps.mp4',  // Fish school
+    ];
+
+    let currentVideoIndex = 0;
+    const ambientVideo = document.getElementById('ambient-video');
+
+    function loadNextAmbientVideo() {
+      // Fade out current video
+      ambientVideo.classList.remove('visible');
+
+      setTimeout(() => {
+        // Pick next video (random or sequential)
+        currentVideoIndex = Math.floor(Math.random() * ambientVideos.length);
+        ambientVideo.src = ambientVideos[currentVideoIndex];
+        ambientVideo.load();
+      }, 1000); // Wait for fade out
+    }
+
+    ambientVideo.addEventListener('loadeddata', () => {
+      console.log('[Ambient] Video loaded, playing...');
+      ambientVideo.play().then(() => {
+        ambientVideo.classList.add('visible');
+      }).catch(e => console.log('[Ambient] Autoplay blocked:', e.message));
+    });
+
+    ambientVideo.addEventListener('ended', () => {
+      console.log('[Ambient] Video ended, loading next...');
+      loadNextAmbientVideo();
+    });
+
+    ambientVideo.addEventListener('error', (e) => {
+      console.log('[Ambient] Video error, trying next...');
+      loadNextAmbientVideo();
+    });
+
+    // Start first ambient video
+    function startAmbientVideos() {
+      console.log('[Ambient] Starting ambient video playlist');
+      currentVideoIndex = Math.floor(Math.random() * ambientVideos.length);
+      ambientVideo.src = ambientVideos[currentVideoIndex];
+      ambientVideo.load();
+    }
+
+    // ===================
+    // Cast Framework Setup
+    // ===================
     const context = cast.framework.CastReceiverContext.getInstance();
     const playerManager = context.getPlayerManager();
     const playbackConfig = new cast.framework.PlaybackConfig();
@@ -47,12 +257,10 @@
     playerManager.setPlaybackConfig(playbackConfig);
 
     // ===================
-    // WebRTC via MediaMTX WHEP (WebRTC-HTTP Egress Protocol)
-    // Much simpler than webrtc-streamer - just POST offer, get answer
+    // WebRTC via MediaMTX WHEP
     // ===================
     let peerConnection = null;
-    let whepResourceUrl = null;  // URL returned by WHEP for session management
-    let isConnecting = false;  // Lock to prevent multiple connection attempts
+    let whepResourceUrl = null;
     const audioElement = document.getElementById('webrtc-audio');
 
     function log(msg) {
@@ -60,107 +268,59 @@
       document.getElementById('status').textContent = msg;
     }
 
-    // Hide default media player when using WebRTC
     function hideDefaultPlayer() {
       const player = document.getElementById('player');
       if (player) player.style.display = 'none';
     }
 
-    /**
-     * Connect to MediaMTX server via WHEP protocol
-     * WHEP endpoint: {serverUrl}/pcaudio/whep
-     */
     async function connectToMediaMTX(serverUrl, streamName = 'pcaudio') {
-      // Prevent multiple simultaneous connection attempts
-      if (isConnecting) {
-        log('Already connecting, ignoring...');
-        return;
-      }
-      isConnecting = true;
+      log('Connecting...');
 
-      // Clean up any existing connection first
-      if (peerConnection) {
-        log('Cleaning up existing connection...');
-        disconnect();
-      }
+      // Start ambient videos when connecting
+      startAmbientVideos();
 
-      log('Connecting to MediaMTX...');
-
-      // ICE configuration with TURN servers for NAT traversal
       const iceConfig = {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          }
-        ]
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
       };
 
       peerConnection = new RTCPeerConnection(iceConfig);
-      log('PeerConnection created');
 
-      // Handle incoming audio track
       peerConnection.ontrack = (event) => {
-        log('Track received: ' + event.track.kind);
-        console.log('[WebRTC] Track event:', event);
-        console.log('[WebRTC] Track:', event.track);
-        console.log('[WebRTC] Streams:', event.streams);
+        console.log('[WebRTC] Track received:', event.track.kind);
 
         if (event.track.kind === 'audio') {
-          log('Audio track: ' + event.track.id);
           if (event.streams && event.streams[0]) {
             audioElement.srcObject = event.streams[0];
-            log('Stream attached to audio element');
 
-            // Try to play with user gesture workaround
             audioElement.muted = false;
             audioElement.volume = 1.0;
 
             audioElement.play().then(() => {
-              log('Playing! Vol=' + audioElement.volume);
+              log('Streaming audio...');
             }).catch(e => {
-              log('Play error: ' + e.message);
-              // Try muted first then unmute (autoplay workaround)
               audioElement.muted = true;
               audioElement.play().then(() => {
-                log('Playing muted, unmuting...');
                 setTimeout(() => {
                   audioElement.muted = false;
-                  log('Unmuted! Vol=' + audioElement.volume);
+                  log('Streaming audio...');
                 }, 100);
-              }).catch(e2 => log('Muted play failed: ' + e2.message));
+              }).catch(e2 => log('Play failed'));
             });
           } else {
-            log('No streams in track event!');
-            // Try using track directly
             const stream = new MediaStream([event.track]);
             audioElement.srcObject = stream;
-            audioElement.play().catch(e => log('Direct track play error: ' + e.message));
+            audioElement.play().catch(e => log('Play error'));
           }
         }
       };
 
       peerConnection.onconnectionstatechange = () => {
         const state = peerConnection.connectionState;
-        log('Connection: ' + state);
+        console.log('[WebRTC] Connection state:', state);
         if (state === 'connected') {
-          log('WebRTC Connected!');
+          log('Streaming audio...');
         } else if (state === 'failed') {
-          log('Connection failed - retrying...');
-          // Auto-retry on failure
+          log('Reconnecting...');
           setTimeout(() => {
             disconnect();
             connectToMediaMTX(serverUrl, streamName);
@@ -168,19 +328,11 @@
         }
       };
 
-      peerConnection.oniceconnectionstatechange = () => {
-        log('ICE: ' + peerConnection.iceConnectionState);
-      };
-
-      // Add transceiver to receive audio (recvonly)
       peerConnection.addTransceiver('audio', { direction: 'recvonly' });
 
-      // Create SDP offer
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
-      log('Created offer');
 
-      // Wait for ICE gathering to complete (or timeout after 2s)
       await new Promise((resolve) => {
         if (peerConnection.iceGatheringState === 'complete') {
           resolve();
@@ -192,84 +344,43 @@
             }
           };
           peerConnection.addEventListener('icegatheringstatechange', checkState);
-          // Timeout after 2 seconds
           setTimeout(resolve, 2000);
         }
       });
 
-      log('ICE gathering complete');
-
-      // Send offer to MediaMTX WHEP endpoint
       const whepUrl = serverUrl + '/' + streamName + '/whep';
-      log('WHEP URL: ' + whepUrl);
+      console.log('[WebRTC] WHEP URL:', whepUrl);
 
       try {
-        log('Fetching: ' + whepUrl);
         const response = await fetch(whepUrl, {
           method: 'POST',
           mode: 'cors',
-          headers: {
-            'Content-Type': 'application/sdp'
-          },
+          headers: { 'Content-Type': 'application/sdp' },
           body: peerConnection.localDescription.sdp
         });
 
-        log('Response status: ' + response.status);
-
         if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error('WHEP error ' + response.status + ': ' + errorText);
+          throw new Error('WHEP error ' + response.status);
         }
 
-        // Get resource URL for session management (DELETE to stop)
         const location = response.headers.get('Location');
         if (location) {
-          // Handle relative URLs
-          if (location.startsWith('/')) {
-            whepResourceUrl = serverUrl + location;
-          } else {
-            whepResourceUrl = location;
-          }
-          log('Session URL: ' + whepResourceUrl);
+          whepResourceUrl = location.startsWith('/') ? serverUrl + location : location;
         }
 
-        // Get SDP answer
         const answerSdp = await response.text();
-        log('Got SDP answer (' + answerSdp.length + ' bytes)');
-
-        // Check PeerConnection state before setting remote description
-        log('PC state: ' + peerConnection.signalingState);
-        if (peerConnection.signalingState !== 'have-local-offer') {
-          log('ERROR: Wrong state for setRemoteDescription! Expected have-local-offer, got ' + peerConnection.signalingState);
-          throw new Error('Invalid state: ' + peerConnection.signalingState);
-        }
-
-        // Set remote description
-        await peerConnection.setRemoteDescription({
-          type: 'answer',
-          sdp: answerSdp
-        });
-        log('Set remote description');
-        isConnecting = false;  // Release lock on success
+        await peerConnection.setRemoteDescription({ type: 'answer', sdp: answerSdp });
 
       } catch (e) {
-        log('Error: ' + e.name + ': ' + e.message);
-        console.error('WHEP error details:', e);
-        console.error('Error name:', e.name);
-        console.error('Error message:', e.message);
-        console.error('Error stack:', e.stack);
-        isConnecting = false;  // Release lock on error
+        log('Connection error');
+        console.error('[WebRTC] Error:', e);
       }
     }
 
     function disconnect() {
       if (peerConnection) {
-        // Send DELETE to WHEP resource URL to clean up server-side
         if (whepResourceUrl) {
-          fetch(whepResourceUrl, {
-            method: 'DELETE',
-            headers: { 'bypass-tunnel-reminder': 'true' }
-          }).catch(() => {});
+          fetch(whepResourceUrl, { method: 'DELETE' }).catch(() => {});
           whepResourceUrl = null;
         }
         peerConnection.close();
@@ -279,73 +390,49 @@
       }
     }
 
-    // Handle Cast messages (for starting/stopping WebRTC)
     function handleMessage(event) {
-      log('Message: ' + JSON.stringify(event.data));
+      console.log('[Cast] Message:', event.data);
       const data = event.data;
 
       switch (data.type) {
         case 'connect':
           if (data.url) {
             connectToMediaMTX(data.url, data.stream || 'pcaudio');
-          } else {
-            log('Error: No URL provided');
           }
           break;
         case 'disconnect':
         case 'close':
           disconnect();
           break;
-        default:
-          log('Unknown: ' + data.type);
       }
     }
 
-    // Register custom message handler
     context.addCustomMessageListener(WEBRTC_NAMESPACE, handleMessage);
 
-    // CRITICAL: Set up LOAD interceptor BEFORE context.start()
-    // This intercepts all media load requests to check for WebRTC URLs
     playerManager.setMessageInterceptor(
       cast.framework.messages.MessageType.LOAD,
       (request) => {
-        log('LOAD intercepted');
-
-        // Method 1: Check contentId for webrtc:// prefix (most reliable)
-        // Format: webrtc://actual-https-url/path
         if (request.media && request.media.contentId) {
           const contentId = request.media.contentId;
-          log('contentId: ' + contentId);
 
           if (contentId.startsWith('webrtc://')) {
-            // Extract the actual HTTPS URL from webrtc://https://example.com/path
             const httpsUrl = contentId.replace('webrtc://', '');
-            log('WebRTC URL: ' + httpsUrl);
-            hideDefaultPlayer();  // Hide default media player UI
+            hideDefaultPlayer();
             connectToMediaMTX(httpsUrl, 'pcaudio');
-            return null;  // Cancel default media player
-          }
-        }
-
-        // Method 2: Check media.customData
-        if (request.media && request.media.customData) {
-          log('customData: ' + JSON.stringify(request.media.customData));
-          if (request.media.customData.webrtcUrl) {
-            log('WebRTC URL: ' + request.media.customData.webrtcUrl);
-            connectToMediaMTX(request.media.customData.webrtcUrl, request.media.customData.stream || 'pcaudio');
             return null;
           }
         }
 
-        // Method 3: Check root-level customData
+        if (request.media && request.media.customData && request.media.customData.webrtcUrl) {
+          connectToMediaMTX(request.media.customData.webrtcUrl, request.media.customData.stream || 'pcaudio');
+          return null;
+        }
+
         if (request.customData && request.customData.webrtcUrl) {
-          log('WebRTC URL: ' + request.customData.webrtcUrl);
           connectToMediaMTX(request.customData.webrtcUrl, request.customData.stream || 'pcaudio');
           return null;
         }
 
-        // Not WebRTC - handle as regular media
-        log('Regular media: ' + (request.media ? request.media.contentId : 'none'));
         if (request.media) {
           request.media.streamType = cast.framework.messages.StreamType.LIVE;
           request.autoplay = true;
@@ -355,7 +442,6 @@
       }
     );
 
-    // Start receiver (AFTER interceptor is set up)
     context.start({
       playbackConfig: playbackConfig,
       skipPlayersLoad: false,
@@ -366,7 +452,7 @@
       }
     });
 
-    log('Ready - Waiting for URL...');
+    log('Waiting for connection...');
   </script>
 </body>
 </html>

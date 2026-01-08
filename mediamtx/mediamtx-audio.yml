@@ -73,9 +73,19 @@ webrtcLocalTCPAddress: :8189
 webrtcHandshakeTimeout: 10s
 webrtcTrackGatherTimeout: 2s
 webrtcSTUNGatherTimeout: 5s
-# Add Google STUN server for NAT traversal
+# ICE servers for NAT traversal
+# Google STUN + Open Relay TURN for fallback relay
 webrtcICEServers2:
   - url: stun:stun.l.google.com:19302
+  - url: turn:openrelay.metered.ca:80
+    username: openrelayproject
+    password: openrelayproject
+  - url: turn:openrelay.metered.ca:443
+    username: openrelayproject
+    password: openrelayproject
+  - url: turn:openrelay.metered.ca:443?transport=tcp
+    username: openrelayproject
+    password: openrelayproject
 
 ###############################################
 # SRT server - disabled (not needed)

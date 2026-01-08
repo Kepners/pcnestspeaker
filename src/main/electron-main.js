@@ -971,13 +971,13 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         sendLog(`WebRTC URL: ${webrtcUrl}`, 'success');
       }
 
-      // Step 4: Launch custom receiver with PROXY SIGNALING
-      // PC proxies WHEP requests to avoid mixed content (HTTPS receiver -> HTTP MediaMTX)
+      // Step 4: Launch custom receiver - send URL directly (NO PROXY!)
+      // Receiver fetches from MediaMTX directly using local HTTP URL
       const speaker = discoveredSpeakers.find(s => s.name === speakerName);
       const speakerIp = speaker ? speaker.ip : null;
 
-      sendLog(`Connecting via proxy signaling to ${speakerName}${speakerIp ? ` (${speakerIp})` : ''}...`);
-      const args = ['webrtc-proxy-connect', speakerName, webrtcUrl];
+      sendLog(`Connecting to ${speakerName}${speakerIp ? ` (${speakerIp})` : ''}...`);
+      const args = ['webrtc-launch', speakerName, webrtcUrl];
       if (speakerIp) args.push(speakerIp);
       args.push('pcaudio'); // stream name
       const result = await runPython(args);
@@ -1539,10 +1539,10 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     const localIp = getLocalIp();
     const webrtcUrl = `http://${localIp}:8889`;
 
-    // 5. Cast to LEFT speaker via PROXY SIGNALING
-    sendLog(`Connecting to LEFT speaker: "${leftSpeaker.name}" via proxy...`);
+    // 5. Cast to LEFT speaker (NO PROXY - direct WebRTC)
+    sendLog(`Connecting to LEFT speaker: "${leftSpeaker.name}"...`);
     const leftResult = await runPython([
-      'webrtc-proxy-connect',
+      'webrtc-launch',
       leftSpeaker.name,
       webrtcUrl,
       leftSpeaker.ip || '', // Use cached IP if available
@@ -1554,10 +1554,10 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     }
     sendLog(`LEFT speaker connected`, 'success');
 
-    // 6. Cast to RIGHT speaker via PROXY SIGNALING
-    sendLog(`Connecting to RIGHT speaker: "${rightSpeaker.name}" via proxy...`);
+    // 6. Cast to RIGHT speaker (NO PROXY - direct WebRTC)
+    sendLog(`Connecting to RIGHT speaker: "${rightSpeaker.name}"...`);
     const rightResult = await runPython([
-      'webrtc-proxy-connect',
+      'webrtc-launch',
       rightSpeaker.name,
       webrtcUrl,
       rightSpeaker.ip || '', // Use cached IP if available
