@@ -39,8 +39,7 @@ function startDaemon() {
 
     daemonProcess = spawn(pythonPath, [scriptPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-      shell: process.platform === 'win32'
+      windowsHide: true
     });
 
     // Read JSON responses from stdout

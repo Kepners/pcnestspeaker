@@ -248,8 +248,7 @@ class ChromecastManager {
       // Use pythonw on Windows (no console window), fallback to python
       const pythonCmd = process.platform === 'win32' ? 'pythonw' : 'python';
       const python = spawn(pythonCmd, [pythonScript, 'cast', speakerName, streamUrl, contentType], {
-        windowsHide: true,
-        shell: process.platform === 'win32'
+        windowsHide: true
       });
 
       let stdout = '';
@@ -301,8 +300,7 @@ class ChromecastManager {
       // Use pythonw on Windows (no console window), fallback to python
       const pythonCmd = process.platform === 'win32' ? 'pythonw' : 'python';
       const python = spawn(pythonCmd, [pythonScript, 'stop', speakerName], {
-        windowsHide: true,
-        shell: process.platform === 'win32'
+        windowsHide: true
       });
 
       python.on('close', () => {
