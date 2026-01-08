@@ -309,7 +309,8 @@
       peerConnection = new RTCPeerConnection(iceConfig);
 
       peerConnection.ontrack = (event) => {
-        console.log('[WebRTC] Track received:', event.track.kind);
+        console.log('[WebRTC] Track received:', event.track.kind, event.track.readyState, event.track.muted);
+        log('Track received!');
 
         if (event.track.kind === 'audio') {
           if (event.streams && event.streams[0]) {
