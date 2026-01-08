@@ -572,6 +572,170 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pc
         return {"success": False, "error": str(e)}
 
 
+def webrtc_proxy_connect(speaker_name, mediamtx_url, speaker_ip=None, stream_name="pcaudio"):
+    """
+    Connect to WebRTC using PROXY SIGNALING - avoids mixed content issues!
+
+    Flow:
+    1. Launch custom receiver on Cast device
+    2. Send request_offer message to receiver
+    3. Wait for SDP offer from receiver
+    4. POST offer to MediaMTX WHEP endpoint, get SDP answer
+    5. Send answer to receiver via custom namespace
+    6. WebRTC connects!
+
+    No HTTP fetch from receiver = no mixed content = works everywhere!
+    """
+    import urllib.request
+    import urllib.error
+
+    try:
+        browser = None
+
+        # Step 1: Connect to speaker
+        if speaker_ip:
+            print(f"[WebRTC-Proxy] Connecting directly to {speaker_ip}...", file=sys.stderr)
+            chromecasts, browser = pychromecast.get_listed_chromecasts(
+                friendly_names=[speaker_name],
+                known_hosts=[speaker_ip],
+                timeout=5
+            )
+            if chromecasts:
+                cast = chromecasts[0]
+            else:
+                if browser:
+                    browser.stop_discovery()
+                chromecasts, browser = pychromecast.get_listed_chromecasts(
+                    friendly_names=[speaker_name],
+                    timeout=10
+                )
+                if not chromecasts:
+                    browser.stop_discovery()
+                    return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
+                cast = chromecasts[0]
+        else:
+            print(f"[WebRTC-Proxy] Looking for '{speaker_name}'...", file=sys.stderr)
+            chromecasts, browser = pychromecast.get_listed_chromecasts(
+                friendly_names=[speaker_name],
+                timeout=10
+            )
+            if not chromecasts:
+                browser.stop_discovery()
+                return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
+            cast = chromecasts[0]
+
+        host = cast.cast_info.host if hasattr(cast, 'cast_info') else speaker_ip or 'unknown'
+        print(f"[WebRTC-Proxy] Connected to {host}, waiting for ready...", file=sys.stderr)
+        cast.wait(timeout=10)
+
+        # Step 2: Launch custom receiver
+        print(f"[WebRTC-Proxy] Launching receiver (App ID: {CUSTOM_APP_ID})...", file=sys.stderr)
+        try:
+            cast.start_app(CUSTOM_APP_ID)
+            time.sleep(3)
+            print("[WebRTC-Proxy] Receiver launched!", file=sys.stderr)
+        except Exception as app_error:
+            error_msg = str(app_error)
+            print(f"[WebRTC-Proxy] ERROR launching app: {error_msg}", file=sys.stderr)
+            if browser:
+                browser.stop_discovery()
+            if "RequestFailed" in type(app_error).__name__ or "Failed to execute start app" in error_msg:
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "error_code": "CUSTOM_RECEIVER_NOT_SUPPORTED",
+                    "fallback_available": True
+                }
+            return {"success": False, "error": error_msg}
+
+        # Step 3: Register WebRTC controller and send request_offer
+        webrtc = WebRTCController()
+        cast.register_handler(webrtc)
+
+        # Wait for receiver to be ready
+        for i in range(10):
+            cast.socket_client.receiver_controller.update_status()
+            time.sleep(0.5)
+            if cast.status and cast.status.app_id == CUSTOM_APP_ID:
+                print(f"[WebRTC-Proxy] App ready!", file=sys.stderr)
+                break
+            print(f"[WebRTC-Proxy] Waiting for app... ({i+1}/10)", file=sys.stderr)
+
+        # Send request_offer message
+        print(f"[WebRTC-Proxy] Requesting SDP offer from receiver (stream: {stream_name})...", file=sys.stderr)
+        webrtc.send_message({"type": "request_offer", "stream": stream_name})
+
+        # Step 4: Wait for SDP offer from receiver
+        print("[WebRTC-Proxy] Waiting for offer from receiver...", file=sys.stderr)
+        offer_response = webrtc.wait_for_message(timeout=15)
+
+        if not offer_response:
+            if browser:
+                browser.stop_discovery()
+            return {"success": False, "error": "Timeout waiting for offer from receiver"}
+
+        if offer_response.get('type') != 'offer':
+            print(f"[WebRTC-Proxy] Unexpected message: {offer_response.get('type')}", file=sys.stderr)
+            if browser:
+                browser.stop_discovery()
+            return {"success": False, "error": f"Unexpected message type: {offer_response.get('type')}"}
+
+        offer_sdp = offer_response.get('sdp')
+        if not offer_sdp:
+            if browser:
+                browser.stop_discovery()
+            return {"success": False, "error": "No SDP in offer"}
+
+        print(f"[WebRTC-Proxy] Got SDP offer ({len(offer_sdp)} bytes)", file=sys.stderr)
+
+        # Step 5: POST offer to MediaMTX WHEP endpoint
+        whep_url = f"{mediamtx_url}/{stream_name}/whep"
+        print(f"[WebRTC-Proxy] POSTing offer to {whep_url}...", file=sys.stderr)
+
+        req = urllib.request.Request(
+            whep_url,
+            data=offer_sdp.encode('utf-8'),
+            headers={'Content-Type': 'application/sdp'},
+            method='POST'
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=10) as response:
+                answer_sdp = response.read().decode('utf-8')
+                print(f"[WebRTC-Proxy] Got SDP answer ({len(answer_sdp)} bytes)", file=sys.stderr)
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode('utf-8') if e.fp else str(e)
+            if browser:
+                browser.stop_discovery()
+            return {"success": False, "error": f"WHEP error {e.code}: {error_body}"}
+        except urllib.error.URLError as e:
+            if browser:
+                browser.stop_discovery()
+            return {"success": False, "error": f"Cannot reach MediaMTX: {e.reason}"}
+
+        # Step 6: Send answer to receiver
+        print("[WebRTC-Proxy] Sending SDP answer to receiver...", file=sys.stderr)
+        webrtc.send_message({"type": "answer", "sdp": answer_sdp})
+
+        time.sleep(1)
+        print("[WebRTC-Proxy] Proxy signaling complete!", file=sys.stderr)
+
+        if browser:
+            browser.stop_discovery()
+
+        return {
+            "success": True,
+            "mode": "webrtc-proxy",
+            "message": "WebRTC connected via proxy signaling"
+        }
+
+    except Exception as e:
+        import traceback
+        print(f"[WebRTC-Proxy] ERROR: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        return {"success": False, "error": str(e)}
+
+
 def webrtc_signal(speaker_name, message_json):
     """Send a signaling message to the Cast receiver and wait for response."""
     try:
@@ -828,6 +992,16 @@ if __name__ == "__main__":
         speaker_ip = sys.argv[4] if len(sys.argv) > 4 else None
         stream_name = sys.argv[5] if len(sys.argv) > 5 else "pcaudio"
         result = webrtc_launch(speaker, https_url, speaker_ip, stream_name)
+        print(json.dumps(result))
+
+    elif command == "webrtc-proxy-connect" and len(sys.argv) >= 4:
+        # NEW: Proxy signaling - PC proxies WHEP requests to avoid mixed content
+        # Args: webrtc-proxy-connect <speaker_name> <mediamtx_url> [speaker_ip] [stream_name]
+        speaker = sys.argv[2]
+        mediamtx_url = sys.argv[3]
+        speaker_ip = sys.argv[4] if len(sys.argv) > 4 else None
+        stream_name = sys.argv[5] if len(sys.argv) > 5 else "pcaudio"
+        result = webrtc_proxy_connect(speaker, mediamtx_url, speaker_ip, stream_name)
         print(json.dumps(result))
 
     elif command == "webrtc-signal" and len(sys.argv) >= 4:
