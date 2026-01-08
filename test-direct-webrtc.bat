@@ -1,15 +1,19 @@
 @echo off
+setlocal enabledelayedexpansion
 title PC Nest Speaker - Direct WebRTC Test
 cd /d "%~dp0"
 
-:: Auto-detect local IP address
-for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4 Address" ^| findstr "192.168."') do (
-    set LOCAL_IP=%%a
-    goto :found_ip
+:: Auto-detect local IP (supports 192.168.x, 10.x, 172.16-31.x)
+for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4 Address"') do (
+    set "TEMP_IP=%%a"
+    set "TEMP_IP=!TEMP_IP: =!"
+    echo !TEMP_IP! | findstr /r "^192\.168\. ^10\. ^172\.1[6-9]\. ^172\.2[0-9]\. ^172\.3[0-1]\." >nul && (
+        set LOCAL_IP=!TEMP_IP!
+        goto :found_ip
+    )
 )
 :found_ip
-:: Trim spaces
-set LOCAL_IP=%LOCAL_IP: =%
+if not defined LOCAL_IP set LOCAL_IP=localhost
 
 echo =========================================
 echo  PC Nest Speaker - Direct Pipeline Test

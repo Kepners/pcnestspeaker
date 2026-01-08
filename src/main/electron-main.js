@@ -70,9 +70,16 @@ function getLocalIp() {
   const os = require('os');
   const networkInterfaces = os.networkInterfaces();
 
+  // Check for any private IP range (not just 192.168.x.x)
+  const isPrivateIP = (ip) => {
+    return ip.startsWith('192.168.') ||  // 192.168.0.0/16
+           ip.startsWith('10.') ||        // 10.0.0.0/8
+           ip.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) // 172.16.0.0/12
+  };
+
   for (const interfaceName in networkInterfaces) {
     for (const iface of networkInterfaces[interfaceName]) {
-      if (iface.family === 'IPv4' && !iface.internal && iface.address.startsWith('192.168.')) {
+      if (iface.family === 'IPv4' && !iface.internal && isPrivateIP(iface.address)) {
         return iface.address;
       }
     }
@@ -632,20 +639,7 @@ async function preStartWebRTCPipeline() {
     // Step 3: Start tunnel (or use local IP if disabled)
     let url;
     if (DISABLE_CLOUDFLARE) {
-      // Get local IP address
-      const os = require('os');
-      const networkInterfaces = os.networkInterfaces();
-      let localIP = 'localhost';
-
-      for (const interfaceName in networkInterfaces) {
-        for (const iface of networkInterfaces[interfaceName]) {
-          if (iface.family === 'IPv4' && !iface.internal && iface.address.startsWith('192.168.')) {
-            localIP = iface.address;
-            break;
-          }
-        }
-      }
-
+      const localIP = getLocalIp();
       url = `http://${localIP}:8889`;
       sendLog(`[Background] Using local IP: ${url} (CloudFlare disabled)`, 'success');
     } else {
