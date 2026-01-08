@@ -119,7 +119,12 @@
       "Bash(reg add \"HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\" /v PCNestSpeaker /t REG_SZ /d \"\"\"C:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\start-app.bat\"\"\" /f)",
       "Bash(ipconfig:*)",
       "Bash(cmd /c \"ipconfig | find \"\"IPv4\"\"\")",
-      "Bash(cmd /c \"ipconfig\")"
+      "Bash(cmd /c \"ipconfig\")",
+      "Bash(cmd /c start \"\" \"start-app.bat\")",
+      "Bash(ffmpeg/ffmpeg.exe:*)",
+      "Bash(ping:*)",
+      "Bash(netsh advfirewall firewall add rule name=\"PC Nest Speaker ICE\" dir=in action=allow protocol=UDP localport=8189)",
+      "Bash(netsh advfirewall firewall add rule name=\"PC Nest Speaker ICE TCP\" dir=in action=allow protocol=TCP localport=8189)"
     ]
   }
 }
