@@ -62,8 +62,9 @@ let switchingToStereoMode = false;
 let webrtcPipelineReady = false;
 let webrtcPipelineError = null;
 
-// TEST: Disable CloudFlare to see if local IP works
-const DISABLE_CLOUDFLARE = false; // Must use tunnel - HTTPS receiver can't fetch HTTP
+// Local HTTP works! NO TUNNEL NEEDED (see MISTAKES_LOG.md MISTAKE #1)
+// Cast receivers CAN fetch from local network HTTP - tested and confirmed
+const DISABLE_CLOUDFLARE = true;
 
 // Helper: Get local IP address
 function getLocalIp() {
@@ -1136,7 +1137,19 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       }
 
       if (result.success) {
-        sendLog('WebRTC streaming started! (via MediaMTX)', 'success');
+        // Check verification status from Python
+        if (result.verified) {
+          sendLog('✓ WebRTC streaming verified - audio is playing!', 'success');
+        } else if (result.warning === 'no_data') {
+          sendLog('⚠ Connected but NO AUDIO FLOWING (bytesSent=0)', 'warning');
+          sendLog('⚠ ICE negotiation may have failed - check if device turned on', 'warning');
+        } else if (result.warning === 'no_session') {
+          sendLog('⚠ No WebRTC session found - device may not have connected', 'warning');
+          sendLog('⚠ Try: 1) Turn on TV manually, 2) Check network, 3) Restart app', 'warning');
+        } else {
+          sendLog('WebRTC message sent (verification skipped)', 'success');
+        }
+
         trayManager.updateTrayState(true); // Update tray to streaming state
         usageTracker.startTracking(); // Start tracking usage time
 
@@ -1266,7 +1279,17 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           const tunnelResult = await runPython(tunnelArgs);
 
           if (tunnelResult.success) {
-            sendLog('WebRTC streaming started! (via tunnel)', 'success');
+            // Check verification status from Python
+            if (tunnelResult.verified) {
+              sendLog('✓ WebRTC streaming verified (via tunnel) - audio is playing!', 'success');
+            } else if (tunnelResult.warning === 'no_data') {
+              sendLog('⚠ Connected but NO AUDIO FLOWING (bytesSent=0)', 'warning');
+            } else if (tunnelResult.warning === 'no_session') {
+              sendLog('⚠ No WebRTC session found - device may not have connected', 'warning');
+            } else {
+              sendLog('WebRTC message sent via tunnel (verification skipped)', 'success');
+            }
+
             trayManager.updateTrayState(true);
             usageTracker.startTracking();
 
@@ -1697,7 +1720,16 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     if (!leftResult.success) {
       throw new Error(`Left speaker cast failed: ${leftResult.error}`);
     }
-    sendLog(`LEFT speaker connected`, 'success');
+    // Show verification status for LEFT
+    if (leftResult.verified) {
+      sendLog(`✓ LEFT speaker verified - audio playing!`, 'success');
+    } else if (leftResult.warning === 'no_data') {
+      sendLog(`⚠ LEFT: Connected but NO AUDIO (bytesSent=0)`, 'warning');
+    } else if (leftResult.warning === 'no_session') {
+      sendLog(`⚠ LEFT: No WebRTC session - speaker may not have turned on`, 'warning');
+    } else {
+      sendLog(`LEFT speaker connected (unverified)`, 'success');
+    }
 
     // 6. Cast to RIGHT speaker (NO PROXY - direct WebRTC)
     sendLog(`Connecting to RIGHT speaker: "${rightSpeaker.name}"...`);
@@ -1712,9 +1744,24 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     if (!rightResult.success) {
       throw new Error(`Right speaker cast failed: ${rightResult.error}`);
     }
-    sendLog(`RIGHT speaker connected`, 'success');
+    // Show verification status for RIGHT
+    if (rightResult.verified) {
+      sendLog(`✓ RIGHT speaker verified - audio playing!`, 'success');
+    } else if (rightResult.warning === 'no_data') {
+      sendLog(`⚠ RIGHT: Connected but NO AUDIO (bytesSent=0)`, 'warning');
+    } else if (rightResult.warning === 'no_session') {
+      sendLog(`⚠ RIGHT: No WebRTC session - speaker may not have turned on`, 'warning');
+    } else {
+      sendLog(`RIGHT speaker connected (unverified)`, 'success');
+    }
 
-    sendLog('Stereo separation streaming active!', 'success');
+    // Final status based on both speakers
+    const bothVerified = leftResult.verified && rightResult.verified;
+    if (bothVerified) {
+      sendLog('✓ Stereo separation verified - both speakers playing!', 'success');
+    } else {
+      sendLog('Stereo mode started - verify audio on both speakers', 'success');
+    }
     trayManager.updateTrayState(true); // Update tray to streaming state
     usageTracker.startTracking(); // Start tracking usage time
 

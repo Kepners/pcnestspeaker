@@ -558,14 +558,80 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pc
             print(f"[WebRTC] Sending message: {message}", file=sys.stderr)
             webrtc_controller.send_message(message)
 
+            # Wait for message to be processed
             time.sleep(2)
             print("[WebRTC] URL sent via custom namespace!", file=sys.stderr)
+
+            # VERIFICATION: Check MediaMTX API to see if a WebRTC session was created
+            # This tells us the receiver actually connected and is receiving data
+            import urllib.request
+            import urllib.error
+
+            # MediaMTX API is always on localhost (even when using tunnel)
+            mediamtx_api = "http://localhost:9997"
+            if https_url:
+                print(f"[WebRTC] Verifying connection via MediaMTX API...", file=sys.stderr)
+                connected = False
+                data_flowing = False
+
+                # Poll for up to 10 seconds to verify connection
+                for attempt in range(10):
+                    try:
+                        api_url = f"{mediamtx_api}/v3/webrtcsessions/list"
+                        req = urllib.request.Request(api_url, method='GET')
+                        with urllib.request.urlopen(req, timeout=2) as resp:
+                            sessions_data = json.loads(resp.read().decode())
+                            sessions = sessions_data.get('items', [])
+
+                            # Look for session on our stream
+                            for session in sessions:
+                                if stream_name in session.get('path', ''):
+                                    connected = True
+                                    bytes_sent = session.get('bytesSent', 0)
+                                    if bytes_sent > 0:
+                                        data_flowing = True
+                                        print(f"[WebRTC] ✓ Session found! bytesSent={bytes_sent}", file=sys.stderr)
+                                        break
+
+                            if data_flowing:
+                                break
+                            elif connected:
+                                print(f"[WebRTC] Session exists but bytesSent=0, waiting... ({attempt+1}/10)", file=sys.stderr)
+                            else:
+                                print(f"[WebRTC] No session yet, waiting... ({attempt+1}/10)", file=sys.stderr)
+
+                    except Exception as api_err:
+                        print(f"[WebRTC] API check failed: {api_err}", file=sys.stderr)
+
+                    time.sleep(1)
+
+                # Report verification result
+                if data_flowing:
+                    print(f"[WebRTC] ✓ VERIFIED: Audio streaming to receiver!", file=sys.stderr)
+                elif connected:
+                    print(f"[WebRTC] ⚠ WARNING: Session exists but NO DATA flowing (bytesSent=0)", file=sys.stderr)
+                    print(f"[WebRTC] ⚠ ICE negotiation may have failed - check receiver logs", file=sys.stderr)
+                else:
+                    print(f"[WebRTC] ✗ WARNING: No WebRTC session found - receiver may not have connected", file=sys.stderr)
+                    print(f"[WebRTC] ✗ Possible causes: TV didn't wake up, receiver didn't load, network issue", file=sys.stderr)
+
+                return {
+                    "success": True,  # Still return success since we sent the message
+                    "mode": "webrtc",
+                    "url": https_url or "none",
+                    "message": "Receiver launched with WebRTC URL",
+                    "verified": data_flowing,
+                    "session_connected": connected,
+                    "warning": None if data_flowing else ("no_data" if connected else "no_session")
+                }
 
         return {
             "success": True,
             "mode": "webrtc",
             "url": https_url or "none",
-            "message": "Receiver launched with WebRTC URL"
+            "message": "Receiver launched with WebRTC URL",
+            "verified": False,
+            "warning": "no_url_provided"
         }
 
     except Exception as e:
