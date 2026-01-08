@@ -617,6 +617,7 @@ function renderSpeakers() {
     const isLeft = stereoMode.leftSpeaker === index;
     const isRight = stereoMode.rightSpeaker === index;
     const isSelected = selectedSpeaker && selectedSpeaker.name === speaker.name;
+    const isActivelyStreaming = isSelected && isStreaming;
 
     // Detect if this is a group, TV, or stereo pair (already outputs stereo)
     // cast_type: "group" = multi-room group OR stereo pair (always stereo)
@@ -648,7 +649,7 @@ function renderSpeakers() {
          <div class="info-btn-placeholder"></div>`;
 
     return `
-    <div class="speaker-item ${isSelected ? 'selected' : ''} ${isLeft ? 'speaker-left' : ''} ${isRight ? 'speaker-right' : ''}" data-index="${index}">
+    <div class="speaker-item ${isSelected ? 'selected' : ''} ${isActivelyStreaming ? 'streaming' : ''} ${isLeft ? 'speaker-left' : ''} ${isRight ? 'speaker-right' : ''}" data-index="${index}">
       <div class="speaker-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="4" y="2" width="16" height="20" rx="2"/>
@@ -1042,6 +1043,7 @@ async function startStreamingToSpeaker(index, clearStereoState = true) {
 
   // Start streaming to selected speaker
   log(`Starting stream to ${speaker.name}...`);
+  showLoading('Connecting...');
 
   try {
     const result = await window.api.startStreaming(
