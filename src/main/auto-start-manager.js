@@ -41,16 +41,20 @@ function isAutoStartEnabled() {
 function enableAutoStart() {
   return new Promise((resolve, reject) => {
     // Get path to executable
-    // In dev mode, this will be electron.exe
     // In production, this will be "PC Nest Speaker.exe"
+    // In dev mode, use the start-app.bat which handles ELECTRON_RUN_AS_NODE properly
     const exePath = process.execPath;
     const projectPath = path.join(__dirname, '../..');
 
-    // For REG ADD with paths containing spaces, we need to escape the inner quotes
-    // The entire /d value must be wrapped, with inner quotes escaped as \"
-    const appPath = app.isPackaged
-      ? `"${exePath}"`
-      : `"\\"${exePath}\\" \\"${projectPath}\\""`;
+    let appPath;
+    if (app.isPackaged) {
+      // Production: just the exe
+      appPath = `"${exePath}"`;
+    } else {
+      // Dev mode: use the batch file which properly launches electron with the project
+      const batPath = path.join(projectPath, 'start-app.bat');
+      appPath = `"${batPath}"`;
+    }
 
     const cmd = `reg add "${REGISTRY_PATH}" /v ${AUTO_START_KEY_NAME} /t REG_SZ /d ${appPath} /f`;
 
