@@ -991,12 +991,55 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       // Receiver fetches from MediaMTX directly using local HTTP URL
       const speaker = discoveredSpeakers.find(s => s.name === speakerName);
       const speakerIp = speaker ? speaker.ip : null;
+      const isGroup = speaker && speaker.cast_type === 'group';
 
-      sendLog(`Connecting to ${speakerName}${speakerIp ? ` (${speakerIp})` : ''}...`);
-      const args = ['webrtc-launch', speakerName, webrtcUrl];
-      if (speakerIp) args.push(speakerIp);
-      args.push('pcaudio'); // stream name
-      const result = await runPython(args);
+      let result;
+
+      if (isGroup) {
+        // Cast Groups don't work with custom receivers - only leader plays!
+        // Solution: Get group members and multicast to each one individually
+        sendLog(`Detected Cast Group: "${speakerName}" - using multicast mode...`);
+
+        // Get group members
+        const membersResult = await runPython(['get-group-members', speakerName]);
+        if (!membersResult.success || !membersResult.members || membersResult.members.length === 0) {
+          sendLog(`Could not get group members: ${membersResult.error || 'No members found'}`, 'warning');
+          sendLog('Falling back to single cast (will only play on leader)...', 'warning');
+          // Fall back to regular launch
+          const args = ['webrtc-launch', speakerName, webrtcUrl];
+          if (speakerIp) args.push(speakerIp);
+          args.push('pcaudio');
+          result = await runPython(args);
+        } else {
+          // Multicast to all group members
+          const memberNames = membersResult.members.map(m => m.name);
+          const memberIps = membersResult.members.map(m => m.ip);
+          sendLog(`Group has ${membersResult.count} members: ${memberNames.join(', ')}`);
+
+          const multicastArgs = [
+            'webrtc-multicast',
+            JSON.stringify(memberNames),
+            webrtcUrl,
+            JSON.stringify(memberIps),
+            'pcaudio'
+          ];
+          result = await runPython(multicastArgs);
+
+          if (result.success) {
+            sendLog(`Multicast launched on ${result.launched.length} speakers: ${result.launched.join(', ')}`, 'success');
+            if (result.failed && result.failed.length > 0) {
+              sendLog(`Failed on ${result.failed.length} speakers: ${result.failed.map(f => f.name).join(', ')}`, 'warning');
+            }
+          }
+        }
+      } else {
+        // Single speaker - use regular launch
+        sendLog(`Connecting to ${speakerName}${speakerIp ? ` (${speakerIp})` : ''}...`);
+        const args = ['webrtc-launch', speakerName, webrtcUrl];
+        if (speakerIp) args.push(speakerIp);
+        args.push('pcaudio'); // stream name
+        result = await runPython(args);
+      }
 
       if (result.success) {
         sendLog('WebRTC streaming started! (via MediaMTX)', 'success');
@@ -1004,38 +1047,51 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         usageTracker.startTracking(); // Start tracking usage time
 
         // Start Windows volume sync - PC volume keys will control Nest
-        if (speaker) {
+        // For groups, sync volume to all member speakers
+        const speakersToSync = isGroup && result.launched
+          ? result.launched.map(name => {
+              // Find member info from discovery
+              const member = discoveredSpeakers.find(s => s.name === name);
+              return member ? { name: member.name, ip: member.ip } : { name, ip: null };
+            })
+          : speaker ? [{ name: speaker.name, ip: speaker.ip }] : [];
+
+        if (speakersToSync.length > 0) {
           volumeSync.startMonitoring(
-            [{ name: speaker.name, ip: speaker.ip }],
+            speakersToSync,
             (volume) => {
               // If boost is enabled, don't sync - speaker stays at 100%
               if (settingsManager.getSetting('volumeBoost')) {
                 return; // Skip sync when boost is on
               }
               sendLog(`[VolumeSync] Windows volume: ${volume}%`);
-              // Use daemon for instant volume control
-              if (daemonManager.isDaemonRunning()) {
-                daemonManager.setVolumeFast(speaker.name, volume / 100, speaker.ip || null).catch(() => {});
-              } else {
-                runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
-              }
+              // Set volume on all speakers
+              speakersToSync.forEach(spk => {
+                if (daemonManager.isDaemonRunning()) {
+                  daemonManager.setVolumeFast(spk.name, volume / 100, spk.ip || null).catch(() => {});
+                } else {
+                  runPython(['set-volume-fast', spk.name, (volume / 100).toString(), spk.ip || '']).catch(() => {});
+                }
+              });
             }
           );
 
-          // INITIAL SYNC: Set speaker to current Windows volume immediately (unless boost is ON)
+          // INITIAL SYNC: Set speakers to current Windows volume immediately (unless boost is ON)
           if (!settingsManager.getSetting('volumeBoost')) {
             volumeSync.getWindowsVolume().then((volume) => {
-              sendLog(`[VolumeSync] Initial sync: Setting speaker to ${volume}%`);
-              if (daemonManager.isDaemonRunning()) {
-                daemonManager.setVolumeFast(speaker.name, volume / 100, speaker.ip || null).catch(() => {});
-              } else {
-                runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
-              }
+              sendLog(`[VolumeSync] Initial sync: Setting ${speakersToSync.length} speaker(s) to ${volume}%`);
+              speakersToSync.forEach(spk => {
+                if (daemonManager.isDaemonRunning()) {
+                  daemonManager.setVolumeFast(spk.name, volume / 100, spk.ip || null).catch(() => {});
+                } else {
+                  runPython(['set-volume-fast', spk.name, (volume / 100).toString(), spk.ip || '']).catch(() => {});
+                }
+              });
             }).catch(() => {});
           }
         }
 
-        return { success: true, url: webrtcUrl, mode: streamingMode };
+        return { success: true, url: webrtcUrl, mode: streamingMode, multicast: isGroup };
       } else if (result.error_code === 'CUSTOM_RECEIVER_NOT_SUPPORTED') {
         // Custom receiver not supported - automatically fallback to HTTP streaming
         sendLog('Custom receiver not supported on this device', 'warning');
