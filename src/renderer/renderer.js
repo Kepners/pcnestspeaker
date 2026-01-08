@@ -639,7 +639,7 @@ function renderSpeakers() {
     // Info button is in its own column for alignment
     const stereoControls = isStereoDevice
       ? `<div class="stereo-toggles">
-           <span class="stereo-badge">${castType === 'group' ? 'GROUP' : 'STEREO'}</span>
+           <span class="stereo-badge ${isActivelyStreaming ? 'active' : ''}">${castType === 'group' ? 'GROUP' : 'STEREO'}</span>
          </div>
          <button class="info-btn" data-index="${index}" title="Stereo info">ⓘ</button>`
       : `<div class="stereo-toggles">

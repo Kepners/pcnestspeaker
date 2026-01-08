@@ -497,6 +497,12 @@ body::before {
   color: var(--pink);
 }
 
+.stereo-badge.active {
+  background: linear-gradient(135deg, var(--pink), var(--cyan));
+  border-color: var(--pink);
+  color: white;
+}
+
 .speaker-item.speaker-left {
   border-left: 3px solid var(--green);
 }
