@@ -57,22 +57,34 @@ def discover_speakers(timeout=12):
     """
     try:
         print(f"Scanning network (timeout: {timeout}s)...", file=sys.stderr)
+
+        # Use blocking discovery to ensure we get all devices
         chromecasts, browser = pychromecast.get_chromecasts(timeout=timeout)
+
+        print(f"Raw discovery returned {len(chromecasts)} device(s)", file=sys.stderr)
 
         speakers = []
         for cc in chromecasts:
             # pychromecast 13+ uses cast_info for host/port
             info = cc.cast_info
-            speakers.append({
+            device_data = {
                 "name": cc.name,
                 "model": info.model_name or "Chromecast",
                 "ip": info.host,
                 "port": info.port,
                 "cast_type": info.cast_type  # "audio", "cast", or "group"
-            })
-            print(f"Found: {cc.name} ({info.host}) [{info.cast_type}]", file=sys.stderr)
+            }
+            speakers.append(device_data)
+            print(f"Found: {cc.name} | Model: {info.model_name} | IP: {info.host} | Type: {info.cast_type}", file=sys.stderr)
 
         browser.stop_discovery()
+
+        # Log summary
+        audio_count = len([s for s in speakers if s['cast_type'] == 'audio'])
+        cast_count = len([s for s in speakers if s['cast_type'] == 'cast'])
+        group_count = len([s for s in speakers if s['cast_type'] == 'group'])
+        print(f"Summary: {audio_count} audio, {cast_count} cast, {group_count} group devices", file=sys.stderr)
+
         return {"success": True, "speakers": speakers}
 
     except Exception as e:
