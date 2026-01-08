@@ -1812,4 +1812,112 @@ Also fixed:
 
 ---
 
-*Last Updated: January 7, 2026*
+### January 8, 2026 (Session 20) - WebRTC ICE Troubleshooting & Firewall Discovery
+
+**Session Goal:** Fix WebRTC streaming to Green TV (NVIDIA SHIELD) which stopped working
+
+#### Problem Summary
+- WebRTC streaming to Green TV (NVIDIA SHIELD Android TV) was working "last night"
+- Today: Cast receiver launches, WHEP signaling works, but ICE negotiation FAILS
+- All WebRTC sessions show: `deadline exceeded while waiting connection`
+- HTTP streaming still works perfectly
+
+#### Investigation Steps
+
+1. **Killed stuck MediaMTX process** - User ran `taskkill /F /IM mediamtx.exe` as admin
+2. **Started fresh pipeline** - MediaMTX, FFmpeg, Cloudflared tunnel
+3. **New tunnel URL**: `https://very-ownership-solomon-tenant.trycloudflare.com`
+4. **Tested WebRTC** - Sessions created but ICE never establishes
+5. **Tested HTTP cast** - `python cast-helper.py cast "Green TV" "http://192.168.50.48:8000/stream.mp3"` → **SUCCESS**
+
+#### Root Cause Found
+**Windows Firewall blocks UDP port 8189** (ICE port for WebRTC)
+
+MediaMTX logs show the pattern:
+```
+[WebRTC] [session xxx] created by [::1]:xxxxx
+[WebRTC] [session xxx] closed: deadline exceeded while waiting connection
+```
+
+WHEP signaling works through cloudflared tunnel, but the actual peer-to-peer UDP connection cannot be established because Windows Firewall blocks incoming UDP on port 8189.
+
+#### Fixes Applied
+
+**1. Added TURN servers to receiver.html** (commit `2d978cc`)
+```javascript
+const iceConfig = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
+  ]
+};
+```
+
+**2. Added connection lock to prevent race conditions** (commit `f5630ef`)
+- Added `isConnecting` flag to prevent multiple simultaneous WHEP requests
+- Added cleanup of existing connection before starting new one
+- Added state checking before `setRemoteDescription()`:
+```javascript
+if (peerConnection.signalingState !== 'have-local-offer') {
+  throw new Error('Invalid state: ' + peerConnection.signalingState);
+}
+```
+
+**3. Created fix-firewall.bat** for users to run as admin
+```batch
+netsh advfirewall firewall add rule name="MediaMTX WebRTC UDP" dir=in action=allow protocol=UDP localport=8189
+netsh advfirewall firewall add rule name="MediaMTX WebRTC TCP" dir=in action=allow protocol=TCP localport=8189
+netsh advfirewall firewall add rule name="MediaMTX HTTP" dir=in action=allow protocol=TCP localport=8889
+netsh advfirewall firewall add rule name="MediaMTX RTSP" dir=in action=allow protocol=TCP localport=8554
+```
+
+#### Research Conducted
+- Searched DuckDuckGo for WebRTC ICE Cast issues
+- Found generativefm/play project that uses WebRTC with Cast SDK
+- Key difference: They create WebRTC connection in SENDER (browser), we create it in RECEIVER (Cast device)
+- Their approach works because sender has full network access
+
+#### Key Insights
+
+1. **HTTP Cast works** - Proves Cast connectivity is fine, issue is specifically WebRTC ICE
+2. **TURN servers help but don't solve firewall issue** - Both receiver AND server need TURN, plus UDP must not be blocked
+3. **Local network vs tunnel** - Previous fix (Session 18) showed local HTTP works better than tunnels
+4. **Firewall is the blocker** - Windows Firewall blocking UDP 8189 prevents ICE completion
+
+#### Files Created/Modified
+- `docs/receiver.html` - Added TURN servers, connection lock, state checking
+- `fix-firewall.bat` - NEW: Admin script to add firewall rules
+
+#### Git Commits
+- `2d978cc` - 🔧 fix: Add TURN servers to receiver for symmetric NAT traversal
+- `f5630ef` - 🔧 fix: Add connection lock and state checking to prevent race conditions
+
+#### Current State
+- **WebRTC**: Broken until user runs `fix-firewall.bat` as Administrator
+- **HTTP streaming**: Working with ~8 second latency
+- **User instruction**: Right-click `fix-firewall.bat` → "Run as administrator"
+
+#### Workaround
+Until firewall is fixed, use HTTP cast:
+```bash
+python src/main/cast-helper.py cast "Green TV" "http://192.168.50.48:8000/stream.mp3"
+```
+
+---
+
+*Last Updated: January 8, 2026*
