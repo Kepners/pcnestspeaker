@@ -65,9 +65,9 @@ webrtc: yes
 webrtcAddress: :8889
 webrtcEncryption: no
 webrtcAllowOrigins: ['*']
-# Force IPv4 only - Android TV may have issues with IPv6 ICE candidates
-webrtcIPsFromInterfaces: no
-webrtcAdditionalHosts: [192.168.50.48]
+# Auto-detect local IP from network interfaces (works for any user's network)
+webrtcIPsFromInterfaces: yes
+webrtcAdditionalHosts: []
 webrtcLocalUDPAddress: :8189
 webrtcLocalTCPAddress: :8189
 webrtcHandshakeTimeout: 10s
