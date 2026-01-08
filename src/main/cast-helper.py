@@ -1033,6 +1033,87 @@ def get_group_members(group_name):
         return {"success": False, "error": str(e)}
 
 
+def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None):
+    """Cast HLS stream to TV devices (NVIDIA Shield, Chromecast with screen).
+
+    TVs don't support WebRTC custom receivers, but they DO support HLS via
+    the Default Media Receiver. This provides ~2-6 second latency but works
+    reliably on all TV devices.
+
+    Args:
+        speaker_name: Name of the TV/device
+        hls_url: HLS playlist URL (e.g., http://192.168.50.48:8888/pcaudio/index.m3u8)
+        speaker_ip: Optional direct IP for faster connection
+
+    Returns:
+        { success: true, state: "PLAYING", mode: "hls" }
+    """
+    try:
+        browser = None
+
+        if speaker_ip:
+            print(f"[HLS-TV] Connecting directly to {speaker_ip}...", file=sys.stderr)
+            chromecasts, browser = pychromecast.get_listed_chromecasts(
+                friendly_names=[speaker_name],
+                known_hosts=[speaker_ip],
+                timeout=5
+            )
+            if chromecasts:
+                cast = chromecasts[0]
+            else:
+                if browser:
+                    browser.stop_discovery()
+                chromecasts, browser = pychromecast.get_listed_chromecasts(
+                    friendly_names=[speaker_name],
+                    timeout=10
+                )
+                if not chromecasts:
+                    browser.stop_discovery()
+                    return {"success": False, "error": f"Device '{speaker_name}' not found"}
+                cast = chromecasts[0]
+        else:
+            print(f"[HLS-TV] Looking for '{speaker_name}'...", file=sys.stderr)
+            chromecasts, browser = pychromecast.get_listed_chromecasts(
+                friendly_names=[speaker_name],
+                timeout=10
+            )
+            if not chromecasts:
+                browser.stop_discovery()
+                return {"success": False, "error": f"Device '{speaker_name}' not found"}
+            cast = chromecasts[0]
+
+        host = cast.cast_info.host if hasattr(cast, 'cast_info') else speaker_ip or 'unknown'
+        print(f"[HLS-TV] Connecting to {host}...", file=sys.stderr)
+        cast.wait(timeout=10)
+
+        mc = cast.media_controller
+
+        # Use Default Media Receiver with HLS content type
+        print(f"[HLS-TV] Using Default Media Receiver for HLS...", file=sys.stderr)
+        print(f"[HLS-TV] Playing: {hls_url}", file=sys.stderr)
+
+        mc.play_media(
+            hls_url,
+            "application/x-mpegURL",  # HLS MIME type
+            stream_type="LIVE",
+            autoplay=True,
+            current_time=0
+        )
+        mc.block_until_active(timeout=30)
+
+        if browser:
+            browser.stop_discovery()
+
+        print("[HLS-TV] Playback started!", file=sys.stderr)
+        return {"success": True, "state": "PLAYING", "mode": "hls"}
+
+    except Exception as e:
+        import traceback
+        print(f"[HLS-TV] ERROR: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        return {"success": False, "error": str(e)}
+
+
 def webrtc_launch_multicast(speaker_names, https_url, speaker_ips=None, stream_name="pcaudio"):
     """Launch custom receiver on MULTIPLE speakers for true multi-room audio.
 
@@ -1283,6 +1364,15 @@ if __name__ == "__main__":
         speaker_ips = json.loads(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] != "null" else None
         stream_name = sys.argv[5] if len(sys.argv) > 5 else "pcaudio"
         result = webrtc_launch_multicast(speaker_names, https_url, speaker_ips, stream_name)
+        print(json.dumps(result))
+
+    elif command == "hls-cast" and len(sys.argv) >= 4:
+        # Cast HLS stream to TV devices (NVIDIA Shield, Chromecast with screen)
+        # Args: hls-cast <device_name> <hls_url> [device_ip]
+        device_name = sys.argv[2]
+        hls_url = sys.argv[3]
+        device_ip = sys.argv[4] if len(sys.argv) > 4 else None
+        result = hls_cast_to_tv(device_name, hls_url, device_ip)
         print(json.dumps(result))
 
     else:

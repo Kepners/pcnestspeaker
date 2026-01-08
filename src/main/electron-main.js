@@ -1927,7 +1927,174 @@ ipcMain.handle('stop-stereo-streaming', async (event, leftSpeaker, rightSpeaker)
   }
 });
 
+// ========================================
+// TV HLS Streaming (for NVIDIA Shield, Chromecast with screen)
+// ========================================
+
+// Track TV streaming state
+let tvStreamingActive = false;
+let tvStreamDevice = null;
+
+ipcMain.handle('start-tv-streaming', async (event, deviceName, deviceIp = null) => {
+  try {
+    // Check if trial has expired
+    if (usageTracker.isTrialExpired()) {
+      const usage = usageTracker.getUsage();
+      return {
+        success: false,
+        error: 'Trial expired',
+        trialExpired: true,
+        usageInfo: usage
+      };
+    }
+
+    sendLog(`Starting TV streaming to "${deviceName}" via HLS...`);
+
+    // Switch Windows default audio to virtual device
+    try {
+      sendLog('Switching Windows audio to virtual device...');
+      await audioDeviceManager.switchToStreamingDevice();
+      sendLog('Audio device switched', 'success');
+    } catch (err) {
+      sendLog(`Audio switch failed: ${err.message}`, 'warning');
+    }
+
+    // 1. Start MediaMTX (if not already running) - HLS is enabled in config
+    if (!mediamtxProcess) {
+      await startMediaMTX();
+      await new Promise(r => setTimeout(r, 3000)); // Wait for MediaMTX to be ready
+    }
+
+    // 2. Start FFmpeg to publish to RTSP (MediaMTX will create HLS from this)
+    // Use same audio capture as WebRTC mode
+    if (!ffmpegWebrtcProcess) {
+      sendLog('Starting FFmpeg for HLS stream...');
+      const ffmpegPath = getFFmpegPath();
+      const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
+      const boostLevel = volumeBoostEnabled ? 1.25 : 1.03;
+
+      ffmpegWebrtcProcess = spawn(ffmpegPath, [
+        '-hide_banner', '-stats',
+        '-f', 'dshow',
+        '-i', 'audio=virtual-audio-capturer',
+        '-af', `volume=${boostLevel}`,
+        '-c:a', 'aac', // HLS works better with AAC than Opus
+        '-b:a', '128k',
+        '-ar', '48000',
+        '-ac', '2',
+        '-f', 'rtsp',
+        '-rtsp_transport', 'tcp',
+        'rtsp://localhost:8554/pcaudio'
+      ], { stdio: 'pipe', windowsHide: true });
+
+      ffmpegWebrtcProcess.stderr.on('data', (data) => {
+        const msg = data.toString();
+        if (streamStats) {
+          streamStats.parseFfmpegOutput(msg);
+        }
+        if (msg.includes('Error') || msg.includes('error')) {
+          sendLog(`FFmpeg HLS: ${msg}`, 'error');
+        }
+      });
+
+      await new Promise(r => setTimeout(r, 2000));
+    }
+
+    // 3. Build HLS URL
+    const localIp = getLocalIp();
+    const hlsUrl = `http://${localIp}:8888/pcaudio/index.m3u8`;
+    sendLog(`HLS URL: ${hlsUrl}`);
+
+    // 4. Cast HLS to TV using Python
+    sendLog(`Casting to TV: ${deviceName}...`);
+    const result = await runPython([
+      'hls-cast',
+      deviceName,
+      hlsUrl,
+      deviceIp || ''
+    ]);
+
+    if (result.success) {
+      sendLog('TV streaming started!', 'success');
+      tvStreamingActive = true;
+      tvStreamDevice = { name: deviceName, ip: deviceIp };
+      trayManager.updateTrayState(true);
+      usageTracker.startTracking();
+
+      // Start stream stats
+      if (streamStats) {
+        streamStats.start();
+      }
+
+      return {
+        success: true,
+        url: hlsUrl,
+        mode: 'hls',
+        device: deviceName
+      };
+    } else {
+      throw new Error(result.error);
+    }
+
+  } catch (error) {
+    sendLog(`TV streaming failed: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('stop-tv-streaming', async (event) => {
+  try {
+    sendLog('Stopping TV streaming...');
+
+    // Stop casting on TV
+    if (tvStreamDevice) {
+      await runPython(['stop', tvStreamDevice.name]).catch(() => {});
+      tvStreamDevice = null;
+    }
+
+    // Stop FFmpeg (but keep MediaMTX running for potential speaker streaming)
+    if (ffmpegWebrtcProcess) {
+      ffmpegWebrtcProcess.kill('SIGTERM');
+      ffmpegWebrtcProcess = null;
+    }
+
+    // Stop stream stats
+    if (streamStats) {
+      streamStats.stop();
+    }
+
+    // Restore audio device
+    try {
+      sendLog('Restoring original audio device...');
+      await audioDeviceManager.restoreOriginalDevice();
+      sendLog('Audio device restored', 'success');
+    } catch (err) {
+      sendLog(`Audio restore failed: ${err.message}`, 'warning');
+    }
+
+    tvStreamingActive = false;
+    trayManager.updateTrayState(false);
+    usageTracker.stopTracking();
+
+    sendLog('TV streaming stopped', 'success');
+    return { success: true };
+
+  } catch (error) {
+    sendLog(`Stop TV streaming failed: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-tv-streaming-status', () => {
+  return {
+    active: tvStreamingActive,
+    device: tvStreamDevice
+  };
+});
+
+// ========================================
 // Settings management
+// ========================================
 ipcMain.handle('get-settings', () => {
   return settingsManager.getAllSettings();
 });

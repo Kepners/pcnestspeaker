@@ -26,6 +26,12 @@ contextBridge.exposeInMainWorld('api', {
   stopStereoStreaming: (leftSpeaker, rightSpeaker) =>
     ipcRenderer.invoke('stop-stereo-streaming', leftSpeaker, rightSpeaker),
 
+  // TV streaming (HLS for NVIDIA Shield, Chromecast with screen)
+  startTvStreaming: (deviceName, deviceIp = null) =>
+    ipcRenderer.invoke('start-tv-streaming', deviceName, deviceIp),
+  stopTvStreaming: () => ipcRenderer.invoke('stop-tv-streaming'),
+  getTvStreamingStatus: () => ipcRenderer.invoke('get-tv-streaming-status'),
+
   // Volume control (0.0 - 1.0 for pychromecast)
   setVolume: (speakerName, volume) =>
     ipcRenderer.invoke('set-volume', speakerName, volume),
