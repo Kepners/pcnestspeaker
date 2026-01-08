@@ -52,6 +52,7 @@
     // ===================
     let peerConnection = null;
     let whepResourceUrl = null;  // URL returned by WHEP for session management
+    let isConnecting = false;  // Lock to prevent multiple connection attempts
     const audioElement = document.getElementById('webrtc-audio');
 
     function log(msg) {
@@ -70,10 +71,22 @@
      * WHEP endpoint: {serverUrl}/pcaudio/whep
      */
     async function connectToMediaMTX(serverUrl, streamName = 'pcaudio') {
+      // Prevent multiple simultaneous connection attempts
+      if (isConnecting) {
+        log('Already connecting, ignoring...');
+        return;
+      }
+      isConnecting = true;
+
+      // Clean up any existing connection first
+      if (peerConnection) {
+        log('Cleaning up existing connection...');
+        disconnect();
+      }
+
       log('Connecting to MediaMTX...');
 
-      // ICE configuration - STUN + TURN for NAT traversal
-      // TURN required for symmetric NAT on Cast devices (Android TV, Nest)
+      // ICE configuration with TURN servers for NAT traversal
       const iceConfig = {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
@@ -222,7 +235,14 @@
 
         // Get SDP answer
         const answerSdp = await response.text();
-        log('Got SDP answer');
+        log('Got SDP answer (' + answerSdp.length + ' bytes)');
+
+        // Check PeerConnection state before setting remote description
+        log('PC state: ' + peerConnection.signalingState);
+        if (peerConnection.signalingState !== 'have-local-offer') {
+          log('ERROR: Wrong state for setRemoteDescription! Expected have-local-offer, got ' + peerConnection.signalingState);
+          throw new Error('Invalid state: ' + peerConnection.signalingState);
+        }
 
         // Set remote description
         await peerConnection.setRemoteDescription({
@@ -230,6 +250,7 @@
           sdp: answerSdp
         });
         log('Set remote description');
+        isConnecting = false;  // Release lock on success
 
       } catch (e) {
         log('Error: ' + e.name + ': ' + e.message);
@@ -237,6 +258,7 @@
         console.error('Error name:', e.name);
         console.error('Error message:', e.message);
         console.error('Error stack:', e.stack);
+        isConnecting = false;  // Release lock on error
       }
     }
 
