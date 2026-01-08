@@ -858,6 +858,168 @@ def set_volume(speaker_name, volume):
         return {"success": False, "error": str(e)}
 
 
+def get_group_members(group_name):
+    """Get the individual speaker members of a Cast Group.
+
+    Cast Groups don't work with custom receivers properly - only the leader plays.
+    This function returns the member speakers so we can multi-cast to each one individually.
+
+    Args:
+        group_name: Name of the Cast Group (e.g., "Study group")
+
+    Returns:
+        { success: true, members: [{ name, ip, uuid }, ...], group_name, group_uuid }
+    """
+    from pychromecast.controllers.multizone import MultizoneController
+    import time
+
+    try:
+        print(f"[GroupMembers] Looking for group '{group_name}'...", file=sys.stderr)
+
+        # Discover all devices first to find individual speakers
+        chromecasts, browser = pychromecast.get_chromecasts(timeout=10)
+
+        # Find the group
+        group_cast = None
+        for cc in chromecasts:
+            if cc.name == group_name and cc.cast_info.cast_type == 'group':
+                group_cast = cc
+                break
+
+        if not group_cast:
+            browser.stop_discovery()
+            return {"success": False, "error": f"Group '{group_name}' not found"}
+
+        print(f"[GroupMembers] Found group, connecting...", file=sys.stderr)
+        group_cast.wait(timeout=10)
+
+        # Get group UUID
+        group_uuid = str(group_cast.uuid)
+        print(f"[GroupMembers] Group UUID: {group_uuid}", file=sys.stderr)
+
+        # Use MultizoneController to get members
+        mz = MultizoneController(group_cast.uuid)
+        group_cast.register_handler(mz)
+
+        # Request member list
+        mz.update_members()
+        time.sleep(2)  # Give time for response
+
+        # Get members - could be dict (UUID -> name) or list depending on pychromecast version
+        if hasattr(mz, 'members'):
+            if isinstance(mz.members, dict):
+                member_uuids = list(mz.members.keys())
+            elif isinstance(mz.members, list):
+                member_uuids = mz.members
+            else:
+                member_uuids = []
+            print(f"[GroupMembers] Raw members: {mz.members}", file=sys.stderr)
+        else:
+            member_uuids = []
+        print(f"[GroupMembers] Found {len(member_uuids)} member UUIDs: {member_uuids}", file=sys.stderr)
+
+        # Match member UUIDs to discovered devices to get IPs
+        members = []
+        for cc in chromecasts:
+            cc_uuid = str(cc.uuid)
+            if cc_uuid in member_uuids or cc_uuid in [str(u) for u in member_uuids]:
+                info = cc.cast_info
+                member_data = {
+                    "name": cc.name,
+                    "ip": info.host,
+                    "uuid": cc_uuid,
+                    "model": info.model_name
+                }
+                members.append(member_data)
+                print(f"[GroupMembers] Member: {cc.name} @ {info.host}", file=sys.stderr)
+
+        # If multizone didn't work, try alternative: find speakers sharing the group IP
+        if not members:
+            group_ip = group_cast.cast_info.host
+            print(f"[GroupMembers] Multizone empty, trying IP match for {group_ip}...", file=sys.stderr)
+            for cc in chromecasts:
+                info = cc.cast_info
+                # Individual speakers that share the group's IP are likely members
+                if info.host == group_ip and info.cast_type == 'audio':
+                    member_data = {
+                        "name": cc.name,
+                        "ip": info.host,
+                        "uuid": str(cc.uuid),
+                        "model": info.model_name
+                    }
+                    members.append(member_data)
+                    print(f"[GroupMembers] Member (IP match): {cc.name} @ {info.host}", file=sys.stderr)
+
+        browser.stop_discovery()
+
+        return {
+            "success": True,
+            "group_name": group_name,
+            "group_uuid": group_uuid,
+            "members": members,
+            "count": len(members)
+        }
+
+    except Exception as e:
+        import traceback
+        print(f"[GroupMembers] ERROR: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        return {"success": False, "error": str(e)}
+
+
+def webrtc_launch_multicast(speaker_names, https_url, speaker_ips=None, stream_name="pcaudio"):
+    """Launch custom receiver on MULTIPLE speakers for true multi-room audio.
+
+    This is the solution for Cast Groups - instead of casting to the group (which only
+    plays on the leader), we cast to each member individually.
+
+    Args:
+        speaker_names: List of speaker names to cast to
+        https_url: WebRTC URL to send to receivers
+        speaker_ips: Optional list of IPs (same order as names) for faster connection
+        stream_name: MediaMTX stream path
+
+    Returns:
+        { success: true, launched: ["Speaker1", "Speaker2"], failed: [] }
+    """
+    try:
+        print(f"[Multicast] Launching on {len(speaker_names)} speakers: {speaker_names}", file=sys.stderr)
+
+        launched = []
+        failed = []
+
+        # Launch receiver on each speaker
+        for i, name in enumerate(speaker_names):
+            ip = speaker_ips[i] if speaker_ips and i < len(speaker_ips) else None
+            print(f"[Multicast] Launching on '{name}' (IP: {ip})...", file=sys.stderr)
+
+            result = webrtc_launch(name, https_url, ip, stream_name)
+
+            if result.get("success"):
+                launched.append(name)
+                print(f"[Multicast] SUCCESS: {name}", file=sys.stderr)
+            else:
+                failed.append({"name": name, "error": result.get("error", "Unknown error")})
+                print(f"[Multicast] FAILED: {name} - {result.get('error')}", file=sys.stderr)
+
+            # Small delay between launches to avoid overwhelming network
+            time.sleep(0.5)
+
+        return {
+            "success": len(launched) > 0,
+            "launched": launched,
+            "failed": failed,
+            "total": len(speaker_names),
+            "mode": "multicast"
+        }
+
+    except Exception as e:
+        import traceback
+        print(f"[Multicast] ERROR: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        return {"success": False, "error": str(e)}
+
+
 def set_volume_fast(speaker_name, volume_level, speaker_ip=None):
     """Fast volume set using direct IP connection (no discovery).
 
@@ -1040,6 +1202,22 @@ if __name__ == "__main__":
         speaker = sys.argv[2]
         result = device_info(speaker)
         print(json.dumps(result, indent=2))
+
+    elif command == "get-group-members" and len(sys.argv) >= 3:
+        # Get individual speakers in a Cast Group for multi-casting
+        group_name = sys.argv[2]
+        result = get_group_members(group_name)
+        print(json.dumps(result, indent=2))
+
+    elif command == "webrtc-multicast" and len(sys.argv) >= 4:
+        # Launch WebRTC on multiple speakers simultaneously
+        # Args: webrtc-multicast <speaker_names_json> <https_url> [speaker_ips_json] [stream_name]
+        speaker_names = json.loads(sys.argv[2])  # ["Speaker1", "Speaker2"]
+        https_url = sys.argv[3]
+        speaker_ips = json.loads(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] != "null" else None
+        stream_name = sys.argv[5] if len(sys.argv) > 5 else "pcaudio"
+        result = webrtc_launch_multicast(speaker_names, https_url, speaker_ips, stream_name)
+        print(json.dumps(result))
 
     else:
         print(json.dumps({"success": False, "error": "Invalid command. Use: discover, ping, cast, webrtc-launch, set-volume, set-volume-fast, get-volume, device-info, or stop"}))
