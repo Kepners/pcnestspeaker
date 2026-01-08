@@ -1018,9 +1018,49 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       sendLog(`[DEBUG] Found speaker: ${speaker ? JSON.stringify({name: speaker.name, cast_type: speaker.cast_type}) : 'NOT FOUND'}`);
       const speakerIp = speaker ? speaker.ip : null;
       const isGroup = speaker && speaker.cast_type === 'group';
-      sendLog(`[DEBUG] isGroup=${isGroup}, speakerIp=${speakerIp}`);
+      const isTv = speaker && speaker.cast_type === 'cast';  // TVs, Shields, displays use cast_type='cast'
+      sendLog(`[DEBUG] isGroup=${isGroup}, isTv=${isTv}, speakerIp=${speakerIp}`);
 
       let result;
+
+      // TV DETECTION: Use HLS for TVs (they don't support WebRTC custom receivers)
+      if (isTv) {
+        sendLog(`📺 Detected TV device: "${speakerName}" - using HLS streaming`, 'info');
+        const localIp = getLocalIp();
+        const hlsUrl = `http://${localIp}:8888/pcaudio/index.m3u8`;
+        sendLog(`HLS URL: ${hlsUrl}`);
+
+        // Cast HLS to TV using Default Media Receiver (no custom receiver needed)
+        const args = ['hls-cast', speakerName, hlsUrl];
+        if (speakerIp) args.push(speakerIp);
+        result = await runPython(args);
+
+        if (result.success) {
+          sendLog(`📺 HLS streaming to TV started!`, 'success');
+          trayManager.updateTrayState(true);
+          usageTracker.startTracking();
+
+          // Start Windows volume sync for TV
+          if (speaker) {
+            volumeSync.startMonitoring(
+              [{ name: speaker.name, ip: speaker.ip }],
+              (volume) => {
+                if (settingsManager.getSetting('volumeBoost')) return;
+                sendLog(`[VolumeSync] Windows volume: ${volume}%`);
+                if (daemonManager.isDaemonRunning()) {
+                  daemonManager.setVolumeFast(speaker.name, volume / 100, speaker.ip || null).catch(() => {});
+                } else {
+                  runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
+                }
+              }
+            );
+          }
+
+          return { success: true, mode: 'hls', url: hlsUrl };
+        } else {
+          throw new Error(result.error || 'Failed to start HLS streaming to TV');
+        }
+      }
 
       if (isGroup) {
         // Cast Groups don't work with custom receivers - only leader plays!

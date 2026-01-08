@@ -130,6 +130,14 @@
               <span class="toggle-slider"></span>
             </label>
           </div>
+          <div class="option-row">
+            <span class="option-label">TV Ambient Visuals</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="tv-visuals-toggle" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <p class="option-hint">Show visuals on TV when streaming (TVs only)</p>
         </div>
 
         <!-- Debug Log (hidden by default) -->
@@ -171,66 +179,6 @@
         </div>
       </div>
 
-      <!-- TAB: TV Streaming -->
-      <div class="tab-content" id="tab-tv">
-        <div class="section">
-          <h2 class="section-label">TV STREAMING</h2>
-          <p class="section-hint">Stream audio to TVs like NVIDIA Shield, Chromecast</p>
-
-          <!-- TV Device Selection -->
-          <div class="tv-device-select">
-            <label class="option-label">Select TV</label>
-            <select id="tv-device-select" class="tv-select">
-              <option value="">-- Select a TV --</option>
-            </select>
-          </div>
-
-          <!-- TV Stream Controls -->
-          <div class="tv-controls" id="tv-controls">
-            <button class="btn btn-primary tv-start-btn" id="tv-start-btn">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <polygon points="5 3 19 12 5 21 5 3"/>
-              </svg>
-              Start TV Stream
-            </button>
-            <button class="btn btn-danger tv-stop-btn" id="tv-stop-btn" style="display: none;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="6" y="6" width="12" height="12"/>
-              </svg>
-              Stop TV Stream
-            </button>
-          </div>
-
-          <!-- TV Status -->
-          <div class="tv-status" id="tv-status" style="display: none;">
-            <div class="tv-status-indicator">
-              <span class="tv-status-dot"></span>
-              <span class="tv-status-text" id="tv-status-text">Streaming to TV...</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- TV Options -->
-        <div class="section">
-          <h2 class="section-label">TV OPTIONS</h2>
-          <div class="option-row">
-            <span class="option-label">Ambient Visuals</span>
-            <label class="toggle-switch">
-              <input type="checkbox" id="tv-visuals-toggle" checked>
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-          <p class="option-hint">Show relaxing nature videos on TV while streaming</p>
-        </div>
-
-        <!-- TV Info -->
-        <div class="section tv-info">
-          <p class="tv-info-text">
-            <strong>Note:</strong> TV streaming uses HLS which has ~2-6 second latency.
-            For sub-second latency, use Nest speakers instead.
-          </p>
-        </div>
-      </div>
     </main>
 
     <!-- Footer -->
@@ -248,13 +196,6 @@
           <line x1="12" y1="6" x2="12" y2="6"/>
         </svg>
         <span>Speakers</span>
-      </button>
-      <button class="tab-btn" data-tab="tv">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="2" y="7" width="20" height="15" rx="2" ry="2"/>
-          <polyline points="17 2 12 7 7 2"/>
-        </svg>
-        <span>TV</span>
       </button>
       <button class="tab-btn" data-tab="settings">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
