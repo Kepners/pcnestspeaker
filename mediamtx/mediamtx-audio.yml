@@ -65,32 +65,22 @@ webrtc: yes
 webrtcAddress: :8889
 webrtcEncryption: no
 webrtcAllowOrigins: ['*']
-# Auto-detect local IP - app will inject correct IP at startup
-webrtcIPsFromInterfaces: yes
+# DISABLE auto-detect - too many dead interfaces with 169.254.x.x cause ICE timeouts
+# App injects the correct IP into webrtcAdditionalHosts at startup
+webrtcIPsFromInterfaces: no
 webrtcIPsFromInterfacesList: []
 webrtcAdditionalHosts: ['192.168.50.48']
+# NAT1To1 maps local IP to advertised IP (critical for local network)
+webrtcICEHostNAT1To1IPs: ['192.168.50.48']
 webrtcLocalUDPAddress: :8189
 webrtcLocalTCPAddress: :8189
-# Increase timeouts for Nest speakers which have slow ICE
-webrtcHandshakeTimeout: 120s
-webrtcTrackGatherTimeout: 60s
-webrtcSTUNGatherTimeout: 60s
-# ICE servers for NAT traversal
-# Google STUN + Open Relay TURN for fallback relay
-# Include multiple TURN options to ensure connectivity
-webrtcICEServers2:
-  - url: stun:stun.l.google.com:19302
-  - url: stun:stun1.l.google.com:19302
-  - url: stun:stun2.l.google.com:19302
-  - url: turn:openrelay.metered.ca:80
-    username: openrelayproject
-    password: openrelayproject
-  - url: turn:openrelay.metered.ca:443
-    username: openrelayproject
-    password: openrelayproject
-  - url: turn:openrelay.metered.ca:443?transport=tcp
-    username: openrelayproject
-    password: openrelayproject
+# Reduced timeouts for faster testing (increase later if needed)
+webrtcHandshakeTimeout: 30s
+webrtcTrackGatherTimeout: 10s
+webrtcSTUNGatherTimeout: 5s
+# ICE servers - EMPTY for local network (no STUN needed on same LAN)
+# Re-enable these for remote/NAT scenarios
+webrtcICEServers2: []
 
 ###############################################
 # SRT server - disabled (not needed)

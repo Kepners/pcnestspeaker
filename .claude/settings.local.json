@@ -132,7 +132,9 @@
       "Bash(\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\nircmd\\\\nircmd.exe\" showsounddevices)",
       "Bash(\"C:\\\\Program Files \\(x86\\)\\\\cloudflared\\\\cloudflared.exe\" tunnel --url http://localhost:8889)",
       "Bash(cmd /c \"taskkill /F /IM cloudflared.exe\")",
-      "Bash(cmd:*)"
+      "Bash(cmd:*)",
+      "Bash(mediamtx.exe --help:*)",
+      "Bash(node:*)"
     ]
   }
 }

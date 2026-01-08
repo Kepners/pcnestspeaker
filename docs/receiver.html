@@ -284,29 +284,11 @@
       // Start ambient videos when connecting (only first time)
       if (!forceRelay) startAmbientVideos();
 
-      // ICE configuration with TURN servers for NAT traversal
+      // ICE configuration - empty for local network (no STUN needed on same LAN)
+      // This dramatically speeds up ICE gathering
       const iceConfig = {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          }
-        ],
-        // Use relay-only mode if forceRelay is true (fallback for restrictive NAT)
-        iceTransportPolicy: forceRelay ? 'relay' : 'all'
+        iceServers: [],
+        iceTransportPolicy: 'all'
       };
 
       console.log('[WebRTC] ICE transport policy:', iceConfig.iceTransportPolicy);
