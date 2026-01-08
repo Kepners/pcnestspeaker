@@ -1091,33 +1091,38 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           // Start stream stats
           if (streamStats) streamStats.start();
 
-          // Helper function to connect a speaker with retries
-          async function connectSpeakerWithRetry(member, stream, maxRetries = 3) {
-            for (let attempt = 1; attempt <= maxRetries; attempt++) {
-              sendLog(`Connecting ${stream.toUpperCase()} speaker: "${member.name}" (attempt ${attempt}/${maxRetries})...`);
-              const result = await runPython([
-                'webrtc-launch',
-                member.name,
-                webrtcUrl,
-                member.ip || '',
-                stream
-              ]);
-              if (result.success) {
-                sendLog(`${stream.toUpperCase()} speaker connected`, 'success');
-                return result;
-              }
-              if (attempt < maxRetries) {
-                sendLog(`${stream.toUpperCase()} failed (${result.error}), retrying in 3s...`, 'warning');
-                await new Promise(r => setTimeout(r, 3000));
-              } else {
-                throw new Error(`${stream.toUpperCase()} speaker cast failed after ${maxRetries} attempts: ${result.error}`);
-              }
-            }
-          }
+          // STEREO MODE: Use LOCAL HTTP - NOT cloudflared tunnel!
+          // This matches test-stereo-split.bat which works reliably
+          const localIp = getLocalIp();
+          const stereoUrl = `http://${localIp}:8889`;
+          sendLog(`Stereo URL: ${stereoUrl} (local HTTP - no tunnel)`);
 
-          // Connect both speakers with retry logic
-          const leftResult = await connectSpeakerWithRetry(leftMember, 'left');
-          const rightResult = await connectSpeakerWithRetry(rightMember, 'right');
+          // Connect speakers directly (no retry needed with local HTTP)
+          sendLog(`Connecting LEFT speaker: "${leftMember.name}"...`);
+          const leftResult = await runPython([
+            'webrtc-launch',
+            leftMember.name,
+            stereoUrl,
+            leftMember.ip || '',
+            'left'
+          ]);
+          if (!leftResult.success) {
+            throw new Error(`Left speaker failed: ${leftResult.error}`);
+          }
+          sendLog(`LEFT speaker connected`, 'success');
+
+          sendLog(`Connecting RIGHT speaker: "${rightMember.name}"...`);
+          const rightResult = await runPython([
+            'webrtc-launch',
+            rightMember.name,
+            stereoUrl,
+            rightMember.ip || '',
+            'right'
+          ]);
+          if (!rightResult.success) {
+            throw new Error(`Right speaker failed: ${rightResult.error}`);
+          }
+          sendLog(`RIGHT speaker connected`, 'success');
 
           switchingToStereoMode = false;
 
