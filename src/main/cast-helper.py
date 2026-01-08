@@ -1086,6 +1086,19 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None):
         print(f"[HLS-TV] Connecting to {host}...", file=sys.stderr)
         cast.wait(timeout=10)
 
+        # Check if device is on standby and try to wake it
+        if cast.status and cast.status.is_stand_by:
+            print(f"[HLS-TV] Device is on STANDBY - attempting wake...", file=sys.stderr)
+            try:
+                # turn_on() sends CEC wake command (requires HDMI-CEC support)
+                cast.turn_on()
+                time.sleep(3)  # Give TV time to wake up
+                print(f"[HLS-TV] Wake command sent!", file=sys.stderr)
+            except Exception as wake_err:
+                print(f"[HLS-TV] Wake failed (may not support CEC): {wake_err}", file=sys.stderr)
+        else:
+            print(f"[HLS-TV] Device is ACTIVE (not on standby)", file=sys.stderr)
+
         mc = cast.media_controller
 
         # Use Default Media Receiver with HLS content type
