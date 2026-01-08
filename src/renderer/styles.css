@@ -632,7 +632,7 @@ body::before {
 }
 
 .cast-mode-btn.active {
-  background: var(--pink);
+  background: linear-gradient(135deg, var(--pink), var(--cyan));
   color: white;
   box-shadow: 0 2px 8px rgba(239, 71, 111, 0.3);
 }
