@@ -278,13 +278,13 @@
     const MAX_RETRIES = 5;
     const RETRY_DELAY = 2000; // 2 seconds
 
-    async function connectToMediaMTX(serverUrl, streamName = 'pcaudio') {
-      log('Connecting...');
+    async function connectToMediaMTX(serverUrl, streamName = 'pcaudio', forceRelay = false) {
+      log(forceRelay ? 'Connecting (relay)...' : 'Connecting...');
 
-      // Start ambient videos when connecting
-      startAmbientVideos();
+      // Start ambient videos when connecting (only first time)
+      if (!forceRelay) startAmbientVideos();
 
-      // Force relay mode for Nest speakers (they have restrictive NAT)
+      // ICE configuration with TURN servers for NAT traversal
       const iceConfig = {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
@@ -305,9 +305,11 @@
             credential: 'openrelayproject'
           }
         ],
-        // Try relay first for restrictive NAT (Nest speakers)
-        iceTransportPolicy: 'all'
+        // Use relay-only mode if forceRelay is true (fallback for restrictive NAT)
+        iceTransportPolicy: forceRelay ? 'relay' : 'all'
       };
+
+      console.log('[WebRTC] ICE transport policy:', iceConfig.iceTransportPolicy);
 
       peerConnection = new RTCPeerConnection(iceConfig);
 
@@ -355,11 +357,23 @@
         }
       };
 
+      // Track if we've tried relay mode
+      let triedRelayMode = !forceRelay; // If already in relay mode, don't retry
+
       // ICE state debugging
       peerConnection.oniceconnectionstatechange = () => {
         console.log('[WebRTC] ICE state:', peerConnection.iceConnectionState);
         if (peerConnection.iceConnectionState === 'failed') {
-          log('ICE failed - retrying...');
+          if (!triedRelayMode) {
+            log('ICE failed - trying relay mode...');
+            console.log('[WebRTC] Retrying with TURN relay only');
+            triedRelayMode = true;
+            disconnect();
+            // Retry with forced relay
+            connectToMediaMTX(serverUrl, streamName, true);
+          } else {
+            log('ICE failed');
+          }
         } else if (peerConnection.iceConnectionState === 'disconnected') {
           log('ICE disconnected');
         } else if (peerConnection.iceConnectionState === 'checking') {
