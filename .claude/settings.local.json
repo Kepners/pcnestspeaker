@@ -115,7 +115,8 @@
       "Bash(cmd /c \"start /b cmd /c \"\"cd /d c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker && set ELECTRON_RUN_AS_NODE= && npm run dev 2>&1\"\"\")",
       "Bash(reg query \"HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\" /v PCNestSpeaker)",
       "Bash(reg query HKCUSoftwareMicrosoftWindowsCurrentVersionRun /v PCNestSpeaker)",
-      "Bash(cmd /c \"reg query \"\"HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\"\" /v PCNestSpeaker\")"
+      "Bash(cmd /c \"reg query \"\"HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\"\" /v PCNestSpeaker\")",
+      "Bash(reg add \"HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\" /v PCNestSpeaker /t REG_SZ /d \"\"\"C:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\start-app.bat\"\"\" /f)"
     ]
   }
 }

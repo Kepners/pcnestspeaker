@@ -11,26 +11,23 @@ const fs = require('fs');
 const { exec } = require('child_process');
 
 const AUTO_START_KEY_NAME = 'PCNestSpeaker';
-const REGISTRY_PATH = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
 
 /**
  * Check if auto-start is enabled
  */
 function isAutoStartEnabled() {
   return new Promise((resolve) => {
-    const cmd = `reg query "${REGISTRY_PATH}" /v ${AUTO_START_KEY_NAME}`;
+    const cmd = `powershell -Command "(Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -ErrorAction SilentlyContinue).${AUTO_START_KEY_NAME}"`;
 
     exec(cmd, { windowsHide: true }, (error, stdout, stderr) => {
-      if (error) {
+      if (error || !stdout.trim()) {
         // Key doesn't exist - auto-start is disabled
         resolve(false);
         return;
       }
 
-      // Check if the registered path matches current executable
-      const exePath = process.execPath;
-      const registered = stdout.includes(exePath);
-      resolve(registered);
+      // Auto-start is enabled if there's any value
+      resolve(true);
     });
   });
 }
@@ -43,20 +40,22 @@ function enableAutoStart() {
     // Get path to executable
     // In production, this will be "PC Nest Speaker.exe"
     // In dev mode, use the start-app.bat which handles ELECTRON_RUN_AS_NODE properly
-    const exePath = process.execPath;
     const projectPath = path.join(__dirname, '../..');
 
     let appPath;
     if (app.isPackaged) {
-      // Production: just the exe
-      appPath = `"${exePath}"`;
+      // Production: just the exe (with quotes for paths with spaces)
+      appPath = `"${process.execPath}"`;
     } else {
       // Dev mode: use the batch file which properly launches electron with the project
-      const batPath = path.join(projectPath, 'start-app.bat');
-      appPath = `"${batPath}"`;
+      appPath = path.join(projectPath, 'start-app.bat');
     }
 
-    const cmd = `reg add "${REGISTRY_PATH}" /v ${AUTO_START_KEY_NAME} /t REG_SZ /d ${appPath} /f`;
+    // Use PowerShell for reliable registry writes (handles paths with spaces properly)
+    const escapedPath = appPath.replace(/\\/g, '\\\\').replace(/'/g, "''");
+    const cmd = `powershell -Command "Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name '${AUTO_START_KEY_NAME}' -Value '${escapedPath}'"`;
+
+    console.log('[AutoStart] Setting registry:', appPath);
 
     exec(cmd, { windowsHide: true }, (error, stdout, stderr) => {
       if (error) {
@@ -76,7 +75,7 @@ function enableAutoStart() {
  */
 function disableAutoStart() {
   return new Promise((resolve, reject) => {
-    const cmd = `reg delete "${REGISTRY_PATH}" /v ${AUTO_START_KEY_NAME} /f`;
+    const cmd = `powershell -Command "Remove-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name '${AUTO_START_KEY_NAME}' -ErrorAction SilentlyContinue"`;
 
     exec(cmd, { windowsHide: true }, (error, stdout, stderr) => {
       if (error) {
@@ -127,10 +126,12 @@ function getCorrectAutoStartPath() {
  */
 function verifyAndFixAutoStart() {
   return new Promise((resolve) => {
-    const cmd = `reg query "${REGISTRY_PATH}" /v ${AUTO_START_KEY_NAME}`;
+    const cmd = `powershell -Command "(Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -ErrorAction SilentlyContinue).${AUTO_START_KEY_NAME}"`;
 
     exec(cmd, { windowsHide: true }, (error, stdout, stderr) => {
-      if (error) {
+      const currentValue = stdout.trim();
+
+      if (error || !currentValue) {
         // Auto-start not enabled, nothing to fix
         console.log('[AutoStart] Not enabled, nothing to verify');
         resolve(false);
@@ -140,15 +141,20 @@ function verifyAndFixAutoStart() {
       // Auto-start is enabled - check if path is correct
       const correctPath = getCorrectAutoStartPath();
 
-      if (stdout.includes(correctPath.replace(/"/g, ''))) {
+      // Normalize paths for comparison (remove quotes, normalize slashes)
+      const normalizedCurrent = currentValue.replace(/"/g, '').toLowerCase();
+      const normalizedCorrect = correctPath.replace(/"/g, '').toLowerCase();
+
+      if (normalizedCurrent === normalizedCorrect) {
         console.log('[AutoStart] Registry entry is correct');
         resolve(true);
         return;
       }
 
       // Path is wrong - fix it automatically
-      console.log('[AutoStart] Registry entry outdated, updating...');
-      console.log('[AutoStart] Correct path:', correctPath);
+      console.log('[AutoStart] Registry entry outdated');
+      console.log('[AutoStart] Current:', currentValue);
+      console.log('[AutoStart] Correct:', correctPath);
 
       enableAutoStart()
         .then(() => {
