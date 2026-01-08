@@ -55,6 +55,9 @@ function getMediaMTXConfig() {
 let mediamtxProcess = null;
 let ffmpegWebrtcProcess = null;
 
+// Flag to prevent cleanup when intentionally switching to stereo mode
+let switchingToStereoMode = false;
+
 // Background WebRTC pipeline status
 let webrtcPipelineReady = false;
 let webrtcPipelineError = null;
@@ -1078,7 +1081,13 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
   } catch (error) {
     sendLog(`Stream failed: ${error.message}`, 'error');
-    cleanup();
+    // Don't cleanup if we're intentionally switching to stereo mode
+    // (mono FFmpeg was killed on purpose, not a failure)
+    if (!switchingToStereoMode) {
+      cleanup();
+    } else {
+      sendLog('(Skipping cleanup - switching to stereo mode)', 'info');
+    }
     return { success: false, error: error.message };
   }
 });
@@ -1376,8 +1385,11 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     sendLog(`Starting stereo separation: L="${leftSpeaker.name}", R="${rightSpeaker.name}"`);
 
     // Stop any existing mono streaming (ffmpegWebrtcProcess) before starting stereo
+    // Set flag to prevent cleanup() being called by any pending timeout/error handler
+    // This flag stays true until stereo is fully set up (reset at end of this handler)
     if (ffmpegWebrtcProcess) {
       sendLog('Stopping existing mono stream for stereo mode...');
+      switchingToStereoMode = true;  // Prevent cleanup from killing MediaMTX
       try {
         ffmpegWebrtcProcess.kill('SIGTERM');
       } catch (e) {}
@@ -1551,10 +1563,14 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
       }).catch(() => {});
     }
 
+    // Reset the switching flag - stereo is now fully set up
+    switchingToStereoMode = false;
     return { success: true };
 
   } catch (error) {
     sendLog(`Stereo streaming failed: ${error.message}`, 'error');
+    // Reset the switching flag
+    switchingToStereoMode = false;
     // Clean up on error
     if (stereoFFmpegProcesses.left) {
       stereoFFmpegProcesses.left.kill();
