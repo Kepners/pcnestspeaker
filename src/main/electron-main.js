@@ -1025,14 +1025,17 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
       // TV DETECTION: Use HLS for TVs (they don't support WebRTC custom receivers)
       if (isTv) {
-        sendLog(`📺 Detected TV device: "${speakerName}" - using HLS streaming`, 'info');
+        const speakerModel = speaker ? speaker.model : '';
+        sendLog(`📺 Detected TV device: "${speakerName}" (${speakerModel}) - using HLS streaming`, 'info');
         const localIp = getLocalIp();
         const hlsUrl = `http://${localIp}:8888/pcaudio/index.m3u8`;
         sendLog(`HLS URL: ${hlsUrl}`);
 
         // Cast HLS to TV using Default Media Receiver (no custom receiver needed)
+        // Pass model so Python knows wake method: shield=ADB, others=CEC
         const args = ['hls-cast', speakerName, hlsUrl];
         if (speakerIp) args.push(speakerIp);
+        args.push(speakerModel || 'unknown');  // Pass model as 5th arg
         result = await runPython(args);
 
         if (result.success) {

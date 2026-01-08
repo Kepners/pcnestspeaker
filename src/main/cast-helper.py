@@ -1033,7 +1033,7 @@ def get_group_members(group_name):
         return {"success": False, "error": str(e)}
 
 
-def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None):
+def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None):
     """Cast HLS stream to TV devices (NVIDIA Shield, Chromecast with screen).
 
     TVs don't support WebRTC custom receivers, but they DO support HLS via
@@ -1044,6 +1044,8 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None):
         speaker_name: Name of the TV/device
         hls_url: HLS playlist URL (e.g., http://192.168.50.48:8888/pcaudio/index.m3u8)
         speaker_ip: Optional direct IP for faster connection
+        device_model: Model name from discovery (e.g., "SHIELD Android TV")
+                     Used to determine wake method (ADB for Shield, CEC for others)
 
     Returns:
         { success: true, state: "PLAYING", mode: "hls" }
@@ -1083,19 +1085,53 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None):
             cast = chromecasts[0]
 
         host = cast.cast_info.host if hasattr(cast, 'cast_info') else speaker_ip or 'unknown'
-        print(f"[HLS-TV] Connecting to {host}...", file=sys.stderr)
+        # Use passed model from discovery, fall back to querying device
+        model = device_model.lower() if device_model else (cast.cast_info.model_name.lower() if cast.cast_info.model_name else '')
+        is_shield = 'shield' in model
+        print(f"[HLS-TV] Connecting to {host} (model: {model}, is_shield: {is_shield})...", file=sys.stderr)
         cast.wait(timeout=10)
 
         # Check if device is on standby and try to wake it
         if cast.status and cast.status.is_stand_by:
             print(f"[HLS-TV] Device is on STANDBY - attempting wake...", file=sys.stderr)
-            try:
-                # turn_on() sends CEC wake command (requires HDMI-CEC support)
-                cast.turn_on()
-                time.sleep(3)  # Give TV time to wake up
-                print(f"[HLS-TV] Wake command sent!", file=sys.stderr)
-            except Exception as wake_err:
-                print(f"[HLS-TV] Wake failed (may not support CEC): {wake_err}", file=sys.stderr)
+
+            # NVIDIA Shield: Use ADB wake (most reliable for Shield)
+            if is_shield:
+                print(f"[HLS-TV] Detected NVIDIA Shield - trying ADB wake...", file=sys.stderr)
+                try:
+                    import subprocess
+                    # Try to connect and wake via ADB
+                    # First connect (may already be connected)
+                    subprocess.run(['adb', 'connect', host], capture_output=True, timeout=5)
+                    # Send wake keyevent
+                    result = subprocess.run(
+                        ['adb', '-s', f'{host}:5555', 'shell', 'input', 'keyevent', 'KEYCODE_WAKEUP'],
+                        capture_output=True, timeout=5
+                    )
+                    if result.returncode == 0:
+                        print(f"[HLS-TV] ADB wake command sent!", file=sys.stderr)
+                        time.sleep(3)  # Give Shield/TV time to wake
+                    else:
+                        print(f"[HLS-TV] ADB wake failed: {result.stderr.decode()}", file=sys.stderr)
+                        # Fall back to CEC
+                        cast.turn_on()
+                        time.sleep(3)
+                except Exception as adb_err:
+                    print(f"[HLS-TV] ADB not available: {adb_err}", file=sys.stderr)
+                    print(f"[HLS-TV] Falling back to CEC wake...", file=sys.stderr)
+                    try:
+                        cast.turn_on()
+                        time.sleep(3)
+                    except Exception as cec_err:
+                        print(f"[HLS-TV] CEC wake also failed: {cec_err}", file=sys.stderr)
+            else:
+                # Non-Shield: Try CEC wake
+                try:
+                    cast.turn_on()
+                    time.sleep(3)
+                    print(f"[HLS-TV] CEC wake command sent!", file=sys.stderr)
+                except Exception as wake_err:
+                    print(f"[HLS-TV] Wake failed (may not support CEC): {wake_err}", file=sys.stderr)
         else:
             print(f"[HLS-TV] Device is ACTIVE (not on standby)", file=sys.stderr)
 
@@ -1381,11 +1417,12 @@ if __name__ == "__main__":
 
     elif command == "hls-cast" and len(sys.argv) >= 4:
         # Cast HLS stream to TV devices (NVIDIA Shield, Chromecast with screen)
-        # Args: hls-cast <device_name> <hls_url> [device_ip]
+        # Args: hls-cast <device_name> <hls_url> [device_ip] [model]
         device_name = sys.argv[2]
         hls_url = sys.argv[3]
-        device_ip = sys.argv[4] if len(sys.argv) > 4 else None
-        result = hls_cast_to_tv(device_name, hls_url, device_ip)
+        device_ip = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] != '' else None
+        device_model = sys.argv[5] if len(sys.argv) > 5 else None
+        result = hls_cast_to_tv(device_name, hls_url, device_ip, device_model)
         print(json.dumps(result))
 
     else:
