@@ -608,6 +608,61 @@ async function discoverDevices() {
   hideLoading();
 }
 
+/**
+ * Get the appropriate icon SVG for a speaker based on its type
+ */
+function getSpeakerIcon(speaker) {
+  const model = (speaker.model || '').toLowerCase();
+  const name = (speaker.name || '').toLowerCase();
+  const castType = speaker.cast_type || 'audio';
+
+  // TV / Shield / Display devices
+  if (model.includes('tv') || model.includes('shield') || model.includes('display') ||
+      name.includes('tv') || castType === 'cast') {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="2" y="3" width="20" height="14" rx="2"/>
+      <line x1="8" y1="21" x2="16" y2="21"/>
+      <line x1="12" y1="17" x2="12" y2="21"/>
+    </svg>`;
+  }
+
+  // Groups (multi-room or stereo pairs)
+  if (castType === 'group' || name.includes('pair')) {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="1" y="4" width="10" height="16" rx="1"/>
+      <circle cx="6" cy="14" r="3"/>
+      <line x1="6" y1="7" x2="6" y2="7" stroke-linecap="round"/>
+      <rect x="13" y="4" width="10" height="16" rx="1"/>
+      <circle cx="18" cy="14" r="3"/>
+      <line x1="18" y1="7" x2="18" y2="7" stroke-linecap="round"/>
+    </svg>`;
+  }
+
+  // Nest Hub (has display)
+  if (model.includes('hub') || model.includes('home hub')) {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="2" y="4" width="20" height="12" rx="2"/>
+      <path d="M6 20h12c0-2-2-4-6-4s-6 2-6 4z"/>
+    </svg>`;
+  }
+
+  // Nest Audio (larger speaker)
+  if (model.includes('nest audio') || model.includes('google home max')) {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="5" y="2" width="14" height="20" rx="3"/>
+      <circle cx="12" cy="14" r="4"/>
+      <circle cx="12" cy="6" r="1.5"/>
+    </svg>`;
+  }
+
+  // Default: Nest Mini / Google Home Mini (small round speaker)
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <rect x="4" y="2" width="16" height="20" rx="2"/>
+    <circle cx="12" cy="14" r="4"/>
+    <line x1="12" y1="6" x2="12" y2="6" stroke-linecap="round"/>
+  </svg>`;
+}
+
 function renderSpeakers() {
   if (speakers.length === 0) {
     speakerList.innerHTML = `
@@ -658,11 +713,7 @@ function renderSpeakers() {
     return `
     <div class="speaker-item ${isSelected ? 'selected' : ''} ${isActivelyStreaming ? 'streaming' : ''} ${isLeft ? 'speaker-left' : ''} ${isRight ? 'speaker-right' : ''}" data-index="${index}">
       <div class="speaker-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="4" y="2" width="16" height="20" rx="2"/>
-          <circle cx="12" cy="14" r="4"/>
-          <line x1="12" y1="6" x2="12" y2="6"/>
-        </svg>
+        ${getSpeakerIcon(speaker)}
       </div>
       <div class="speaker-info">
         <div class="speaker-name">${speaker.name}</div>
