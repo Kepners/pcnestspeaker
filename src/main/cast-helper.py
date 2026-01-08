@@ -538,38 +538,19 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pc
                 print(f"[WebRTC] Waiting for app... ({i+1}/10)", file=sys.stderr)
 
             # ========================================
-            # CRITICAL: Use play_media for GROUPS!
-            # Custom namespace only reaches group leader.
-            # play_media distributes to ALL speakers.
+            # NOTE: For now, use custom namespace for ALL devices
+            # (groups will only play on leader - known limitation)
+            # play_media approach didn't work - needs investigation
             # ========================================
-            if is_group:
+            if False and is_group:  # DISABLED - doesn't work
                 print(f"[WebRTC] GROUP detected - using play_media() for all speakers", file=sys.stderr)
-
-                # Build webrtc:// URL that receiver LOAD interceptor handles
-                # Add stream name to URL path: webrtc://http://192.168.x.x:8889 + /pcaudio
                 webrtc_content_id = f"webrtc://{https_url}"
-                print(f"[WebRTC] contentId: {webrtc_content_id}", file=sys.stderr)
-
                 mc = cast.media_controller
-                mc.play_media(
-                    webrtc_content_id,
-                    "audio/webrtc",  # Custom content type
-                    stream_type="LIVE",
-                    autoplay=True,
-                    current_time=0,
-                    media_info={
-                        "customData": {
-                            "stream": stream_name,
-                            "mode": "webrtc-group"
-                        }
-                    }
-                )
-
+                mc.play_media(webrtc_content_id, "audio/webrtc", stream_type="LIVE", autoplay=True)
                 time.sleep(2)
-                print("[WebRTC] play_media sent to group!", file=sys.stderr)
-            else:
-                # Single speaker - use custom namespace (faster, works fine)
-                print(f"[WebRTC] Single speaker - using custom namespace message", file=sys.stderr)
+            # Use custom namespace for ALL devices (groups play on leader only for now)
+            if True:  # Always use this path
+                print(f"[WebRTC] Using custom namespace message (is_group={is_group})", file=sys.stderr)
 
                 WEBRTC_NAMESPACE = "urn:x-cast:com.pcnestspeaker.webrtc"
 
