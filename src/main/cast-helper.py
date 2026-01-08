@@ -49,10 +49,14 @@ class WebRTCController(BaseController):
                 return self.messages.pop(0)
         return None
 
-def discover_speakers(timeout=8):
-    """Discover all Chromecast/Nest speakers on the network."""
+def discover_speakers(timeout=12):
+    """Discover all Chromecast/Nest speakers on the network.
+
+    Default timeout increased to 12s for devices like NVIDIA SHIELD
+    that may take longer to respond to mDNS discovery.
+    """
     try:
-        print("Scanning network...", file=sys.stderr)
+        print(f"Scanning network (timeout: {timeout}s)...", file=sys.stderr)
         chromecasts, browser = pychromecast.get_chromecasts(timeout=timeout)
 
         speakers = []
@@ -740,7 +744,9 @@ if __name__ == "__main__":
     command = sys.argv[1]
 
     if command == "discover":
-        result = discover_speakers()
+        # Optional timeout argument: discover [timeout]
+        timeout = int(sys.argv[2]) if len(sys.argv) > 2 else 12
+        result = discover_speakers(timeout=timeout)
         print(json.dumps(result))
 
     elif command == "ping" and len(sys.argv) >= 3:
