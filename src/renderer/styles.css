@@ -114,6 +114,11 @@ body::before {
   color: white;
 }
 
+.refresh-btn:hover {
+  background: var(--cyan);
+  color: white;
+}
+
 /* ==================== HEADER ==================== */
 .header {
   text-align: right;

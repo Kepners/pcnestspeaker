@@ -201,9 +201,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function setupEventListeners() {
   // Window controls (frameless window)
+  const refreshBtn = document.getElementById('refresh-btn');
   const minimizeBtn = document.getElementById('minimize-btn');
   const closeBtn = document.getElementById('close-btn');
 
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async () => {
+      log('Refreshing speakers...', 'info');
+      await discoverDevices();
+    });
+  }
   if (minimizeBtn) {
     minimizeBtn.addEventListener('click', () => window.api.minimizeWindow());
   }
