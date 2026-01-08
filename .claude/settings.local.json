@@ -128,7 +128,8 @@
       "Bash(netsh advfirewall firewall add rule name=\"PC Nest Speaker WebRTC TCP\" dir=in action=allow protocol=TCP localport=8189)",
       "Bash(cmd /c \"taskkill /f /im mediamtx.exe\")",
       "Bash(netsh advfirewall firewall add rule name=\"MediaMTX WebRTC\" dir=in action=allow protocol=UDP localport=8189)",
-      "Bash(netsh advfirewall firewall add rule:*)"
+      "Bash(netsh advfirewall firewall add rule:*)",
+      "Bash(\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\nircmd\\\\nircmd.exe\" showsounddevices)"
     ]
   }
 }
