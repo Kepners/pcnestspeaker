@@ -1056,30 +1056,12 @@ async function startStreamingToSpeaker(index, clearStereoState = true) {
       setStreamingState(true);
       renderSpeakers(); // Update UI to show selected state
 
-      // Update UI to show streaming mode
-      const modeText = result.fallback ? '(HTTP fallback)' : '(WebRTC)';
-      const modeClass = result.fallback ? 'mode-http' : 'mode-webrtc';
-
-      // Update speaker card with mode indicator
-      const speakerCard = speakerList.querySelector('.speaker-item.selected .speaker-info');
-      if (speakerCard) {
-        const existingMode = speakerCard.querySelector('.streaming-mode');
-        if (existingMode) {
-          existingMode.remove();
-        }
-
-        const modeSpan = document.createElement('div');
-        modeSpan.className = `streaming-mode ${modeClass}`;
-        modeSpan.textContent = modeText;
-        speakerCard.appendChild(modeSpan);
-      }
-
       // Show volume card
       if (volumeCard) {
         volumeCard.style.display = 'block';
       }
 
-      log(`Streaming to ${speaker.name} ${modeText}!`, 'success');
+      log(`Streaming to ${speaker.name}!`, 'success');
     } else {
       // Check if trial expired
       if (result.trialExpired) {

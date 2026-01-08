@@ -17,6 +17,7 @@ const usageTracker = require('./usage-tracker');
 const volumeSync = require('./windows-volume-sync');
 const daemonManager = require('./daemon-manager');
 const audioSyncManager = require('./audio-sync-manager');
+const { setupFirewall } = require('./firewall-setup');
 
 // Keep global references
 let mainWindow = null;
@@ -1871,9 +1872,13 @@ ipcMain.handle('deactivate-license', async () => {
 });
 
 // App lifecycle
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Kill any leftover processes from previous runs (port conflicts, etc.)
   killLeftoverProcesses();
+
+  // Setup firewall rules for streaming (prompts admin on first run)
+  await setupFirewall();
+
   createWindow();
 
   // Create system tray

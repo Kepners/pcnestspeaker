@@ -9,19 +9,23 @@ const { app } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-const RULE_NAME = 'PC Nest Speaker';
-const PORT_RANGE = '8000-8010';
+// Firewall rules needed for streaming
+const RULES = [
+  { name: 'PC Nest Speaker HTTP', ports: '8000-8010', protocol: 'TCP' },
+  { name: 'PC Nest Speaker WebRTC', ports: '8889', protocol: 'TCP' },
+  { name: 'PC Nest Speaker ICE', ports: '8189', protocol: 'UDP' }
+];
 
 /**
- * Check if firewall rule already exists
+ * Check if a specific firewall rule exists
  */
-function checkFirewallRule() {
+function checkFirewallRule(ruleName) {
   return new Promise((resolve) => {
     exec(
-      `netsh advfirewall firewall show rule name="${RULE_NAME}"`,
+      `netsh advfirewall firewall show rule name="${ruleName}"`,
       { windowsHide: true },
       (error, stdout) => {
-        if (error || !stdout.includes(RULE_NAME)) {
+        if (error || !stdout.includes(ruleName)) {
           resolve(false);
         } else {
           resolve(true);
@@ -32,25 +36,44 @@ function checkFirewallRule() {
 }
 
 /**
- * Add firewall rule with admin elevation
+ * Check which firewall rules are missing
  */
-function addFirewallRule() {
+async function getMissingRules() {
+  const missing = [];
+  for (const rule of RULES) {
+    const exists = await checkFirewallRule(rule.name);
+    if (!exists) {
+      missing.push(rule);
+    }
+  }
+  return missing;
+}
+
+/**
+ * Add firewall rules with admin elevation
+ * @param {Array} rules - Array of rule objects to add
+ */
+function addFirewallRules(rules) {
   return new Promise((resolve, reject) => {
-    const command = `netsh advfirewall firewall add rule name="${RULE_NAME}" dir=in action=allow protocol=TCP localport=${PORT_RANGE}`;
+    // Build command to add all missing rules in one admin prompt
+    const commands = rules.map(rule =>
+      `netsh advfirewall firewall add rule name="${rule.name}" dir=in action=allow protocol=${rule.protocol} localport=${rule.ports}`
+    ).join(' && ');
 
     const options = {
       name: 'PC Nest Speaker',
       icns: path.join(__dirname, '../../assets/icon.icns'), // macOS
     };
 
-    console.log('Requesting admin permissions to add firewall rule...');
+    console.log(`Requesting admin permissions to add ${rules.length} firewall rule(s)...`);
+    console.log('Rules:', rules.map(r => `${r.name} (${r.protocol}:${r.ports})`).join(', '));
 
-    sudo.exec(command, options, (error, stdout, stderr) => {
+    sudo.exec(commands, options, (error, stdout, stderr) => {
       if (error) {
-        console.error('Failed to add firewall rule:', error);
+        console.error('Failed to add firewall rules:', error);
         reject(error);
       } else {
-        console.log('Firewall rule added successfully');
+        console.log('Firewall rules added successfully');
         resolve(true);
       }
     });
@@ -113,22 +136,23 @@ async function setupFirewall() {
   // Check if already set up in our settings
   if (hasCompletedSetup()) {
     console.log('Firewall setup already completed (settings)');
-    return true;
+    // Still check for missing rules (in case we added new ones in an update)
   }
 
-  // Check if rule actually exists in Windows Firewall
-  const ruleExists = await checkFirewallRule();
-  if (ruleExists) {
-    console.log('Firewall rule already exists');
+  // Check which rules are missing
+  const missingRules = await getMissingRules();
+
+  if (missingRules.length === 0) {
+    console.log('All firewall rules already exist');
     markSetupComplete();
     return true;
   }
 
-  // Need to add the rule
-  console.log('Firewall rule not found, requesting admin permissions...');
+  // Need to add missing rules
+  console.log(`Missing ${missingRules.length} firewall rule(s), requesting admin permissions...`);
 
   try {
-    await addFirewallRule();
+    await addFirewallRules(missingRules);
     markSetupComplete();
     return true;
   } catch (error) {
@@ -138,4 +162,4 @@ async function setupFirewall() {
   }
 }
 
-module.exports = { setupFirewall, checkFirewallRule, addFirewallRule };
+module.exports = { setupFirewall, checkFirewallRule, addFirewallRules, getMissingRules };
