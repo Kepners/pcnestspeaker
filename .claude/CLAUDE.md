@@ -1920,4 +1920,239 @@ python src/main/cast-helper.py cast "Green TV" "http://192.168.50.48:8000/stream
 
 ---
 
+### January 8, 2026 (Session 21) - ICE Fix Complete + Documentation
+
+**Session Goal:** Document working state before attempting Green TV fix
+
+#### ICE NEGOTIATION FIX - ROOT CAUSE & SOLUTION
+
+**Problem:** WebRTC sessions created but ICE never established. `bytesSent=0`, `peerConnectionEstablished: false`, empty ICE candidates.
+
+**Root Cause:** PC has 6+ network interfaces with dead 169.254.x.x (APIPA/link-local) addresses:
+- Ethernet 2: 169.254.145.108 (dead)
+- WiFi 5: 169.254.192.94 (dead)
+- WiFi 4: 169.254.164.51 (dead)
+- Bluetooth: 169.254.49.17 (dead)
+- WiFi: 169.254.44.17 (dead)
+- **Ethernet: 192.168.50.48** (REAL working IP)
+
+MediaMTX with `webrtcIPsFromInterfaces: yes` was trying to gather ICE candidates from ALL interfaces, including dead ones. This caused 60+ second timeouts.
+
+**Solution Applied:**
+1. Set `webrtcIPsFromInterfaces: no` - Stop scanning interfaces
+2. Inject real IP into `webrtcAdditionalHosts` at startup
+3. Empty `webrtcICEServers2: []` - No STUN/TURN needed on local LAN
+4. Empty `iceServers: []` in receiver.html - Faster ICE gathering
+
+---
+
+## WORKING ARCHITECTURE (January 8, 2026)
+
+### Device Compatibility Matrix
+
+| Device | Type | WebRTC | HTTP | Notes |
+|--------|------|--------|------|-------|
+| DENNIS | Nest Mini | ✅ | ✅ | Works great |
+| Den pair | Cast Group | ✅ STEREO | ✅ | L&R separation working |
+| STUDY | Cast Group | ✅ | ✅ | Works |
+| Back garden speaker | Nest Mini | ❌ | ✅ | Old firmware - custom receiver fails |
+| **Green TV** | NVIDIA SHIELD | ❌ | ? | **NEEDS FIX** |
+
+### Audio Quality Observations (User Feedback)
+- **L&R individual streams** = Higher audio quality than groups
+- **Groups via regular browser/Spotify** = Mono playback
+- **Groups via our WebRTC** = Stereo playback!
+
+---
+
+## CURRENT WORKING SETTINGS
+
+### MediaMTX Config (`mediamtx/mediamtx-audio.yml`)
+
+```yaml
+# WebRTC server - serves to Cast receiver
+webrtc: yes
+webrtcAddress: :8889
+webrtcEncryption: no
+webrtcAllowOrigins: ['*']
+
+# CRITICAL: Disable auto-detect to avoid dead 169.254.x.x interfaces
+webrtcIPsFromInterfaces: no
+webrtcIPsFromInterfacesList: []
+
+# App injects real IP here at startup
+webrtcAdditionalHosts: ['192.168.50.48']
+
+# ICE ports
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+
+# Timeouts
+webrtcHandshakeTimeout: 30s
+webrtcTrackGatherTimeout: 10s
+webrtcSTUNGatherTimeout: 5s
+
+# NO STUN/TURN for local network
+webrtcICEServers2: []
+```
+
+### Cast Receiver ICE Config (`docs/receiver.html`)
+
+```javascript
+// ICE configuration - empty for local network (no STUN needed on same LAN)
+// This dramatically speeds up ICE gathering
+const iceConfig = {
+  iceServers: [],
+  iceTransportPolicy: 'all'
+};
+```
+
+### Dynamic IP Injection (`electron-main.js`)
+
+```javascript
+// Inject local IP into MediaMTX config for ICE candidates
+try {
+  const localIp = getLocalIp();
+  const configPath = getMediaMTXConfig();
+  let config = fs.readFileSync(configPath, 'utf8');
+
+  // Update webrtcAdditionalHosts with detected IP
+  config = config.replace(
+    /webrtcAdditionalHosts:\s*\[.*?\]/,
+    `webrtcAdditionalHosts: ['${localIp}']`
+  );
+
+  fs.writeFileSync(configPath, config, 'utf8');
+  sendLog(`[MediaMTX] Injected local IP: ${localIp}`);
+} catch (e) {
+  sendLog(`[MediaMTX] Could not inject IP: ${e.message}`, 'warning');
+}
+```
+
+---
+
+## WORKING PIPELINE
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         PC NEST SPEAKER PIPELINE                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  MONO MODE:                                                                 │
+│  ┌──────────┐    ┌───────┐    ┌──────────┐    ┌────────┐    ┌──────────┐  │
+│  │ Windows  │───▶│FFmpeg │───▶│ MediaMTX │───▶│  WHEP  │───▶│ Speaker  │  │
+│  │  Audio   │    │ Opus  │    │   RTSP   │    │ WebRTC │    │          │  │
+│  └──────────┘    └───────┘    └──────────┘    └────────┘    └──────────┘  │
+│      │                             │               │                       │
+│      │                        :8554 RTSP     :8889 HTTP                    │
+│      │                                                                     │
+│  STEREO MODE (L&R Separation):                                             │
+│  ┌──────────┐    ┌───────────┐    ┌──────────┐    ┌────────────────────┐  │
+│  │ Windows  │───▶│ FFmpeg L  │───▶│ MediaMTX │───▶│ LEFT Speaker       │  │
+│  │  Audio   │    │ pan=left  │    │ /left    │    │ (via WHEP)         │  │
+│  │          │───▶│ FFmpeg R  │───▶│ /right   │───▶│ RIGHT Speaker      │  │
+│  └──────────┘    │ pan=right │    └──────────┘    │ (via WHEP)         │  │
+│                  └───────────┘                    └────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### FFmpeg Commands
+
+**Mono (single stream):**
+```bash
+ffmpeg -f dshow -i audio="virtual-audio-capturer" \
+  -c:a libopus -b:a 128k -ar 48000 -ac 2 \
+  -f rtsp -rtsp_transport tcp rtsp://localhost:8554/pcaudio
+```
+
+**Stereo Left Channel:**
+```bash
+ffmpeg -f dshow -i audio="virtual-audio-capturer" \
+  -af "pan=mono|c0=FL" \
+  -c:a libopus -b:a 128k -ar 48000 -ac 1 \
+  -f rtsp -rtsp_transport tcp rtsp://localhost:8554/left
+```
+
+**Stereo Right Channel:**
+```bash
+ffmpeg -f dshow -i audio="virtual-audio-capturer" \
+  -af "pan=mono|c0=FR" \
+  -c:a libopus -b:a 128k -ar 48000 -ac 1 \
+  -f rtsp -rtsp_transport tcp rtsp://localhost:8554/right
+```
+
+### WHEP Protocol Flow
+
+```
+1. Cast receiver loads on speaker
+2. Receiver gets WebRTC URL: http://192.168.50.48:8889/pcaudio/whep
+3. Creates RTCPeerConnection with empty iceServers
+4. Creates SDP offer, sends POST to WHEP endpoint
+5. MediaMTX returns SDP answer with ICE candidates
+6. ICE establishes using local candidate: host/udp/192.168.50.48/8189
+7. Audio flows via UDP
+```
+
+### Ports Used
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 8554 | TCP | RTSP (FFmpeg → MediaMTX) |
+| 8889 | HTTP | WHEP endpoint (WebRTC signaling) |
+| 8189 | UDP/TCP | ICE media transport |
+| 9997 | HTTP | MediaMTX API |
+
+---
+
+## WHAT DOESN'T WORK
+
+### Green TV (NVIDIA SHIELD Android TV)
+- **Cast type:** `cast` (not `audio`)
+- **Model:** NVIDIA SHIELD Android TV
+- **Custom receiver launches:** ✅ Yes
+- **WHEP signaling:** ✅ Works
+- **ICE negotiation:** ❌ FAILS
+- **HTTP streaming:** Untested
+
+**Possible issues to investigate:**
+1. Different Cast protocol for TVs vs audio devices
+2. Network isolation between TV and PC
+3. Different ICE behavior on Android TV
+4. Shield-specific WebRTC limitations
+
+### Back garden speaker (old Nest Mini)
+- **Cast type:** `audio`
+- **Custom receiver:** ❌ `RequestFailed: Failed to execute start app FCAA4619`
+- **HTTP streaming:** ✅ Works with 8s latency
+- **Workaround:** Use HTTP/MP3 fallback mode
+
+---
+
+## GIT COMMITS FOR ICE FIX
+
+```
+3327183 🔧 fix: Add webrtcAllowAnyHost for hostname validation bypass
+75d2552 🔧 fix: ICE negotiation - disable dead interface scanning, remove STUN
+db7623b 🔧 fix: Inject local IP into MediaMTX config for ICE candidates
+76c05ea 🔧 fix: Remove deprecated settings and double ping
+```
+
+---
+
+## NEXT: Green TV Investigation
+
+**DO NOT CHANGE:**
+- mediamtx-audio.yml ICE settings
+- receiver.html ICE config
+- Dynamic IP injection in electron-main.js
+
+**TO INVESTIGATE:**
+- [ ] Cast protocol differences for TV vs audio devices
+- [ ] NVIDIA SHIELD WebRTC capabilities
+- [ ] Network path between PC and Green TV
+- [ ] Whether HTTP streaming works on Green TV
+
+---
+
 *Last Updated: January 8, 2026*
