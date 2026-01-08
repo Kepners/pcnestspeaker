@@ -1033,9 +1033,8 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
         // Cast HLS to TV using Default Media Receiver (no custom receiver needed)
         // Pass model so Python knows wake method: shield=ADB, others=CEC
-        const args = ['hls-cast', speakerName, hlsUrl];
-        if (speakerIp) args.push(speakerIp);
-        args.push(speakerModel || 'unknown');  // Pass model as 5th arg
+        // Args: hls-cast <name> <url> <ip|''> <model>
+        const args = ['hls-cast', speakerName, hlsUrl, speakerIp || '', speakerModel || 'unknown'];
         result = await runPython(args);
 
         if (result.success) {
