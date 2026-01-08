@@ -1090,9 +1090,17 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None):
         print(f"[HLS-TV] Connecting to {host} (model: {model})...", file=sys.stderr)
         cast.wait(timeout=10)
 
-        # Check standby status (for logging only - cast will wake device via HDMI-CEC)
+        # Check standby status
         if cast.status and cast.status.is_stand_by:
-            print(f"[HLS-TV] Device is on STANDBY - will wake via HDMI-CEC when casting...", file=sys.stderr)
+            print(f"[HLS-TV] Device is on STANDBY - launching app to wake...", file=sys.stderr)
+            # Explicitly launch Default Media Receiver to wake the TV
+            # App ID CC1AD845 = Default Media Receiver
+            try:
+                cast.start_app('CC1AD845')
+                time.sleep(3)  # Give TV time to wake and launch app
+                print(f"[HLS-TV] Default Media Receiver launched - TV should be waking...", file=sys.stderr)
+            except Exception as e:
+                print(f"[HLS-TV] App launch failed (continuing anyway): {e}", file=sys.stderr)
         else:
             print(f"[HLS-TV] Device is ACTIVE", file=sys.stderr)
 
