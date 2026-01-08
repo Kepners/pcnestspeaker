@@ -1055,7 +1055,7 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
             }
           });
 
-          await new Promise(r => setTimeout(r, 2000));  // Wait for both outputs to initialize
+          await new Promise(r => setTimeout(r, 4000));  // Wait longer for both RTSP outputs to publish to MediaMTX
           sendLog('LEFT + RIGHT channels streaming (single FFmpeg)', 'success');
 
           // Start stream stats
@@ -1672,7 +1672,7 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
       }
     });
 
-    await new Promise(r => setTimeout(r, 2000));  // Wait for both outputs to initialize
+    await new Promise(r => setTimeout(r, 4000));  // Wait longer for both RTSP outputs to publish to MediaMTX
     sendLog('LEFT + RIGHT channels streaming (single FFmpeg)', 'success');
 
     // Start stream stats monitoring (for stereo mode)

@@ -273,6 +273,11 @@
       if (player) player.style.display = 'none';
     }
 
+    // Retry configuration
+    let retryCount = 0;
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY = 2000; // 2 seconds
+
     async function connectToMediaMTX(serverUrl, streamName = 'pcaudio') {
       log('Connecting...');
 
@@ -389,9 +394,34 @@
         const answerSdp = await response.text();
         await peerConnection.setRemoteDescription({ type: 'answer', sdp: answerSdp });
 
+        // Success - reset retry count
+        retryCount = 0;
+        console.log('[WebRTC] WHEP connection successful, SDP answer received');
+
       } catch (e) {
-        log('Connection error');
         console.error('[WebRTC] Error:', e);
+
+        // Retry logic - WHEP might fail if stream not ready yet
+        retryCount++;
+        if (retryCount <= MAX_RETRIES) {
+          log(`Retry ${retryCount}/${MAX_RETRIES}...`);
+          console.log(`[WebRTC] Retrying in ${RETRY_DELAY}ms (attempt ${retryCount}/${MAX_RETRIES})`);
+
+          // Clean up failed connection
+          if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+          }
+
+          // Wait and retry
+          setTimeout(() => {
+            connectToMediaMTX(serverUrl, streamName);
+          }, RETRY_DELAY);
+        } else {
+          log('Connection failed');
+          console.error('[WebRTC] Max retries exceeded');
+          retryCount = 0; // Reset for next connection attempt
+        }
       }
     }
 
