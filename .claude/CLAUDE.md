@@ -2140,18 +2140,104 @@ db7623b 🔧 fix: Inject local IP into MediaMTX config for ICE candidates
 
 ---
 
-## NEXT: Green TV Investigation
+## GREEN TV RESEARCH FINDINGS (January 8, 2026)
 
-**DO NOT CHANGE:**
-- mediamtx-audio.yml ICE settings
-- receiver.html ICE config
-- Dynamic IP injection in electron-main.js
+### 🔥 ROOT CAUSE DISCOVERED
 
-**TO INVESTIGATE:**
-- [ ] Cast protocol differences for TV vs audio devices
-- [ ] NVIDIA SHIELD WebRTC capabilities
-- [ ] Network path between PC and Green TV
-- [ ] Whether HTTP streaming works on Green TV
+**Chromecast/NVIDIA Shield DON'T support WebRTC/WHEP directly!**
+
+| Device Type | Cast Type | WebRTC Support | Solution |
+|-------------|-----------|----------------|----------|
+| Nest Mini/Hub | `audio` | ✅ Custom receiver works | Keep WebRTC |
+| Cast Groups | `group` | ✅ Custom receiver works | Keep WebRTC |
+| Android TV/Shield | `cast` | ❌ Limited/No WebRTC | Use HLS |
+| Chromecast dongle | `cast` | ❌ Limited WebRTC | Use HLS |
+
+### Why Nest Speakers Work But Shield Doesn't
+
+1. **Nest speakers** run a lightweight Cast receiver that supports WebRTC in its browser environment
+2. **Android TV/Shield** runs a different Cast receiver with WebView that has LIMITED WebRTC support
+3. Our custom receiver.html uses `RTCPeerConnection` which works on audio devices but fails on TVs
+
+### Solution Architecture for TVs
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    DUAL-MODE STREAMING                               │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  AUDIO DEVICES (Nest Mini, Groups) - KEEP WORKING:                  │
+│  ┌──────────┐    ┌───────┐    ┌──────────┐    ┌─────────────────┐  │
+│  │ Windows  │───▶│FFmpeg │───▶│ MediaMTX │───▶│ WebRTC/WHEP     │  │
+│  │  Audio   │    │ Opus  │    │   RTSP   │    │ Custom Receiver │  │
+│  └──────────┘    └───────┘    └──────────┘    └─────────────────┘  │
+│                                                                      │
+│  TV DEVICES (Shield, Chromecast) - NEW:                             │
+│  ┌──────────┐    ┌───────┐    ┌──────────┐    ┌─────────────────┐  │
+│  │ Windows  │───▶│FFmpeg │───▶│ MediaMTX │───▶│ HLS (.m3u8)     │  │
+│  │  Audio   │    │ AAC   │    │   HLS    │    │ Default Receiver│  │
+│  └──────────┘    └───────┘    └──────────┘    └─────────────────┘  │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### MediaMTX Config Changes Needed for TV Support
+
+```yaml
+# Enable HLS for TV devices (currently disabled!)
+hls: yes
+hlsAddress: :8888
+hlsSegmentDuration: 2s
+hlsSegmentCount: 3
+hlsPartDuration: 200ms
+
+# Path config
+paths:
+  pcaudio:
+    source: publisher
+    # This enables HLS output at: http://192.168.50.48:8888/pcaudio/hls.m3u8
+```
+
+### Cast Code Changes Needed
+
+```python
+# In cast-helper.py - detect device type and use appropriate stream
+if cast.cast_info.cast_type == 'cast':  # TV/Shield
+    # Use HLS stream
+    url = f"http://{local_ip}:8888/pcaudio/hls.m3u8"
+    content_type = "application/vnd.apple.mpegurl"
+else:  # audio/group
+    # Use WebRTC via custom receiver
+    webrtc_launch(...)
+```
+
+### Latency Comparison
+
+| Protocol | Latency | Best For |
+|----------|---------|----------|
+| WebRTC (current) | < 1 second | Nest speakers, Groups |
+| HLS (needed for TV) | 2-6 seconds | Green TV, Shield |
+| HTTP/MP3 (fallback) | 8-15 seconds | Old firmware devices |
+
+### Implementation Plan
+
+**DO NOT BREAK WHAT WORKS:**
+1. Keep WebRTC for `audio` and `group` devices
+2. Add HLS support ONLY for `cast` type devices
+3. Detect device type in code and route accordingly
+
+**Steps:**
+1. [ ] Enable HLS in mediamtx-audio.yml
+2. [ ] Add device type detection in electron-main.js
+3. [ ] Route TV devices to HLS, audio devices to WebRTC
+4. [ ] Test Green TV with HLS stream
+5. [ ] Verify audio devices still work with WebRTC
+
+### User Feedback to Preserve
+
+- **L&R individual streams** = Higher audio quality than groups
+- **Groups via our WebRTC** = Stereo playback (better than Spotify!)
+- **WebRTC latency** = Sub-second (KEEP THIS FOR AUDIO DEVICES)
 
 ---
 
