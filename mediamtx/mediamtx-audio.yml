@@ -65,7 +65,6 @@ webrtc: yes
 webrtcAddress: :8889
 webrtcEncryption: no
 webrtcAllowOrigins: ['*']
-webrtcAllowAnyHost: yes
 # DISABLE auto-detect - too many dead interfaces with 169.254.x.x cause ICE timeouts
 # App injects the correct IP into webrtcAdditionalHosts at startup
 webrtcIPsFromInterfaces: no
