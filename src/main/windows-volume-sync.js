@@ -195,7 +195,7 @@ public static class Audio {
             console.error('[VolumeSync] Invalid volume output:', stdout);
             resolve(lastVolume !== -1 ? lastVolume : 50);
           } else {
-            console.log(`[VolumeSync] Windows volume: ${volume}%`);
+            // Don't log here - pollVolume() logs on change only
             resolve(volume);
           }
         }
