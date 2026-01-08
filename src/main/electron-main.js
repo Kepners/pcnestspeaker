@@ -911,6 +911,15 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         if (streamStats) {
           streamStats.start();
         }
+
+        // Start cloudflared tunnel for HTTPS (receiver is HTTPS, can't fetch HTTP!)
+        try {
+          const httpsUrl = await startLocalTunnel(8889);
+          webrtcUrl = httpsUrl;
+          sendLog(`Tunnel URL: ${webrtcUrl}`, 'success');
+        } catch (tunnelErr) {
+          sendLog(`Tunnel failed: ${tunnelErr.message} - trying local HTTP`, 'warning');
+        }
       } else {
         // Pipeline not ready - start it now
         sendLog('Starting WebRTC pipeline...');
