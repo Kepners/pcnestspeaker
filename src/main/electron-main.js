@@ -1712,42 +1712,7 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
       }
     });
 
-    // Wait for MediaMTX to confirm BOTH /left and /right paths are ready
-    // This prevents the race condition where Cast receivers connect before streams exist
-    sendLog('Waiting for stereo streams to publish to MediaMTX...');
-    const maxWaitMs = 10000; // 10 second max
-    const pollIntervalMs = 500;
-    let waitedMs = 0;
-    let leftReady = false;
-    let rightReady = false;
-
-    while (waitedMs < maxWaitMs && (!leftReady || !rightReady)) {
-      try {
-        const pathsResponse = await fetch('http://localhost:9997/v3/paths/list');
-        if (pathsResponse.ok) {
-          const pathsData = await pathsResponse.json();
-          const paths = pathsData.items || [];
-
-          for (const p of paths) {
-            if (p.name === 'left' && p.ready) leftReady = true;
-            if (p.name === 'right' && p.ready) rightReady = true;
-          }
-
-          if (leftReady && rightReady) {
-            sendLog('✓ Both stereo streams ready in MediaMTX', 'success');
-            break;
-          }
-        }
-      } catch (e) {
-        // MediaMTX API not responding yet - keep waiting
-      }
-      await new Promise(r => setTimeout(r, pollIntervalMs));
-      waitedMs += pollIntervalMs;
-    }
-
-    if (!leftReady || !rightReady) {
-      sendLog(`⚠ Stereo streams may not be ready (L:${leftReady}, R:${rightReady})`, 'warning');
-    }
+    await new Promise(r => setTimeout(r, 4000));  // Wait longer for both RTSP outputs to publish to MediaMTX
     sendLog('LEFT + RIGHT channels streaming (single FFmpeg)', 'success');
 
     // Start stream stats monitoring (for stereo mode)
