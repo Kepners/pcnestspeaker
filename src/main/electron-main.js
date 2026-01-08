@@ -1019,20 +1019,21 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       const speakerIp = speaker ? speaker.ip : null;
       const isGroup = speaker && speaker.cast_type === 'group';
       const isTv = speaker && speaker.cast_type === 'cast';  // TVs, Shields, displays use cast_type='cast'
-      sendLog(`[DEBUG] isGroup=${isGroup}, isTv=${isTv}, speakerIp=${speakerIp}`);
+      const speakerModel = speaker ? speaker.model : '';
+      const isShield = speakerModel.toLowerCase().includes('shield');
+      sendLog(`[DEBUG] isGroup=${isGroup}, isTv=${isTv}, isShield=${isShield}, speakerIp=${speakerIp}`);
 
       let result;
 
-      // TV DETECTION: Use HLS for TVs (they don't support WebRTC custom receivers)
-      if (isTv) {
-        const speakerModel = speaker ? speaker.model : '';
+      // SHIELD: Try WebRTC first (supports custom receivers), fall back to HLS
+      // OTHER TVs: Use HLS directly (don't support custom receivers)
+      if (isTv && !isShield) {
         sendLog(`📺 Detected TV device: "${speakerName}" (${speakerModel}) - using HLS streaming`, 'info');
         const localIp = getLocalIp();
         const hlsUrl = `http://${localIp}:8888/pcaudio/index.m3u8`;
         sendLog(`HLS URL: ${hlsUrl}`);
 
         // Cast HLS to TV using Default Media Receiver (no custom receiver needed)
-        // Pass model so Python knows wake method: shield=ADB, others=CEC
         // Args: hls-cast <name> <url> <ip|''> <model>
         const args = ['hls-cast', speakerName, hlsUrl, speakerIp || '', speakerModel || 'unknown'];
         result = await runPython(args);
@@ -1062,6 +1063,12 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         } else {
           throw new Error(result.error || 'Failed to start HLS streaming to TV');
         }
+      }
+
+      // SHIELD: Treat like a speaker - use WebRTC with custom receiver (supports it!)
+      if (isShield) {
+        sendLog(`🎮 Detected NVIDIA Shield: "${speakerName}" - using WebRTC (supports custom receivers)`, 'info');
+        // Falls through to normal WebRTC handling below
       }
 
       if (isGroup) {
