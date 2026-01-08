@@ -91,6 +91,48 @@ Multiple commits touching receiver.html with different ICE configs, signaling me
 
 ---
 
+## MISTAKE #7: Google Stereo Pair vs Speaker Group Confusion
+
+**The Misunderstanding:**
+- Kept confusing "Google Stereo Pair" with "Speaker Group"
+- Tried to apply L/R separation to both, but they're fundamentally different!
+
+**What They Actually Are:**
+
+| Type | cast_type | What it does | Our approach |
+|------|-----------|--------------|--------------|
+| **Google Stereo Pair** | "audio" | 2 speakers paired as L+R via Google Home app | Send `/pcaudio` - Google handles L/R split automatically |
+| **Speaker Group** | "group" | Multiple speakers grouped together | All play SAME audio - no stereo |
+| **Single Speaker** | "audio" | One speaker | Send `/pcaudio` - downmixes stereo to mono |
+
+**Examples:**
+- **DENNIS** = Google Stereo Pair (appears as `cast_type="audio"`, NOT "group"!)
+- **STUDY** = Speaker Group (appears as `cast_type="group"`)
+- **Green TV** = Single display (`cast_type="cast"`)
+- **Back garden speaker** = Single speaker (`cast_type="audio"`)
+
+**ROOT CAUSE:** Assumed 2-member groups need L/R separation. Wrong! Google Stereo Pairs already handle L/R internally.
+
+**LESSON:** Google Stereo Pairs (`cast_type="audio"`) ≠ Speaker Groups (`cast_type="group"`). Only Speaker Groups need manual handling.
+
+---
+
+## CRITICAL: The L/R Feature Purpose
+
+**Why L/R buttons exist in our app:**
+1. Let users create CUSTOM stereo setups without Google Home
+2. Mix any devices together (speakers, TVs, etc.)
+3. Simplify stereo for users who don't understand Google's confusing Pairs vs Groups
+
+**Google Home UX is TERRIBLE:**
+- Hidden menus (info panels that look like info but are buttons)
+- Confusing terminology (Pair vs Group)
+- Takes 3+ years for users to understand the difference!
+
+**Our app makes it simple:** Click L, click R, done!
+
+---
+
 ## 📝 LESSONS LEARNED - MUST FOLLOW
 
 1. **TEST before committing** - Actually verify the fix works before pushing
@@ -112,11 +154,18 @@ Multiple commits touching receiver.html with different ICE configs, signaling me
 - NO cloudflared tunnel needed
 - STUN + TURN servers configured in MediaMTX
 
-**What's currently broken:**
-- WebRTC ICE negotiation timing out for stereo mode
-- Sessions created but "deadline exceeded while waiting connection"
+**Speaker type handling:**
+- **Single speaker (click speaker row)**: Send `/pcaudio` - stereo audio
+- **Google Stereo Pair (click speaker row)**: Send `/pcaudio` - Google splits L/R
+- **Manual L/R assignment (click L then R buttons)**: Send `/left` to L speaker, `/right` to R speaker
+- **Speaker Groups (cast_type=group)**: Multicast same audio to all members
 
-**Next step:** Figure out WHY ICE negotiation fails, don't just randomly change configs
+**What's pending:**
+- Test single speaker streaming (click speaker, not L/R)
+- Test manual L/R stereo mode
+- Support multiple speakers per L or R channel
+
+**REMEMBER:** Don't randomly change configs. Test systematically!
 
 ---
 
