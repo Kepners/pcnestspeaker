@@ -31,8 +31,10 @@ let tunnelUrl = null;
 let discoveredSpeakers = []; // Cache speakers with IPs from discovery
 
 // Dependency download URLs
+// NOTE: We use screen-capture-recorder which installs "virtual-audio-capturer" device
+// VB-CABLE is legacy fallback only - not needed with screen-capture-recorder
 const DEPENDENCY_URLS = {
-  'VB-CABLE': 'https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack43.zip',
+  'virtual-audio': 'https://github.com/rdp/screen-capture-recorder-to-video-windows-free/releases/download/v0.13.3/Setup.Screen.Capturer.Recorder.v0.13.3.exe',
   'screen-capture-recorder': 'https://github.com/rdp/screen-capture-recorder-to-video-windows-free/releases/download/v0.13.3/Setup.Screen.Capturer.Recorder.v0.13.3.exe'
 };
 
@@ -269,18 +271,25 @@ function cleanup() {
 // Check all dependencies
 async function checkAllDependencies() {
   const deps = {
-    vbcable: false,
-    screenCapture: false,
+    virtualAudio: false,      // virtual-audio-capturer OR Virtual Desktop Audio
+    vbcableFallback: false,   // VB-CABLE (legacy fallback only)
     mediamtx: false,
     ffmpeg: true // Assume bundled FFmpeg is always available
   };
 
-  // Get audio devices ONCE and check both (uses cache anyway, but cleaner)
+  // Get audio devices ONCE and check what we have
   try {
     if (!audioStreamer) audioStreamer = new AudioStreamer();
     const devices = await audioStreamer.getAudioDevices();
-    deps.vbcable = devices.some(d => d.toLowerCase().includes('cable output'));
-    deps.screenCapture = devices.some(d => d.toLowerCase().includes('virtual-audio-capturer'));
+
+    // Check for virtual-audio-capturer (preferred) or Virtual Desktop Audio
+    deps.virtualAudio = devices.some(d =>
+      d.toLowerCase().includes('virtual-audio-capturer') ||
+      d.toLowerCase().includes('virtual desktop audio')
+    );
+
+    // VB-CABLE is legacy fallback only
+    deps.vbcableFallback = devices.some(d => d.toLowerCase().includes('cable output'));
   } catch (e) {
     console.error('[Main] Error checking audio devices:', e.message);
   }
@@ -1541,15 +1550,23 @@ ipcMain.handle('check-dependencies', async () => {
   try {
     sendLog('Checking dependencies...');
     const deps = await checkAllDependencies();
-    sendLog(`VB-CABLE: ${deps.vbcable ? 'OK' : 'Missing'}`);
-    sendLog(`screen-capture-recorder: ${deps.screenCapture ? 'OK' : 'Missing'}`);
+
+    // Log Virtual Audio (from screen-capture-recorder) - this is what we actually use
+    if (deps.virtualAudio) {
+      sendLog('Virtual Audio: OK', 'success');
+    } else if (deps.vbcableFallback) {
+      sendLog('Virtual Audio: Missing (using VB-CABLE fallback)', 'warning');
+    } else {
+      sendLog('Virtual Audio: Missing - install screen-capture-recorder', 'error');
+    }
+
     sendLog(`MediaMTX: ${deps.mediamtx ? 'OK' : 'Missing'}`);
     return deps;
   } catch (error) {
     sendLog(`Dependency check failed: ${error.message}`, 'error');
     return {
-      vbcable: false,
-      screenCapture: false,
+      virtualAudio: false,
+      vbcableFallback: false,
       mediamtx: false,
       ffmpeg: true
     };

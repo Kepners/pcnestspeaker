@@ -562,24 +562,24 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pc
             time.sleep(2)
             print("[WebRTC] URL sent via custom namespace!", file=sys.stderr)
 
-            # VERIFICATION: Check MediaMTX API to see if a WebRTC session was created
-            # This tells us the receiver actually connected and is receiving data
+            # VERIFICATION: Quick check if MediaMTX session exists
+            # Reduced from 10s to 2s - fail fast if ICE doesn't work
             import urllib.request
             import urllib.error
 
-            # MediaMTX API is always on localhost (even when using tunnel)
+            # MediaMTX API is always on localhost
             mediamtx_api = "http://localhost:9997"
             if https_url:
-                print(f"[WebRTC] Verifying connection via MediaMTX API...", file=sys.stderr)
+                print(f"[WebRTC] Checking connection...", file=sys.stderr)
                 connected = False
                 data_flowing = False
 
-                # Poll for up to 10 seconds to verify connection
-                for attempt in range(10):
+                # Quick poll - 4 attempts × 0.5s = 2 seconds max (was 10 seconds!)
+                for attempt in range(4):
                     try:
                         api_url = f"{mediamtx_api}/v3/webrtcsessions/list"
                         req = urllib.request.Request(api_url, method='GET')
-                        with urllib.request.urlopen(req, timeout=2) as resp:
+                        with urllib.request.urlopen(req, timeout=1) as resp:
                             sessions_data = json.loads(resp.read().decode())
                             sessions = sessions_data.get('items', [])
 
@@ -590,20 +590,20 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pc
                                     bytes_sent = session.get('bytesSent', 0)
                                     if bytes_sent > 0:
                                         data_flowing = True
-                                        print(f"[WebRTC] ✓ Session found! bytesSent={bytes_sent}", file=sys.stderr)
+                                        print(f"[WebRTC] ✓ Connected! bytesSent={bytes_sent}", file=sys.stderr)
                                         break
 
                             if data_flowing:
                                 break
-                            elif connected:
-                                print(f"[WebRTC] Session exists but bytesSent=0, waiting... ({attempt+1}/10)", file=sys.stderr)
-                            else:
-                                print(f"[WebRTC] No session yet, waiting... ({attempt+1}/10)", file=sys.stderr)
+                            elif connected and attempt >= 2:
+                                # Only warn after 2nd attempt if still no data
+                                print(f"[WebRTC] Session exists but bytesSent=0 ({attempt+1}/4)", file=sys.stderr)
 
                     except Exception as api_err:
-                        print(f"[WebRTC] API check failed: {api_err}", file=sys.stderr)
+                        if attempt == 3:  # Only log on last attempt
+                            print(f"[WebRTC] API check failed: {api_err}", file=sys.stderr)
 
-                    time.sleep(1)
+                    time.sleep(0.5)
 
                 # Report verification result
                 if data_flowing:

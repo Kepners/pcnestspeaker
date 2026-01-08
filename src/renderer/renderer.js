@@ -439,18 +439,24 @@ async function checkDependencies() {
     const result = await window.api.checkDependencies();
     dependencies = result;
 
-    log(`VB-CABLE: ${result.vbcable ? 'OK' : 'Missing'}`);
-    log(`screen-capture-recorder: ${result.screenCapture ? 'OK' : 'Missing'}`);
+    // Virtual Audio: from screen-capture-recorder (virtual-audio-capturer / Virtual Desktop Audio)
+    if (result.virtualAudio) {
+      log('Virtual Audio: OK');
+    } else if (result.vbcableFallback) {
+      log('Virtual Audio: Missing (VB-CABLE fallback available)');
+    } else {
+      log('Virtual Audio: Missing - install screen-capture-recorder');
+    }
+
     log(`MediaMTX: ${result.mediamtx ? 'OK' : 'Bundled'}`);
-    log(`FFmpeg: ${result.ffmpeg ? 'OK' : 'Bundled'}`);
 
     updateDependencyIndicators();
   } catch (error) {
     log(`Dependency check failed: ${error.message}`, 'error');
     // Assume all missing on error
     dependencies = {
-      vbcable: false,
-      screenCapture: false,
+      virtualAudio: false,
+      vbcableFallback: false,
       mediamtx: true, // Bundled
       ffmpeg: true // Bundled
     };
@@ -460,28 +466,31 @@ async function checkDependencies() {
 
 // Update dependency status indicators in UI
 function updateDependencyIndicators() {
-  // HTTP mode deps
+  // Check if we have ANY virtual audio device (preferred or fallback)
+  const hasVirtualAudio = dependencies.virtualAudio || dependencies.vbcableFallback;
+
+  // HTTP mode deps (legacy - uses VB-CABLE)
   const httpDeps = document.getElementById('http-deps');
   if (httpDeps) {
     httpDeps.innerHTML = `
-      <span class="dep-item ${dependencies.vbcable ? 'dep-ok' : 'dep-missing'}">VB-CABLE</span>
+      <span class="dep-item ${hasVirtualAudio ? 'dep-ok' : 'dep-missing'}">Virtual Audio</span>
     `;
   }
 
-  // WebRTC System mode deps
+  // WebRTC System mode deps (primary mode)
   const webrtcSystemDeps = document.getElementById('webrtc-system-deps');
   if (webrtcSystemDeps) {
     webrtcSystemDeps.innerHTML = `
-      <span class="dep-item ${dependencies.screenCapture ? 'dep-ok' : 'dep-missing'}">screen-capture</span>
+      <span class="dep-item ${hasVirtualAudio ? 'dep-ok' : 'dep-missing'}">Virtual Audio</span>
       <span class="dep-item dep-ok">MediaMTX</span>
     `;
   }
 
-  // WebRTC VB-CABLE mode deps
+  // WebRTC VB-CABLE mode deps (legacy fallback)
   const webrtcVbcableDeps = document.getElementById('webrtc-vbcable-deps');
   if (webrtcVbcableDeps) {
     webrtcVbcableDeps.innerHTML = `
-      <span class="dep-item ${dependencies.vbcable ? 'dep-ok' : 'dep-missing'}">VB-CABLE</span>
+      <span class="dep-item ${hasVirtualAudio ? 'dep-ok' : 'dep-missing'}">Virtual Audio</span>
       <span class="dep-item dep-ok">MediaMTX</span>
     `;
   }
@@ -530,16 +539,17 @@ function updateModeUI() {
 // Get missing dependencies for a given mode
 function getMissingDepsForMode(mode) {
   const missing = [];
+  const hasVirtualAudio = dependencies.virtualAudio || dependencies.vbcableFallback;
 
   switch (mode) {
     case 'http':
-      if (!dependencies.vbcable) missing.push('VB-CABLE');
+      if (!hasVirtualAudio) missing.push('Virtual Audio (screen-capture-recorder)');
       break;
     case 'webrtc-system':
-      if (!dependencies.screenCapture) missing.push('screen-capture-recorder');
+      if (!hasVirtualAudio) missing.push('Virtual Audio (screen-capture-recorder)');
       break;
     case 'webrtc-vbcable':
-      if (!dependencies.vbcable) missing.push('VB-CABLE');
+      if (!hasVirtualAudio) missing.push('Virtual Audio (screen-capture-recorder)');
       break;
   }
 
