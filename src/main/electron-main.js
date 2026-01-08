@@ -63,7 +63,7 @@ let webrtcPipelineReady = false;
 let webrtcPipelineError = null;
 
 // TEST: Disable CloudFlare to see if local IP works
-const DISABLE_CLOUDFLARE = true;
+const DISABLE_CLOUDFLARE = false; // Must use tunnel - HTTPS receiver can't fetch HTTP
 
 // Helper: Get local IP address
 function getLocalIp() {
