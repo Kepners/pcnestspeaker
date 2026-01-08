@@ -878,11 +878,6 @@ async function startStereoStreaming() {
       log('Stereo streaming started!', 'success');
       renderSpeakers();
 
-      // Show volume control for stereo mode
-      // Show volume boost card when streaming
-      if (volumeCard) {
-        volumeCard.style.display = 'block';
-      }
     } else {
       throw new Error(result.error || 'Unknown error');
     }
@@ -913,11 +908,6 @@ async function stopStereoStreaming() {
       setStreamingState(false); // Update status indicator
       log('Stereo streaming stopped', 'success');
       renderSpeakers();
-
-      // Hide volume card if no single speaker is selected
-      if (volumeCard && !selectedSpeaker) {
-        volumeCard.style.display = 'none';
-      }
     } else {
       throw new Error(result.error || 'Unknown error');
     }
@@ -954,11 +944,6 @@ async function selectSpeaker(index) {
   speakerList.querySelectorAll('.speaker-item').forEach((item, i) => {
     item.classList.toggle('selected', i === index);
   });
-
-  // Show volume boost card when speaker selected
-  if (volumeCard) {
-    volumeCard.style.display = 'block';
-  }
 
   // Ping the speaker to test connection (plays a sound)
   log(`Pinging ${selectedSpeaker.name}...`);
@@ -1055,12 +1040,6 @@ async function startStreamingToSpeaker(index, clearStereoState = true) {
     if (result.success) {
       setStreamingState(true);
       renderSpeakers(); // Update UI to show selected state
-
-      // Show volume card
-      if (volumeCard) {
-        volumeCard.style.display = 'block';
-      }
-
       log(`Streaming to ${speaker.name}!`, 'success');
     } else {
       // Check if trial expired
