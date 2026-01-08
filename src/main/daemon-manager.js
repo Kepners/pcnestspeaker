@@ -31,7 +31,8 @@ function startDaemon() {
       return;
     }
 
-    const pythonPath = 'python';
+    // Use pythonw on Windows (no console window), fallback to python
+    const pythonPath = process.platform === 'win32' ? 'pythonw' : 'python';
     const scriptPath = path.join(__dirname, 'cast-daemon.py');
 
     console.log('[Daemon] Starting daemon...');

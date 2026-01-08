@@ -245,7 +245,9 @@ class ChromecastManager {
       this._log('Trying Python pychromecast fallback...', 'warn');
 
       const pythonScript = path.join(__dirname, 'cast-helper.py');
-      const python = spawn('python', [pythonScript, 'cast', speakerName, streamUrl, contentType], {
+      // Use pythonw on Windows (no console window), fallback to python
+      const pythonCmd = process.platform === 'win32' ? 'pythonw' : 'python';
+      const python = spawn(pythonCmd, [pythonScript, 'cast', speakerName, streamUrl, contentType], {
         windowsHide: true
       });
 
@@ -295,7 +297,9 @@ class ChromecastManager {
   async stopWithPython(speakerName) {
     return new Promise((resolve) => {
       const pythonScript = path.join(__dirname, 'cast-helper.py');
-      const python = spawn('python', [pythonScript, 'stop', speakerName], {
+      // Use pythonw on Windows (no console window), fallback to python
+      const pythonCmd = process.platform === 'win32' ? 'pythonw' : 'python';
+      const python = spawn(pythonCmd, [pythonScript, 'stop', speakerName], {
         windowsHide: true
       });
 

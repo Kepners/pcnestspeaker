@@ -669,7 +669,9 @@ async function preStartWebRTCPipeline() {
 function runPython(args) {
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(__dirname, 'cast-helper.py');
-    const python = spawn('python', [scriptPath, ...args], { windowsHide: true });
+    // Use pythonw on Windows (no console window), fallback to python
+    const pythonCmd = process.platform === 'win32' ? 'pythonw' : 'python';
+    const python = spawn(pythonCmd, [scriptPath, ...args], { windowsHide: true });
 
     let stdout = '';
     let stderr = '';
