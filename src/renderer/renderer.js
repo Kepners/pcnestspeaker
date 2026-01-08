@@ -610,7 +610,7 @@ async function discoverDevices() {
 
 /**
  * Get the appropriate icon SVG for a speaker based on its type
- * Icons designed to match Google's actual device shapes
+ * Icons designed to match Google's actual device shapes - WHITE filled
  */
 function getSpeakerIcon(speaker) {
   const model = (speaker.model || '').toLowerCase();
@@ -620,43 +620,43 @@ function getSpeakerIcon(speaker) {
   // TV / Shield / Display devices - TV with Cast icon
   if (model.includes('tv') || model.includes('shield') || model.includes('display') ||
       name.includes('tv') || castType === 'cast') {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-      <rect x="2" y="4" width="20" height="13" rx="1"/>
+    return `<svg viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="1.5">
+      <rect x="2" y="4" width="20" height="13" rx="1" fill="none"/>
       <line x1="7" y1="20" x2="17" y2="20"/>
       <line x1="12" y1="17" x2="12" y2="20"/>
-      <path d="M6 11c2.2 0 4 1.8 4 4" stroke-linecap="round"/>
-      <path d="M6 8c4 0 7 3 7 7" stroke-linecap="round"/>
-      <circle cx="6" cy="15" r="1" fill="currentColor"/>
+      <path d="M6 11c2.2 0 4 1.8 4 4" stroke-linecap="round" fill="none"/>
+      <path d="M6 8c4 0 7 3 7 7" stroke-linecap="round" fill="none"/>
+      <circle cx="6" cy="15" r="1"/>
     </svg>`;
   }
 
   // Groups (multi-room or stereo pairs) - Two round pucks
   if (castType === 'group' || name.includes('pair')) {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-      <ellipse cx="7" cy="12" rx="5.5" ry="3.5"/>
-      <ellipse cx="17" cy="12" rx="5.5" ry="3.5"/>
-      <circle cx="5.5" cy="12" r="0.7" fill="currentColor"/>
-      <circle cx="7" cy="12" r="0.7" fill="currentColor"/>
-      <circle cx="8.5" cy="12" r="0.7" fill="currentColor"/>
-      <circle cx="15.5" cy="12" r="0.7" fill="currentColor"/>
-      <circle cx="17" cy="12" r="0.7" fill="currentColor"/>
-      <circle cx="18.5" cy="12" r="0.7" fill="currentColor"/>
+    return `<svg viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="1.5">
+      <ellipse cx="7" cy="12" rx="5.5" ry="3.5" fill="none"/>
+      <ellipse cx="17" cy="12" rx="5.5" ry="3.5" fill="none"/>
+      <circle cx="5.5" cy="12" r="0.7"/>
+      <circle cx="7" cy="12" r="0.7"/>
+      <circle cx="8.5" cy="12" r="0.7"/>
+      <circle cx="15.5" cy="12" r="0.7"/>
+      <circle cx="17" cy="12" r="0.7"/>
+      <circle cx="18.5" cy="12" r="0.7"/>
     </svg>`;
   }
 
   // Nest Hub (has display) - Screen with fabric speaker base
   if (model.includes('hub') || model.includes('home hub')) {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-      <rect x="3" y="3" width="18" height="11" rx="1"/>
-      <path d="M4 17c0-2 3.5-3 8-3s8 1 8 3v2c0 1-2 2-8 2s-8-1-8-2v-2z"/>
+    return `<svg viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="1.5">
+      <rect x="3" y="3" width="18" height="11" rx="1" fill="none"/>
+      <path d="M4 17c0-2 3.5-3 8-3s8 1 8 3v2c0 1-2 2-8 2s-8-1-8-2v-2z" fill="none"/>
     </svg>`;
   }
 
   // Nest Audio (larger speaker) - Tall cylinder with fabric lines
   if (model.includes('nest audio') || model.includes('google home max')) {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-      <path d="M7 4c0-1.1 2.2-2 5-2s5 0.9 5 2v16c0 1.1-2.2 2-5 2s-5-0.9-5-2V4z"/>
-      <ellipse cx="12" cy="4" rx="5" ry="2"/>
+    return `<svg viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="1.5">
+      <path d="M7 4c0-1.1 2.2-2 5-2s5 0.9 5 2v16c0 1.1-2.2 2-5 2s-5-0.9-5-2V4z" fill="none"/>
+      <ellipse cx="12" cy="4" rx="5" ry="2" fill="none"/>
       <line x1="7" y1="9" x2="17" y2="9" opacity="0.5"/>
       <line x1="7" y1="12" x2="17" y2="12" opacity="0.5"/>
       <line x1="7" y1="15" x2="17" y2="15" opacity="0.5"/>
@@ -665,13 +665,13 @@ function getSpeakerIcon(speaker) {
   }
 
   // Default: Nest Mini / Google Home Mini - Round puck with LED dots
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-    <ellipse cx="12" cy="12" rx="9" ry="5"/>
-    <path d="M3 12c0 2 4 4 9 4s9-2 9-4"/>
-    <circle cx="9" cy="11.5" r="0.8" fill="currentColor"/>
-    <circle cx="11" cy="11.5" r="0.8" fill="currentColor"/>
-    <circle cx="13" cy="11.5" r="0.8" fill="currentColor"/>
-    <circle cx="15" cy="11.5" r="0.8" fill="currentColor"/>
+  return `<svg viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="1.5">
+    <ellipse cx="12" cy="12" rx="9" ry="5" fill="none"/>
+    <path d="M3 12c0 2 4 4 9 4s9-2 9-4" fill="none"/>
+    <circle cx="9" cy="11.5" r="0.8"/>
+    <circle cx="11" cy="11.5" r="0.8"/>
+    <circle cx="13" cy="11.5" r="0.8"/>
+    <circle cx="15" cy="11.5" r="0.8"/>
   </svg>`;
 }
 
