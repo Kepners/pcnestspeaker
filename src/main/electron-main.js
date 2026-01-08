@@ -1075,8 +1075,53 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           cleanup();
           throw new Error(`Fallback failed: ${httpResult.error}`);
         }
+      } else if (result.error && (result.error.includes('Timeout') || result.error.includes('offer'))) {
+        // Proxy signaling failed (likely Android TV doesn't support receiver->sender messaging)
+        // Fall back to cloudflared tunnel which provides HTTPS URL
+        sendLog('Proxy signaling timed out - trying cloudflared tunnel...', 'warning');
+
+        try {
+          // Start cloudflared tunnel for HTTPS access to MediaMTX
+          const httpsUrl = await startTunnel(8889);
+          sendLog(`Tunnel URL: ${httpsUrl}`, 'success');
+
+          // Use webrtc-launch with the HTTPS URL (receiver fetches directly)
+          sendLog(`Connecting via tunnel to ${speakerName}...`);
+          const tunnelArgs = ['webrtc-launch', speakerName, httpsUrl];
+          if (speakerIp) tunnelArgs.push(speakerIp);
+          tunnelArgs.push('pcaudio'); // stream name
+          const tunnelResult = await runPython(tunnelArgs);
+
+          if (tunnelResult.success) {
+            sendLog('WebRTC streaming started! (via tunnel)', 'success');
+            trayManager.updateTrayState(true);
+            usageTracker.startTracking();
+
+            // Volume sync
+            if (speaker) {
+              volumeSync.startMonitoring(
+                [{ name: speaker.name, ip: speaker.ip }],
+                (volume) => {
+                  if (settingsManager.getSetting('volumeBoost')) return;
+                  if (daemonManager.isDaemonRunning()) {
+                    daemonManager.setVolumeFast(speaker.name, volume / 100, speaker.ip || null).catch(() => {});
+                  } else {
+                    runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
+                  }
+                }
+              );
+            }
+
+            return { success: true, url: httpsUrl, mode: streamingMode, tunnelFallback: true };
+          } else {
+            throw new Error(`Tunnel fallback failed: ${tunnelResult.error}`);
+          }
+        } catch (tunnelError) {
+          cleanup();
+          throw new Error(`Proxy signaling failed and tunnel fallback failed: ${tunnelError.message}`);
+        }
       } else {
-        // Other errors
+        // Other errors - no fallback available
         cleanup();
         throw new Error(result.error);
       }

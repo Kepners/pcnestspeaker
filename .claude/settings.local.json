@@ -116,7 +116,10 @@
       "Bash(reg query \"HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\" /v PCNestSpeaker)",
       "Bash(reg query HKCUSoftwareMicrosoftWindowsCurrentVersionRun /v PCNestSpeaker)",
       "Bash(cmd /c \"reg query \"\"HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\"\" /v PCNestSpeaker\")",
-      "Bash(reg add \"HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\" /v PCNestSpeaker /t REG_SZ /d \"\"\"C:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\start-app.bat\"\"\" /f)"
+      "Bash(reg add \"HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\" /v PCNestSpeaker /t REG_SZ /d \"\"\"C:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\start-app.bat\"\"\" /f)",
+      "Bash(ipconfig:*)",
+      "Bash(cmd /c \"ipconfig | find \"\"IPv4\"\"\")",
+      "Bash(cmd /c \"ipconfig\")"
     ]
   }
 }
