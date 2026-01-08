@@ -357,9 +357,7 @@ body::before {
 }
 
 .speaker-item.streaming {
-  background: linear-gradient(135deg, rgba(239, 71, 111, 0.2), rgba(239, 71, 111, 0.1));
-  border: 2px solid var(--pink);
-  box-shadow: 0 0 20px rgba(239, 71, 111, 0.3);
+  background: transparent;
 }
 
 .speaker-item.streaming .speaker-name {
@@ -489,7 +487,14 @@ body::before {
   font-weight: 700;
   letter-spacing: 0.5px;
   color: rgba(26, 26, 26, 0.4);
-  cursor: default;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.stereo-badge:hover {
+  background: rgba(239, 71, 111, 0.1);
+  border-color: var(--pink);
+  color: var(--pink);
 }
 
 .speaker-item.speaker-left {
