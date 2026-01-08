@@ -610,56 +610,68 @@ async function discoverDevices() {
 
 /**
  * Get the appropriate icon SVG for a speaker based on its type
+ * Icons designed to match Google's actual device shapes
  */
 function getSpeakerIcon(speaker) {
   const model = (speaker.model || '').toLowerCase();
   const name = (speaker.name || '').toLowerCase();
   const castType = speaker.cast_type || 'audio';
 
-  // TV / Shield / Display devices
+  // TV / Shield / Display devices - TV with Cast icon
   if (model.includes('tv') || model.includes('shield') || model.includes('display') ||
       name.includes('tv') || castType === 'cast') {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <rect x="2" y="3" width="20" height="14" rx="2"/>
-      <line x1="8" y1="21" x2="16" y2="21"/>
-      <line x1="12" y1="17" x2="12" y2="21"/>
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="2" y="4" width="20" height="13" rx="1"/>
+      <line x1="7" y1="20" x2="17" y2="20"/>
+      <line x1="12" y1="17" x2="12" y2="20"/>
+      <path d="M6 11c2.2 0 4 1.8 4 4" stroke-linecap="round"/>
+      <path d="M6 8c4 0 7 3 7 7" stroke-linecap="round"/>
+      <circle cx="6" cy="15" r="1" fill="currentColor"/>
     </svg>`;
   }
 
-  // Groups (multi-room or stereo pairs)
+  // Groups (multi-room or stereo pairs) - Two round pucks
   if (castType === 'group' || name.includes('pair')) {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <rect x="1" y="4" width="10" height="16" rx="1"/>
-      <circle cx="6" cy="14" r="3"/>
-      <line x1="6" y1="7" x2="6" y2="7" stroke-linecap="round"/>
-      <rect x="13" y="4" width="10" height="16" rx="1"/>
-      <circle cx="18" cy="14" r="3"/>
-      <line x1="18" y1="7" x2="18" y2="7" stroke-linecap="round"/>
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <ellipse cx="7" cy="12" rx="5.5" ry="3.5"/>
+      <ellipse cx="17" cy="12" rx="5.5" ry="3.5"/>
+      <circle cx="5.5" cy="12" r="0.7" fill="currentColor"/>
+      <circle cx="7" cy="12" r="0.7" fill="currentColor"/>
+      <circle cx="8.5" cy="12" r="0.7" fill="currentColor"/>
+      <circle cx="15.5" cy="12" r="0.7" fill="currentColor"/>
+      <circle cx="17" cy="12" r="0.7" fill="currentColor"/>
+      <circle cx="18.5" cy="12" r="0.7" fill="currentColor"/>
     </svg>`;
   }
 
-  // Nest Hub (has display)
+  // Nest Hub (has display) - Screen with fabric speaker base
   if (model.includes('hub') || model.includes('home hub')) {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <rect x="2" y="4" width="20" height="12" rx="2"/>
-      <path d="M6 20h12c0-2-2-4-6-4s-6 2-6 4z"/>
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="3" y="3" width="18" height="11" rx="1"/>
+      <path d="M4 17c0-2 3.5-3 8-3s8 1 8 3v2c0 1-2 2-8 2s-8-1-8-2v-2z"/>
     </svg>`;
   }
 
-  // Nest Audio (larger speaker)
+  // Nest Audio (larger speaker) - Tall cylinder with fabric lines
   if (model.includes('nest audio') || model.includes('google home max')) {
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <rect x="5" y="2" width="14" height="20" rx="3"/>
-      <circle cx="12" cy="14" r="4"/>
-      <circle cx="12" cy="6" r="1.5"/>
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M7 4c0-1.1 2.2-2 5-2s5 0.9 5 2v16c0 1.1-2.2 2-5 2s-5-0.9-5-2V4z"/>
+      <ellipse cx="12" cy="4" rx="5" ry="2"/>
+      <line x1="7" y1="9" x2="17" y2="9" opacity="0.5"/>
+      <line x1="7" y1="12" x2="17" y2="12" opacity="0.5"/>
+      <line x1="7" y1="15" x2="17" y2="15" opacity="0.5"/>
+      <line x1="7" y1="18" x2="17" y2="18" opacity="0.5"/>
     </svg>`;
   }
 
-  // Default: Nest Mini / Google Home Mini (small round speaker)
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-    <rect x="4" y="2" width="16" height="20" rx="2"/>
-    <circle cx="12" cy="14" r="4"/>
-    <line x1="12" y1="6" x2="12" y2="6" stroke-linecap="round"/>
+  // Default: Nest Mini / Google Home Mini - Round puck with LED dots
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+    <ellipse cx="12" cy="12" rx="9" ry="5"/>
+    <path d="M3 12c0 2 4 4 9 4s9-2 9-4"/>
+    <circle cx="9" cy="11.5" r="0.8" fill="currentColor"/>
+    <circle cx="11" cy="11.5" r="0.8" fill="currentColor"/>
+    <circle cx="13" cy="11.5" r="0.8" fill="currentColor"/>
+    <circle cx="15" cy="11.5" r="0.8" fill="currentColor"/>
   </svg>`;
 }
 
