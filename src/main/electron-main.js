@@ -1030,59 +1030,33 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
           const boostLevel = volumeBoostEnabled ? 1.25 : 1.03;
 
-          // Start FFmpeg LEFT channel
-          sendLog('Starting FFmpeg LEFT channel...');
+          // CRITICAL: DirectShow devices can only be opened ONCE!
+          // Use SINGLE FFmpeg with filter_complex for L/R split + dual RTSP output
+          sendLog('Starting FFmpeg stereo split (single capture, dual output)...');
           stereoFFmpegProcesses.left = spawn(ffmpegPath, [
             '-hide_banner', '-stats',
             '-f', 'dshow',
             '-i', 'audio=virtual-audio-capturer',
-            '-af', `pan=mono|c0=c0,volume=${boostLevel}`,
-            '-c:a', 'libopus',
-            '-b:a', '128k',
-            '-ar', '48000',
-            '-ac', '1',
-            '-f', 'rtsp',
-            '-rtsp_transport', 'tcp',
-            'rtsp://localhost:8554/left'
+            '-filter_complex', `[0:a]pan=mono|c0=c0,volume=${boostLevel}[left];[0:a]pan=mono|c0=c1,volume=${boostLevel}[right]`,
+            '-map', '[left]', '-c:a', 'libopus', '-b:a', '128k', '-ar', '48000', '-ac', '1',
+            '-f', 'rtsp', '-rtsp_transport', 'tcp', 'rtsp://localhost:8554/left',
+            '-map', '[right]', '-c:a', 'libopus', '-b:a', '128k', '-ar', '48000', '-ac', '1',
+            '-f', 'rtsp', '-rtsp_transport', 'tcp', 'rtsp://localhost:8554/right'
           ], { stdio: 'pipe', windowsHide: true });
+
+          // Note: stereoFFmpegProcesses.right is not used - single process handles both
+          stereoFFmpegProcesses.right = null;
 
           stereoFFmpegProcesses.left.stderr.on('data', (data) => {
             const msg = data.toString();
             if (streamStats) streamStats.parseFfmpegOutput(msg);
             if (msg.includes('Error') || msg.includes('error')) {
-              sendLog(`FFmpeg LEFT: ${msg}`, 'error');
+              sendLog(`FFmpeg STEREO: ${msg}`, 'error');
             }
           });
 
-          await new Promise(r => setTimeout(r, 1000));
-          sendLog('LEFT channel streaming', 'success');
-
-          // Start FFmpeg RIGHT channel
-          sendLog('Starting FFmpeg RIGHT channel...');
-          stereoFFmpegProcesses.right = spawn(ffmpegPath, [
-            '-hide_banner', '-stats',
-            '-f', 'dshow',
-            '-i', 'audio=virtual-audio-capturer',
-            '-af', `pan=mono|c0=c1,volume=${boostLevel}`,
-            '-c:a', 'libopus',
-            '-b:a', '128k',
-            '-ar', '48000',
-            '-ac', '1',
-            '-f', 'rtsp',
-            '-rtsp_transport', 'tcp',
-            'rtsp://localhost:8554/right'
-          ], { stdio: 'pipe', windowsHide: true });
-
-          stereoFFmpegProcesses.right.stderr.on('data', (data) => {
-            const msg = data.toString();
-            if (streamStats) streamStats.parseFfmpegOutput(msg);
-            if (msg.includes('Error') || msg.includes('error')) {
-              sendLog(`FFmpeg RIGHT: ${msg}`, 'error');
-            }
-          });
-
-          await new Promise(r => setTimeout(r, 1000));
-          sendLog('RIGHT channel streaming', 'success');
+          await new Promise(r => setTimeout(r, 2000));  // Wait for both outputs to initialize
+          sendLog('LEFT + RIGHT channels streaming (single FFmpeg)', 'success');
 
           // Start stream stats
           if (streamStats) streamStats.start();
@@ -1662,27 +1636,30 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
       await new Promise(r => setTimeout(r, 3000)); // Wait for MediaMTX to be ready
     }
 
-    // 2. Start FFmpeg for LEFT channel
-    sendLog('Starting FFmpeg LEFT channel...');
+    // 2. Start SINGLE FFmpeg process for BOTH channels
+    // CRITICAL: DirectShow devices can only be opened ONCE!
+    // We use filter_complex to split audio into L/R and output to two RTSP streams
+    sendLog('Starting FFmpeg stereo split (single capture, dual output)...');
     const ffmpegPath = getFFmpegPath();
 
     // Check if volume boost is enabled (same values as main stream)
     const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
     const boostLevel = volumeBoostEnabled ? 1.25 : 1.03; // 3% hidden, 25% with boost
 
+    // Single FFmpeg process with filter_complex for L/R split + dual RTSP output
     stereoFFmpegProcesses.left = spawn(ffmpegPath, [
-      '-hide_banner', '-stats',  // Force progress output for stream monitor
+      '-hide_banner', '-stats',
       '-f', 'dshow',
       '-i', 'audio=virtual-audio-capturer',
-      '-af', `pan=mono|c0=c0,volume=${boostLevel}`,  // Extract left channel + boost
-      '-c:a', 'libopus',
-      '-b:a', '128k',
-      '-ar', '48000',
-      '-ac', '1',
-      '-f', 'rtsp',
-      '-rtsp_transport', 'tcp',
-      'rtsp://localhost:8554/left'
+      '-filter_complex', `[0:a]pan=mono|c0=c0,volume=${boostLevel}[left];[0:a]pan=mono|c0=c1,volume=${boostLevel}[right]`,
+      '-map', '[left]', '-c:a', 'libopus', '-b:a', '128k', '-ar', '48000', '-ac', '1',
+      '-f', 'rtsp', '-rtsp_transport', 'tcp', 'rtsp://localhost:8554/left',
+      '-map', '[right]', '-c:a', 'libopus', '-b:a', '128k', '-ar', '48000', '-ac', '1',
+      '-f', 'rtsp', '-rtsp_transport', 'tcp', 'rtsp://localhost:8554/right'
     ], { stdio: 'pipe', windowsHide: true });
+
+    // Note: stereoFFmpegProcesses.right is not used - single process handles both
+    stereoFFmpegProcesses.right = null;
 
     stereoFFmpegProcesses.left.stderr.on('data', (data) => {
       const msg = data.toString();
@@ -1691,43 +1668,12 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
         streamStats.parseFfmpegOutput(msg);
       }
       if (msg.includes('Error') || msg.includes('error')) {
-        sendLog(`FFmpeg LEFT: ${msg}`, 'error');
+        sendLog(`FFmpeg STEREO: ${msg}`, 'error');
       }
     });
 
-    await new Promise(r => setTimeout(r, 1000));  // Reduced from 2s to 1s
-    sendLog('LEFT channel streaming', 'success');
-
-    // 3. Start FFmpeg for RIGHT channel
-    sendLog('Starting FFmpeg RIGHT channel...');
-
-    stereoFFmpegProcesses.right = spawn(ffmpegPath, [
-      '-hide_banner', '-stats',  // Force progress output for stream monitor
-      '-f', 'dshow',
-      '-i', 'audio=virtual-audio-capturer',
-      '-af', `pan=mono|c0=c1,volume=${boostLevel}`,  // Extract right channel + boost
-      '-c:a', 'libopus',
-      '-b:a', '128k',
-      '-ar', '48000',
-      '-ac', '1',
-      '-f', 'rtsp',
-      '-rtsp_transport', 'tcp',
-      'rtsp://localhost:8554/right'
-    ], { stdio: 'pipe', windowsHide: true });
-
-    stereoFFmpegProcesses.right.stderr.on('data', (data) => {
-      const msg = data.toString();
-      // Parse for stream stats (right channel contributes to total)
-      if (streamStats) {
-        streamStats.parseFfmpegOutput(msg);
-      }
-      if (msg.includes('Error') || msg.includes('error')) {
-        sendLog(`FFmpeg RIGHT: ${msg}`, 'error');
-      }
-    });
-
-    await new Promise(r => setTimeout(r, 1000));  // Reduced from 2s to 1s
-    sendLog('RIGHT channel streaming', 'success');
+    await new Promise(r => setTimeout(r, 2000));  // Wait for both outputs to initialize
+    sendLog('LEFT + RIGHT channels streaming (single FFmpeg)', 'success');
 
     // Start stream stats monitoring (for stereo mode)
     if (streamStats) {
