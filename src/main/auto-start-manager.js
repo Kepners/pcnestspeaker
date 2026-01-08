@@ -107,9 +107,66 @@ async function toggleAutoStart() {
   }
 }
 
+/**
+ * Get the correct auto-start path for current environment
+ */
+function getCorrectAutoStartPath() {
+  const projectPath = path.join(__dirname, '../..');
+
+  if (app.isPackaged) {
+    return `"${process.execPath}"`;
+  } else {
+    const batPath = path.join(projectPath, 'start-app.bat');
+    return `"${batPath}"`;
+  }
+}
+
+/**
+ * Verify auto-start registry entry is correct and fix if needed
+ * Call this on app startup to auto-fix outdated entries
+ */
+function verifyAndFixAutoStart() {
+  return new Promise((resolve) => {
+    const cmd = `reg query "${REGISTRY_PATH}" /v ${AUTO_START_KEY_NAME}`;
+
+    exec(cmd, { windowsHide: true }, (error, stdout, stderr) => {
+      if (error) {
+        // Auto-start not enabled, nothing to fix
+        console.log('[AutoStart] Not enabled, nothing to verify');
+        resolve(false);
+        return;
+      }
+
+      // Auto-start is enabled - check if path is correct
+      const correctPath = getCorrectAutoStartPath();
+
+      if (stdout.includes(correctPath.replace(/"/g, ''))) {
+        console.log('[AutoStart] Registry entry is correct');
+        resolve(true);
+        return;
+      }
+
+      // Path is wrong - fix it automatically
+      console.log('[AutoStart] Registry entry outdated, updating...');
+      console.log('[AutoStart] Correct path:', correctPath);
+
+      enableAutoStart()
+        .then(() => {
+          console.log('[AutoStart] Registry entry fixed automatically');
+          resolve(true);
+        })
+        .catch((err) => {
+          console.error('[AutoStart] Failed to fix registry entry:', err);
+          resolve(false);
+        });
+    });
+  });
+}
+
 module.exports = {
   isAutoStartEnabled,
   enableAutoStart,
   disableAutoStart,
-  toggleAutoStart
+  toggleAutoStart,
+  verifyAndFixAutoStart
 };

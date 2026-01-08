@@ -1879,6 +1879,9 @@ app.whenReady().then(async () => {
   // Setup firewall rules for streaming (prompts admin on first run)
   await setupFirewall();
 
+  // Verify and fix auto-start registry entry if outdated
+  await autoStartManager.verifyAndFixAutoStart();
+
   createWindow();
 
   // Create system tray
