@@ -63,7 +63,7 @@ let webrtcPipelineReady = false;
 let webrtcPipelineError = null;
 
 // TEST: Disable CloudFlare to see if local IP works
-const DISABLE_CLOUDFLARE = false; // MUST be false - Cast receiver needs HTTPS tunnel
+const DISABLE_CLOUDFLARE = true;
 
 // Helper: Get local IP address
 function getLocalIp() {
@@ -841,16 +841,9 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       // WebRTC streaming modes using MediaMTX
       // Pipeline: FFmpeg (DirectShow) -> RTSP -> MediaMTX -> WebRTC -> Cast Receiver
 
-      // MUST use CloudFlare tunnel - Cast receiver (HTTPS) cannot access local HTTP!
-      let webrtcUrl;
-      if (tunnelUrl) {
-        webrtcUrl = tunnelUrl;
-        sendLog(`Using existing tunnel: ${webrtcUrl}`);
-      } else {
-        sendLog('Starting CloudFlare tunnel...');
-        webrtcUrl = await startLocalTunnel(8889);
-        sendLog(`Tunnel ready: ${webrtcUrl}`, 'success');
-      }
+      // Use local HTTP URL (like stereo mode) - tunnel was causing audio issues!
+      const localIp = getLocalIp();
+      let webrtcUrl = `http://${localIp}:8889`;
 
       // Check if pipeline was pre-started in background
       if (webrtcPipelineReady && mediamtxProcess && ffmpegWebrtcProcess) {
@@ -1496,16 +1489,9 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
       streamStats.start();
     }
 
-    // 4. Get/start CloudFlare tunnel - Cast receiver needs HTTPS!
-    let webrtcUrl;
-    if (tunnelUrl) {
-      webrtcUrl = tunnelUrl;
-      sendLog(`Using existing tunnel: ${webrtcUrl}`);
-    } else {
-      sendLog('Starting CloudFlare tunnel for stereo...');
-      webrtcUrl = await startLocalTunnel(8889);
-      sendLog(`Tunnel ready: ${webrtcUrl}`, 'success');
-    }
+    // 4. Get local IP
+    const localIp = getLocalIp();
+    const webrtcUrl = `http://${localIp}:8889`;
 
     // 5. Cast to LEFT speaker
     sendLog(`Casting to LEFT speaker: "${leftSpeaker.name}"`);
