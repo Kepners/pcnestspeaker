@@ -72,13 +72,27 @@
     async function connectToMediaMTX(serverUrl, streamName = 'pcaudio') {
       log('Connecting to MediaMTX...');
 
-      // ICE configuration - STUN only for now (TURN was causing issues)
-      // The receiver and server are both on local network, so STUN should suffice
+      // ICE configuration - STUN + TURN for NAT traversal
+      // TURN required for symmetric NAT on Cast devices (Android TV, Nest)
       const iceConfig = {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' }
+          {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          }
         ]
       };
 
