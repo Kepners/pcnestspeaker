@@ -13,7 +13,8 @@ const fs = require('fs');
 const RULES = [
   { name: 'PC Nest Speaker HTTP', ports: '8000-8010', protocol: 'TCP' },
   { name: 'PC Nest Speaker WebRTC', ports: '8889', protocol: 'TCP' },
-  { name: 'PC Nest Speaker ICE', ports: '8189', protocol: 'UDP' }
+  { name: 'PC Nest Speaker ICE UDP', ports: '8189', protocol: 'UDP' },
+  { name: 'PC Nest Speaker ICE TCP', ports: '8189', protocol: 'TCP' }
 ];
 
 /**

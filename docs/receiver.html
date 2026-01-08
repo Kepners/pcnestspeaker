@@ -284,6 +284,7 @@
       // Start ambient videos when connecting
       startAmbientVideos();
 
+      // Force relay mode for Nest speakers (they have restrictive NAT)
       const iceConfig = {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
@@ -303,7 +304,9 @@
             username: 'openrelayproject',
             credential: 'openrelayproject'
           }
-        ]
+        ],
+        // Try relay first for restrictive NAT (Nest speakers)
+        iceTransportPolicy: 'all'
       };
 
       peerConnection = new RTCPeerConnection(iceConfig);
@@ -352,6 +355,32 @@
         }
       };
 
+      // ICE state debugging
+      peerConnection.oniceconnectionstatechange = () => {
+        console.log('[WebRTC] ICE state:', peerConnection.iceConnectionState);
+        if (peerConnection.iceConnectionState === 'failed') {
+          log('ICE failed - retrying...');
+        } else if (peerConnection.iceConnectionState === 'disconnected') {
+          log('ICE disconnected');
+        } else if (peerConnection.iceConnectionState === 'checking') {
+          log('ICE checking...');
+        } else if (peerConnection.iceConnectionState === 'connected') {
+          log('ICE connected!');
+        }
+      };
+
+      peerConnection.onicegatheringstatechange = () => {
+        console.log('[WebRTC] ICE gathering state:', peerConnection.iceGatheringState);
+      };
+
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log('[WebRTC] Local ICE candidate:', event.candidate.type, event.candidate.address);
+        } else {
+          console.log('[WebRTC] ICE gathering complete');
+        }
+      };
+
       peerConnection.addTransceiver('audio', { direction: 'recvonly' });
 
       const offer = await peerConnection.createOffer();
@@ -393,11 +422,18 @@
         }
 
         const answerSdp = await response.text();
+        console.log('[WebRTC] SDP Answer received:', answerSdp.substring(0, 500) + '...');
+
+        // Log ICE candidates from answer
+        const iceCandidates = answerSdp.match(/a=candidate:.*/g) || [];
+        console.log('[WebRTC] Remote ICE candidates:', iceCandidates.length);
+        iceCandidates.forEach(c => console.log('[WebRTC]   ', c));
+
         await peerConnection.setRemoteDescription({ type: 'answer', sdp: answerSdp });
 
         // Success - reset retry count
         retryCount = 0;
-        console.log('[WebRTC] WHEP connection successful, SDP answer received');
+        console.log('[WebRTC] WHEP connection successful, SDP answer processed');
 
       } catch (e) {
         console.error('[WebRTC] Error:', e);

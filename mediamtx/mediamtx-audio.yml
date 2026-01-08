@@ -67,16 +67,21 @@ webrtcEncryption: no
 webrtcAllowOrigins: ['*']
 # Auto-detect local IP from network interfaces (works for any user's network)
 webrtcIPsFromInterfaces: yes
+webrtcIPsFromInterfacesList: []
 webrtcAdditionalHosts: []
 webrtcLocalUDPAddress: :8189
 webrtcLocalTCPAddress: :8189
+# Increase timeouts for Nest speakers which have slow ICE
 webrtcHandshakeTimeout: 120s
-webrtcTrackGatherTimeout: 30s
-webrtcSTUNGatherTimeout: 30s
+webrtcTrackGatherTimeout: 60s
+webrtcSTUNGatherTimeout: 60s
 # ICE servers for NAT traversal
 # Google STUN + Open Relay TURN for fallback relay
+# Include multiple TURN options to ensure connectivity
 webrtcICEServers2:
   - url: stun:stun.l.google.com:19302
+  - url: stun:stun1.l.google.com:19302
+  - url: stun:stun2.l.google.com:19302
   - url: turn:openrelay.metered.ca:80
     username: openrelayproject
     password: openrelayproject
