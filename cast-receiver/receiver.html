@@ -280,7 +280,25 @@
       startAmbientVideos();
 
       const iceConfig = {
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          }
+        ]
       };
 
       peerConnection = new RTCPeerConnection(iceConfig);
@@ -412,13 +430,19 @@
     playerManager.setMessageInterceptor(
       cast.framework.messages.MessageType.LOAD,
       (request) => {
+        console.log('[Cast] LOAD request:', JSON.stringify(request, null, 2));
+
         if (request.media && request.media.contentId) {
           const contentId = request.media.contentId;
 
+          // Handle webrtc:// prefix (used for Cast Groups)
           if (contentId.startsWith('webrtc://')) {
             const httpsUrl = contentId.replace('webrtc://', '');
+            // Get stream name from customData if available
+            const streamName = (request.media.customData && request.media.customData.stream) || 'pcaudio';
+            console.log('[Cast] GROUP mode - webrtc:// URL:', httpsUrl, 'stream:', streamName);
             hideDefaultPlayer();
-            connectToMediaMTX(httpsUrl, 'pcaudio');
+            connectToMediaMTX(httpsUrl, streamName);
             return null;
           }
         }

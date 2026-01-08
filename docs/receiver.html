@@ -430,13 +430,19 @@
     playerManager.setMessageInterceptor(
       cast.framework.messages.MessageType.LOAD,
       (request) => {
+        console.log('[Cast] LOAD request:', JSON.stringify(request, null, 2));
+
         if (request.media && request.media.contentId) {
           const contentId = request.media.contentId;
 
+          // Handle webrtc:// prefix (used for Cast Groups)
           if (contentId.startsWith('webrtc://')) {
             const httpsUrl = contentId.replace('webrtc://', '');
+            // Get stream name from customData if available
+            const streamName = (request.media.customData && request.media.customData.stream) || 'pcaudio';
+            console.log('[Cast] GROUP mode - webrtc:// URL:', httpsUrl, 'stream:', streamName);
             hideDefaultPlayer();
-            connectToMediaMTX(httpsUrl, 'pcaudio');
+            connectToMediaMTX(httpsUrl, streamName);
             return null;
           }
         }
