@@ -429,9 +429,8 @@ def get_volume(speaker_name):
 def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pcaudio"):
     """Launch custom receiver for WebRTC streaming.
 
-    If https_url is provided, sends it to the receiver.
-    - For GROUPS: Uses play_media() with webrtc:// prefix (distributes to ALL speakers)
-    - For SINGLES: Uses custom namespace message (works for one device)
+    If https_url is provided, sends it to the receiver via play_media customData.
+    The receiver will then connect to the webrtc-streamer via HTTPS.
 
     If speaker_ip is provided, connects directly without discovery (faster, more reliable).
 
@@ -480,13 +479,8 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pc
             cast = chromecasts[0]
 
         host = cast.cast_info.host if hasattr(cast, 'cast_info') else speaker_ip or 'unknown'
-        cast_type = cast.cast_info.cast_type if hasattr(cast, 'cast_info') else 'unknown'
-        print(f"[WebRTC] Connected to {host}, cast_type: {cast_type}", file=sys.stderr)
+        print(f"[WebRTC] Connected to {host}, waiting for ready...", file=sys.stderr)
         cast.wait(timeout=10)
-
-        # Check if this is a GROUP - groups need play_media() for all speakers to get audio
-        is_group = cast_type == "group"
-        print(f"[WebRTC] Is group: {is_group}", file=sys.stderr)
 
         # Stop discovery AFTER wait() completes - zeroconf must stay running until then
         if browser:
@@ -524,7 +518,7 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pc
             print(f"[WebRTC]   3. Check: https://cast.google.com/publish/", file=sys.stderr)
             return {"success": False, "error": error_msg, "error_code": "UNKNOWN"}
 
-        # If HTTPS URL provided, send it to receiver
+        # If HTTPS URL provided, send it to receiver via custom namespace message
         if https_url:
             print(f"[WebRTC] Sending WebRTC URL to receiver: {https_url}", file=sys.stderr)
 
@@ -537,53 +531,41 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pc
                     break
                 print(f"[WebRTC] Waiting for app... ({i+1}/10)", file=sys.stderr)
 
-            # ========================================
-            # NOTE: For now, use custom namespace for ALL devices
-            # (groups will only play on leader - known limitation)
-            # play_media approach didn't work - needs investigation
-            # ========================================
-            if False and is_group:  # DISABLED - doesn't work
-                print(f"[WebRTC] GROUP detected - using play_media() for all speakers", file=sys.stderr)
-                webrtc_content_id = f"webrtc://{https_url}"
-                mc = cast.media_controller
-                mc.play_media(webrtc_content_id, "audio/webrtc", stream_type="LIVE", autoplay=True)
-                time.sleep(2)
-            # Use custom namespace for ALL devices (groups play on leader only for now)
-            if True:  # Always use this path
-                print(f"[WebRTC] Using custom namespace message (is_group={is_group})", file=sys.stderr)
+            # Send URL via custom namespace message
+            # The receiver listens on 'urn:x-cast:com.pcnestspeaker.webrtc'
+            WEBRTC_NAMESPACE = "urn:x-cast:com.pcnestspeaker.webrtc"
 
-                WEBRTC_NAMESPACE = "urn:x-cast:com.pcnestspeaker.webrtc"
+            # Create and register a simple message controller
+            from pychromecast.controllers import BaseController
 
-                from pychromecast.controllers import BaseController
+            class WebRTCController(BaseController):
+                def __init__(self):
+                    super().__init__(WEBRTC_NAMESPACE)
 
-                class WebRTCController(BaseController):
-                    def __init__(self):
-                        super().__init__(WEBRTC_NAMESPACE)
+                def receive_message(self, message, data):
+                    print(f"[WebRTC] Received: {data}", file=sys.stderr)
+                    return True
 
-                    def receive_message(self, message, data):
-                        print(f"[WebRTC] Received: {data}", file=sys.stderr)
-                        return True
+            webrtc_controller = WebRTCController()
+            cast.register_handler(webrtc_controller)
 
-                webrtc_controller = WebRTCController()
-                cast.register_handler(webrtc_controller)
+            # Send connect message with URL and custom stream name
+            message = {
+                "type": "connect",
+                "url": https_url,
+                "stream": stream_name
+            }
+            print(f"[WebRTC] Sending message: {message}", file=sys.stderr)
+            webrtc_controller.send_message(message)
 
-                # Send connect message with URL and custom stream name
-                message = {
-                    "type": "connect",
-                    "url": https_url,
-                    "stream": stream_name
-                }
-                print(f"[WebRTC] Sending message: {message}", file=sys.stderr)
-                webrtc_controller.send_message(message)
-
-                time.sleep(2)
-                print("[WebRTC] URL sent via custom namespace!", file=sys.stderr)
+            time.sleep(2)
+            print("[WebRTC] URL sent via custom namespace!", file=sys.stderr)
 
         return {
             "success": True,
-            "mode": "webrtc-group" if is_group else "webrtc",
+            "mode": "webrtc",
             "url": https_url or "none",
-            "message": f"Receiver launched - {'GROUP mode (play_media)' if is_group else 'single mode (namespace)'}"
+            "message": "Receiver launched with WebRTC URL"
         }
 
     except Exception as e:
