@@ -921,14 +921,8 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           streamStats.start();
         }
 
-        // Start cloudflared tunnel for HTTPS (receiver is HTTPS, can't fetch HTTP!)
-        try {
-          const httpsUrl = await startLocalTunnel(8889);
-          webrtcUrl = httpsUrl;
-          sendLog(`Tunnel URL: ${webrtcUrl}`, 'success');
-        } catch (tunnelErr) {
-          sendLog(`Tunnel failed: ${tunnelErr.message} - trying local HTTP`, 'warning');
-        }
+        // Use local HTTP URL directly (like stereo mode) - NO cloudflared needed!
+        sendLog(`Using local HTTP URL: ${webrtcUrl}`, 'success');
       } else {
         // Pipeline not ready - start it now
         sendLog('Starting WebRTC pipeline...');
@@ -985,15 +979,8 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           streamStats.start();
         }
 
-        // Start cloudflared tunnel for HTTPS (receiver is HTTPS, can't fetch HTTP!)
-        try {
-          const httpsUrl = await startLocalTunnel(8889);
-          webrtcUrl = httpsUrl;
-          sendLog(`Tunnel URL: ${webrtcUrl}`, 'success');
-        } catch (tunnelErr) {
-          sendLog(`Tunnel failed: ${tunnelErr.message} - trying local HTTP`, 'warning');
-          // Keep using local HTTP as fallback (may not work due to mixed content)
-        }
+        // Use local HTTP URL directly (like stereo mode) - NO cloudflared needed!
+        sendLog(`Using local HTTP URL: ${webrtcUrl}`, 'success');
       }
 
       // Step 4: Launch custom receiver - send URL directly (NO PROXY!)

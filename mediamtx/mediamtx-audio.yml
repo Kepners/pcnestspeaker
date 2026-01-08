@@ -70,9 +70,9 @@ webrtcIPsFromInterfaces: yes
 webrtcAdditionalHosts: []
 webrtcLocalUDPAddress: :8189
 webrtcLocalTCPAddress: :8189
-webrtcHandshakeTimeout: 10s
-webrtcTrackGatherTimeout: 2s
-webrtcSTUNGatherTimeout: 5s
+webrtcHandshakeTimeout: 120s
+webrtcTrackGatherTimeout: 30s
+webrtcSTUNGatherTimeout: 30s
 # ICE servers for NAT traversal
 # Google STUN + Open Relay TURN for fallback relay
 webrtcICEServers2:
