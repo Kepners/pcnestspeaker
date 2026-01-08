@@ -113,7 +113,7 @@ class AudioStreamer {
         '-list_devices', 'true',
         '-f', 'dshow',
         '-i', 'dummy'
-      ], { windowsHide: true });
+      ], { windowsHide: true, shell: process.platform === 'win32' });
 
       let stderr = '';
       proc.stderr.on('data', (data) => {
@@ -353,7 +353,8 @@ class AudioStreamer {
 
     this.ffmpegProcess = spawn(ffmpeg, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true
+      windowsHide: true,
+      shell: process.platform === 'win32'
     });
 
     this.ffmpegProcess.stdout.on('data', (data) => {
@@ -409,7 +410,8 @@ class AudioStreamer {
 
     this.ffmpegProcess = spawn(ffmpeg, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true
+      windowsHide: true,
+      shell: process.platform === 'win32'
     });
 
     let bytesStreamed = 0;

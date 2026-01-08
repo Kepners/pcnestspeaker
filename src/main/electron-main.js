@@ -299,11 +299,23 @@ async function startMediaMTX() {
   return new Promise((resolve, reject) => {
     // Launch MediaMTX with our custom config
     const mtxPath = getMediaMTXPath();
-    mediamtxProcess = spawn(mtxPath, [getMediaMTXConfig()], {
-      cwd: path.dirname(mtxPath),
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true
-    });
+    const mtxConfig = getMediaMTXConfig();
+
+    // On Windows, console apps like MediaMTX create their own window even with windowsHide
+    // Using shell: true with windowsHide: true actually suppresses the console window
+    if (process.platform === 'win32') {
+      mediamtxProcess = spawn(`"${mtxPath}"`, [`"${mtxConfig}"`], {
+        cwd: path.dirname(mtxPath),
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+        shell: true
+      });
+    } else {
+      mediamtxProcess = spawn(mtxPath, [mtxConfig], {
+        cwd: path.dirname(mtxPath),
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+    }
 
     mediamtxProcess.stdout.on('data', (data) => {
       const msg = data.toString().trim();
@@ -419,11 +431,12 @@ async function startFFmpegWebRTC(audioDevice) {
 
     sendLog(`[FFmpeg] ${ffmpegPath} ${args.join(' ')}`);
 
+    // On Windows, use shell: true to suppress console window for FFmpeg
     ffmpegWebrtcProcess = spawn(ffmpegPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
       detached: false,
-      shell: false
+      shell: process.platform === 'win32'
     });
 
     ffmpegWebrtcProcess.stdout.on('data', (data) => {
@@ -671,7 +684,10 @@ function runPython(args) {
     const scriptPath = path.join(__dirname, 'cast-helper.py');
     // Use pythonw on Windows (no console window), fallback to python
     const pythonCmd = process.platform === 'win32' ? 'pythonw' : 'python';
-    const python = spawn(pythonCmd, [scriptPath, ...args], { windowsHide: true });
+    const python = spawn(pythonCmd, [scriptPath, ...args], {
+      windowsHide: true,
+      shell: process.platform === 'win32'
+    });
 
     let stdout = '';
     let stderr = '';
@@ -1434,7 +1450,7 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
       '-f', 'rtsp',
       '-rtsp_transport', 'tcp',
       'rtsp://localhost:8554/left'
-    ], { stdio: 'pipe', windowsHide: true });
+    ], { stdio: 'pipe', windowsHide: true, shell: process.platform === 'win32' });
 
     stereoFFmpegProcesses.left.stderr.on('data', (data) => {
       const msg = data.toString();
@@ -1465,7 +1481,7 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
       '-f', 'rtsp',
       '-rtsp_transport', 'tcp',
       'rtsp://localhost:8554/right'
-    ], { stdio: 'pipe', windowsHide: true });
+    ], { stdio: 'pipe', windowsHide: true, shell: process.platform === 'win32' });
 
     stereoFFmpegProcesses.right.stderr.on('data', (data) => {
       const msg = data.toString();
