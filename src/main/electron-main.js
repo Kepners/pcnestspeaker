@@ -1893,7 +1893,25 @@ ipcMain.handle('deactivate-license', async () => {
   return { success: true };
 });
 
-// App lifecycle
+// Single instance lock - prevent multiple app instances
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  // Another instance is already running - quit this one
+  console.log('[Main] Another instance is already running, quitting...');
+  app.quit();
+}
+
+// Handle second instance launch - focus existing window
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
+// App lifecycle - only proceeds if we got the lock (app.quit above prevents this)
 app.whenReady().then(async () => {
   // Kill any leftover processes from previous runs (port conflicts, etc.)
   killLeftoverProcesses();
