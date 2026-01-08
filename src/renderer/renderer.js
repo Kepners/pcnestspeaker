@@ -832,13 +832,8 @@ async function toggleStereoChannel(index, channel) {
   const speaker = speakers[index];
   log(`Toggle ${channel.toUpperCase()} for "${speaker.name}"`);
 
-  // Ping the speaker immediately so user gets feedback
-  try {
-    log(`Pinging ${speaker.name}...`, 'info');
-    window.api.pingSpeaker(speaker.name).catch(() => {}); // Fire and forget
-  } catch (e) {
-    // Ignore ping errors
-  }
+  // NOTE: Removed immediate ping here - the webrtc-launch connection
+  // already provides audio feedback, and pinging before causes double ping
 
   if (channel === 'left') {
     // Toggle left channel

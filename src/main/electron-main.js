@@ -323,12 +323,6 @@ async function startMediaMTX() {
       `webrtcAdditionalHosts: ['${localIp}']`
     );
 
-    // Also update webrtcICEHostNAT1To1IPs for NAT traversal
-    config = config.replace(
-      /webrtcICEHostNAT1To1IPs:\s*\[.*?\]/,
-      `webrtcICEHostNAT1To1IPs: ['${localIp}']`
-    );
-
     fs.writeFileSync(configPath, config, 'utf8');
     sendLog(`[MediaMTX] Injected local IP: ${localIp}`);
   } catch (e) {
