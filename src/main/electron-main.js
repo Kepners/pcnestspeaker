@@ -311,6 +311,23 @@ async function startMediaMTX() {
     throw new Error('MediaMTX not found. Please reinstall the app.');
   }
 
+  // Inject local IP into MediaMTX config for ICE candidates
+  try {
+    const localIp = getLocalIp();
+    const configPath = getMediaMTXConfig();
+    let config = fs.readFileSync(configPath, 'utf8');
+
+    // Update webrtcAdditionalHosts with detected IP
+    config = config.replace(
+      /webrtcAdditionalHosts:\s*\[.*?\]/,
+      `webrtcAdditionalHosts: ['${localIp}']`
+    );
+    fs.writeFileSync(configPath, config, 'utf8');
+    sendLog(`[MediaMTX] Injected local IP: ${localIp}`);
+  } catch (e) {
+    sendLog(`[MediaMTX] Could not inject IP: ${e.message}`, 'warning');
+  }
+
   sendLog('Starting MediaMTX server...');
 
   return new Promise((resolve, reject) => {

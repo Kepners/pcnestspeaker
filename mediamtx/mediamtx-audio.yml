@@ -65,10 +65,10 @@ webrtc: yes
 webrtcAddress: :8889
 webrtcEncryption: no
 webrtcAllowOrigins: ['*']
-# Auto-detect local IP from network interfaces (works for any user's network)
+# Auto-detect local IP - app will inject correct IP at startup
 webrtcIPsFromInterfaces: yes
 webrtcIPsFromInterfacesList: []
-webrtcAdditionalHosts: []
+webrtcAdditionalHosts: ['192.168.50.48']
 webrtcLocalUDPAddress: :8189
 webrtcLocalTCPAddress: :8189
 # Increase timeouts for Nest speakers which have slow ICE
