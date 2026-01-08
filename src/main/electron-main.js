@@ -997,8 +997,8 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
       if (isGroup) {
         // Cast Groups don't work with custom receivers - only leader plays!
-        // Solution: Get group members and multicast to each one individually
-        sendLog(`Detected Cast Group: "${speakerName}" - using multicast mode...`);
+        // Solution: Get group members and use STEREO for 2-member groups, multicast for 3+
+        sendLog(`Detected Cast Group: "${speakerName}"...`);
 
         // Get group members
         const membersResult = await runPython(['get-group-members', speakerName]);
@@ -1010,11 +1010,127 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           if (speakerIp) args.push(speakerIp);
           args.push('pcaudio');
           result = await runPython(args);
+        } else if (membersResult.count === 2) {
+          // 2-member group = STEREO PAIR! Left channel → speaker 1, Right channel → speaker 2
+          sendLog(`🎯 2-member group detected - using STEREO SEPARATION!`, 'success');
+          const leftMember = membersResult.members[0];
+          const rightMember = membersResult.members[1];
+          sendLog(`  LEFT: ${leftMember.name} (${leftMember.ip})`);
+          sendLog(`  RIGHT: ${rightMember.name} (${rightMember.ip})`);
+
+          // Stop mono FFmpeg if running (switching to stereo mode)
+          if (ffmpegWebrtcProcess) {
+            sendLog('Stopping mono stream for stereo mode...');
+            switchingToStereoMode = true;
+            try { ffmpegWebrtcProcess.kill('SIGTERM'); } catch (e) {}
+            ffmpegWebrtcProcess = null;
+          }
+
+          // Get FFmpeg path and volume settings
+          const ffmpegPath = getFFmpegPath();
+          const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
+          const boostLevel = volumeBoostEnabled ? 1.25 : 1.03;
+
+          // Start FFmpeg LEFT channel
+          sendLog('Starting FFmpeg LEFT channel...');
+          stereoFFmpegProcesses.left = spawn(ffmpegPath, [
+            '-hide_banner', '-stats',
+            '-f', 'dshow',
+            '-i', 'audio=virtual-audio-capturer',
+            '-af', `pan=mono|c0=c0,volume=${boostLevel}`,
+            '-c:a', 'libopus',
+            '-b:a', '128k',
+            '-ar', '48000',
+            '-ac', '1',
+            '-f', 'rtsp',
+            '-rtsp_transport', 'tcp',
+            'rtsp://localhost:8554/left'
+          ], { stdio: 'pipe', windowsHide: true });
+
+          stereoFFmpegProcesses.left.stderr.on('data', (data) => {
+            const msg = data.toString();
+            if (streamStats) streamStats.parseFfmpegOutput(msg);
+            if (msg.includes('Error') || msg.includes('error')) {
+              sendLog(`FFmpeg LEFT: ${msg}`, 'error');
+            }
+          });
+
+          await new Promise(r => setTimeout(r, 1000));
+          sendLog('LEFT channel streaming', 'success');
+
+          // Start FFmpeg RIGHT channel
+          sendLog('Starting FFmpeg RIGHT channel...');
+          stereoFFmpegProcesses.right = spawn(ffmpegPath, [
+            '-hide_banner', '-stats',
+            '-f', 'dshow',
+            '-i', 'audio=virtual-audio-capturer',
+            '-af', `pan=mono|c0=c1,volume=${boostLevel}`,
+            '-c:a', 'libopus',
+            '-b:a', '128k',
+            '-ar', '48000',
+            '-ac', '1',
+            '-f', 'rtsp',
+            '-rtsp_transport', 'tcp',
+            'rtsp://localhost:8554/right'
+          ], { stdio: 'pipe', windowsHide: true });
+
+          stereoFFmpegProcesses.right.stderr.on('data', (data) => {
+            const msg = data.toString();
+            if (streamStats) streamStats.parseFfmpegOutput(msg);
+            if (msg.includes('Error') || msg.includes('error')) {
+              sendLog(`FFmpeg RIGHT: ${msg}`, 'error');
+            }
+          });
+
+          await new Promise(r => setTimeout(r, 1000));
+          sendLog('RIGHT channel streaming', 'success');
+
+          // Start stream stats
+          if (streamStats) streamStats.start();
+
+          // Cast to LEFT speaker with 'left' stream
+          sendLog(`Connecting LEFT speaker: "${leftMember.name}"...`);
+          const leftResult = await runPython([
+            'webrtc-launch',
+            leftMember.name,
+            webrtcUrl,
+            leftMember.ip || '',
+            'left'
+          ]);
+          if (!leftResult.success) {
+            throw new Error(`Left speaker cast failed: ${leftResult.error}`);
+          }
+          sendLog(`LEFT speaker connected`, 'success');
+
+          // Cast to RIGHT speaker with 'right' stream
+          sendLog(`Connecting RIGHT speaker: "${rightMember.name}"...`);
+          const rightResult = await runPython([
+            'webrtc-launch',
+            rightMember.name,
+            webrtcUrl,
+            rightMember.ip || '',
+            'right'
+          ]);
+          if (!rightResult.success) {
+            throw new Error(`Right speaker cast failed: ${rightResult.error}`);
+          }
+          sendLog(`RIGHT speaker connected`, 'success');
+
+          switchingToStereoMode = false;
+
+          // Return success with launched speakers for volume sync
+          result = {
+            success: true,
+            stereoMode: true,
+            launched: [leftMember.name, rightMember.name],
+            leftSpeaker: leftMember,
+            rightSpeaker: rightMember
+          };
         } else {
-          // Multicast to all group members
+          // 3+ member group = Multicast (same audio to all)
           const memberNames = membersResult.members.map(m => m.name);
           const memberIps = membersResult.members.map(m => m.ip);
-          sendLog(`Group has ${membersResult.count} members: ${memberNames.join(', ')}`);
+          sendLog(`Group has ${membersResult.count} members - using multicast: ${memberNames.join(', ')}`);
 
           const multicastArgs = [
             'webrtc-multicast',
@@ -1091,7 +1207,14 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           }
         }
 
-        return { success: true, url: webrtcUrl, mode: streamingMode, multicast: isGroup };
+        return {
+          success: true,
+          url: webrtcUrl,
+          mode: streamingMode,
+          multicast: isGroup,
+          stereoMode: result.stereoMode || false,
+          launched: result.launched || []
+        };
       } else if (result.error_code === 'CUSTOM_RECEIVER_NOT_SUPPORTED') {
         // Custom receiver not supported - automatically fallback to HTTP streaming
         sendLog('Custom receiver not supported on this device', 'warning');
