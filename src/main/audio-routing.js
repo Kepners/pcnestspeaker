@@ -222,17 +222,20 @@ async function getDevices() {
  */
 async function enableListening(sourceDevice, targetDevice) {
   try {
+    console.log(`[AudioRouting] Step 1: Enable "Listen to this device" on "${sourceDevice}"`);
     // Step 1: Enable "Listen to this device" on the source
-    await runSvcl(`/SetListenToThisDevice "${sourceDevice}" 1`);
-    console.log(`[AudioRouting] Enabled listening on: ${sourceDevice}`);
+    const result1 = await runSvcl(`/SetListenToThisDevice "${sourceDevice}" 1`);
+    console.log(`[AudioRouting] SetListenToThisDevice result: ${result1}`);
 
+    console.log(`[AudioRouting] Step 2: Set playback target "${sourceDevice}" → "${targetDevice}"`);
     // Step 2: Set the playback target device
-    await runSvcl(`/SetPlaybackThroughDevice "${sourceDevice}" "${targetDevice}"`);
-    console.log(`[AudioRouting] Set playback target: ${sourceDevice} → ${targetDevice}`);
+    const result2 = await runSvcl(`/SetPlaybackThroughDevice "${sourceDevice}" "${targetDevice}"`);
+    console.log(`[AudioRouting] SetPlaybackThroughDevice result: ${result2}`);
 
+    console.log(`[AudioRouting] SUCCESS: Audio routing enabled!`);
     return { success: true };
   } catch (err) {
-    console.error(`[AudioRouting] Failed to enable listening:`, err.message);
+    console.error(`[AudioRouting] FAILED to enable listening:`, err.message);
     return { success: false, error: err.message };
   }
 }
@@ -308,8 +311,18 @@ async function findRealSpeakers() {
  * Routes Virtual Desktop Audio → HDMI speakers
  */
 async function enablePCSpeakersMode() {
+  console.log('[AudioRouting] enablePCSpeakersMode called');
+
+  // Get all devices for debugging
+  const allDevices = await getDevices();
+  console.log(`[AudioRouting] Found ${allDevices.length} devices:`);
+  allDevices.forEach(d => console.log(`  - ${d.name} (${d.type})`));
+
   const virtualDevice = await findVirtualDevice();
   const realSpeakers = await findRealSpeakers();
+
+  console.log(`[AudioRouting] Virtual device: ${virtualDevice || 'NOT FOUND'}`);
+  console.log(`[AudioRouting] Real speakers: ${realSpeakers || 'NOT FOUND'}`);
 
   if (!virtualDevice) {
     return { success: false, error: 'Virtual audio device not found' };
