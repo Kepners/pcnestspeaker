@@ -30,6 +30,8 @@ let currentStreamingMode = null;
 let tunnelUrl = null;
 let discoveredSpeakers = []; // Cache speakers with IPs from discovery
 let currentConnectedSpeakers = []; // Track currently connected speakers for proper cleanup
+let currentCastMode = 'speakers'; // 'speakers' = Cast only, 'all' = PC + Speakers mode
+let virtualCaptureCmdId = null; // Cached Virtual Desktop Audio CAPTURE device ID for Listen
 
 // Dependency download URLs
 // NOTE: We use screen-capture-recorder which installs "virtual-audio-capturer" device
@@ -2508,6 +2510,8 @@ ipcMain.handle('set-cast-mode', async (event, mode) => {
     if (mode === 'speakers') {
       // "Speakers Only" - Restore original audio device, clear APO delay
       console.log(`[Main] Speakers Only mode - audio goes to Cast only`);
+      currentCastMode = 'speakers';
+      virtualCaptureCmdId = null; // No longer tracking Listen target
 
       // 1. Restore original audio output device
       if (audioRouting.isAvailable()) {
@@ -2532,12 +2536,18 @@ ipcMain.handle('set-cast-mode', async (event, mode) => {
     } else if (mode === 'all') {
       // "PC + Speakers" - Switch to PC speakers with APO delay for sync
       console.log(`[Main] PC + Speakers mode - audio to Cast + local speakers`);
+      currentCastMode = 'all';
 
-      // 1. Switch Windows output to PC speakers
+      // 1. Switch Windows output to PC speakers (enables Listen to this device)
       if (audioRouting.isAvailable()) {
         routeResult = await audioRouting.enablePCSpeakersMode();
         if (routeResult.success) {
           sendLog(`Audio output: ${routeResult.device || 'PC Speakers'}`, 'success');
+          // Cache the virtual capture device ID for quick Listen target changes
+          if (routeResult.virtualCaptureCmdId) {
+            virtualCaptureCmdId = routeResult.virtualCaptureCmdId;
+            console.log(`[Main] Cached virtual capture CmdId: ${virtualCaptureCmdId}`);
+          }
         } else {
           sendLog(`Could not switch audio output: ${routeResult.error}`, 'warning');
         }
@@ -2714,17 +2724,36 @@ ipcMain.handle('get-audio-outputs', async () => {
   }
 });
 
-// Switch to a specific audio output device using Python IPolicyConfig
+// Switch to a specific audio output device
+// In PC + Speakers mode: Changes the Listen TARGET (keeps Windows default on Virtual Desktop Audio)
+// In Speakers Only mode: Changes the Windows default device
 ipcMain.handle('switch-audio-output', async (event, deviceName) => {
   try {
-    sendLog(`Switching audio output to: ${deviceName} (via Python)`, 'info');
-    const result = await runPython(['set-audio-output', deviceName]);
-    if (result.success) {
-      sendLog(`Audio output switched to: ${result.device}`, 'success');
-      return { success: true, device: result.device };
+    if (currentCastMode === 'all' && virtualCaptureCmdId) {
+      // PC + Speakers mode: Change Listen TARGET, not Windows default
+      // Windows default stays on Virtual Desktop Audio (for FFmpeg capture)
+      // Listen routes audio from VDA CAPTURE → user-selected speaker
+      sendLog(`PC + Speakers: Routing Listen to ${deviceName}`, 'info');
+      const audioRouting = require('./audio-routing.js');
+      const result = await audioRouting.enableListenToDeviceWithCmdId(virtualCaptureCmdId, deviceName);
+      if (result.success) {
+        sendLog(`Listen routed to: ${deviceName}`, 'success');
+        return { success: true, device: deviceName, mode: 'listen' };
+      } else {
+        sendLog(`Failed to route Listen: ${result.error}`, 'error');
+        return { success: false, error: result.error };
+      }
     } else {
-      sendLog(`Failed to switch audio: ${result.error}`, 'error');
-      return { success: false, error: result.error };
+      // Speakers Only mode: Change Windows default device
+      sendLog(`Switching audio output to: ${deviceName} (via Python)`, 'info');
+      const result = await runPython(['set-audio-output', deviceName]);
+      if (result.success) {
+        sendLog(`Audio output switched to: ${result.device}`, 'success');
+        return { success: true, device: result.device, mode: 'default' };
+      } else {
+        sendLog(`Failed to switch audio: ${result.error}`, 'error');
+        return { success: false, error: result.error };
+      }
     }
   } catch (error) {
     sendLog(`Failed to switch audio: ${error.message}`, 'error');

@@ -1313,10 +1313,10 @@ def get_audio_outputs():
 
 
 def set_default_audio_output(device_name):
-    """Set the default Windows audio output device using SoundVolumeView.
+    """Set the default Windows audio output device using IPolicyConfig COM.
 
-    Uses NirSoft SoundVolumeView for reliable audio device switching.
-    This actually works, unlike IPolicyConfig COM which reports success but doesn't change.
+    Uses Windows IPolicyConfig interface directly - this is reliable and fast.
+    Finds device by name and sets it as default for all audio roles.
 
     Args:
         device_name: Full or partial name of the audio device to set as default
@@ -1325,100 +1325,74 @@ def set_default_audio_output(device_name):
         { success: true, device: "Device Name" } or { success: false, error: "..." }
     """
     try:
-        import csv
+        import comtypes
+        from comtypes import GUID
+        from pycaw.pycaw import AudioUtilities
 
         print(f"[AudioSwitch] Setting default device to: {device_name}", file=sys.stderr)
 
-        # Find SoundVolumeView.exe
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        svv_paths = [
-            os.path.join(script_dir, '..', '..', 'soundvolumeview', 'SoundVolumeView.exe'),
-            os.path.join(script_dir, 'soundvolumeview', 'SoundVolumeView.exe'),
-            r'C:\Users\kepne\OneDrive\Documents\GitHub\pcnestspeaker\soundvolumeview\SoundVolumeView.exe',
-        ]
-
-        svv_path = None
-        for p in svv_paths:
-            normalized = os.path.normpath(p)
-            if os.path.exists(normalized):
-                svv_path = normalized
-                break
-
-        if not svv_path:
-            return {"success": False, "error": "SoundVolumeView.exe not found"}
-
-        print(f"[AudioSwitch] Using SoundVolumeView: {svv_path}", file=sys.stderr)
-
-        # Export device list to find the Command-Line Friendly ID
-        # Use a fixed temp path - tempfile can have permission issues
-        tmp_path = os.path.join(os.environ.get('TEMP', 'C:\\Windows\\Temp'), 'svv_devices.csv')
-
-        # Export all sound devices to CSV using PowerShell for reliability
-        export_cmd = f'powershell -Command "& \'{svv_path}\' /scomma \'{tmp_path}\'; Start-Sleep -Milliseconds 500"'
-        print(f"[AudioSwitch] Export command: {export_cmd}", file=sys.stderr)
-        result = subprocess.run(export_cmd, shell=True, capture_output=True, text=True, timeout=15)
-
-        if not os.path.exists(tmp_path):
-            print(f"[AudioSwitch] CSV not created at: {tmp_path}", file=sys.stderr)
-            return {"success": False, "error": f"Failed to export device list to {tmp_path}"}
-
-        # Read the CSV and find matching device
-        target_device = None
+        # Get all audio devices
+        devices = AudioUtilities.GetAllDevices()
         device_name_lower = device_name.lower()
 
-        with open(tmp_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
-            reader = csv.DictReader(f)
+        # Find matching render device
+        target_device = None
+        for device in devices:
+            # Only render devices (ID starts with {0.0.0.)
+            if not device.id or not device.id.startswith("{0.0.0."):
+                continue
 
-            for row in reader:
-                name = row.get('Name', '')
-                direction = row.get('Direction', '')
-                cmd_id = row.get('Command-Line Friendly ID', '')
-
-                # Only consider Render (output) devices
-                if direction != 'Render':
-                    continue
-
-                # Match by name (case-insensitive, partial match)
-                if device_name_lower in name.lower():
-                    target_device = {
-                        'name': name,
-                        'cmd_id': cmd_id,
-                        'direction': direction
-                    }
-                    print(f"[AudioSwitch] Found device: {name}", file=sys.stderr)
-                    break
-
-        # Clean up temp file
-        try:
-            os.unlink(tmp_path)
-        except:
-            pass
+            name = device.FriendlyName or ""
+            if device_name_lower in name.lower():
+                target_device = device
+                print(f"[AudioSwitch] Found device: {name}", file=sys.stderr)
+                print(f"[AudioSwitch] Device ID: {device.id}", file=sys.stderr)
+                break
 
         if not target_device:
             print(f"[AudioSwitch] Device not found: {device_name}", file=sys.stderr)
             return {"success": False, "error": f"Audio device '{device_name}' not found"}
 
-        # Set as default using the Command-Line Friendly ID
-        cmd_id = target_device['cmd_id']
-        if not cmd_id:
-            return {"success": False, "error": "Device has no Command-Line Friendly ID"}
+        # IPolicyConfig COM interface for setting default audio device
+        CLSID_PolicyConfig = GUID('{870af99c-171d-4f9e-af0d-e63df40c2bc9}')
+        IID_IPolicyConfig = GUID('{f8679f50-850a-41cf-9c72-430f290290c8}')
 
-        # Use PowerShell to run SoundVolumeView with proper escaping
-        set_cmd = f'powershell -Command "& \'{svv_path}\' /SetDefault \'{cmd_id}\' all"'
-        print(f"[AudioSwitch] Running: {set_cmd}", file=sys.stderr)
+        class IPolicyConfig(comtypes.IUnknown):
+            _iid_ = IID_IPolicyConfig
+            _methods_ = [
+                comtypes.COMMETHOD([], comtypes.HRESULT, 'GetMixFormat', (['in'], comtypes.c_wchar_p)),
+                comtypes.COMMETHOD([], comtypes.HRESULT, 'GetDeviceFormat', (['in'], comtypes.c_wchar_p)),
+                comtypes.COMMETHOD([], comtypes.HRESULT, 'ResetDeviceFormat', (['in'], comtypes.c_wchar_p)),
+                comtypes.COMMETHOD([], comtypes.HRESULT, 'SetDeviceFormat', (['in'], comtypes.c_wchar_p)),
+                comtypes.COMMETHOD([], comtypes.HRESULT, 'GetProcessingPeriod'),
+                comtypes.COMMETHOD([], comtypes.HRESULT, 'SetProcessingPeriod'),
+                comtypes.COMMETHOD([], comtypes.HRESULT, 'GetShareMode'),
+                comtypes.COMMETHOD([], comtypes.HRESULT, 'SetShareMode'),
+                comtypes.COMMETHOD([], comtypes.HRESULT, 'GetPropertyValue'),
+                comtypes.COMMETHOD([], comtypes.HRESULT, 'SetPropertyValue'),
+                comtypes.COMMETHOD([], comtypes.HRESULT, 'SetDefaultEndpoint',
+                                  (['in'], comtypes.c_wchar_p, 'deviceId'),
+                                  (['in'], comtypes.c_uint, 'role')),
+            ]
 
-        result = subprocess.run(set_cmd, shell=True, capture_output=True, text=True, timeout=10)
+        # Create policy config instance
+        policy_config = comtypes.CoCreateInstance(
+            CLSID_PolicyConfig,
+            IPolicyConfig,
+            comtypes.CLSCTX_INPROC_SERVER
+        )
 
-        if result.returncode != 0:
-            error_msg = result.stderr.strip() if result.stderr else "Unknown error"
-            print(f"[AudioSwitch] Command failed: {error_msg}", file=sys.stderr)
-            return {"success": False, "error": error_msg}
+        # Set as default for all roles:
+        # 0 = eConsole (games, system sounds)
+        # 1 = eMultimedia (music, movies)
+        # 2 = eCommunications (voice chat)
+        for role in [0, 1, 2]:
+            policy_config.SetDefaultEndpoint(target_device.id, role)
+            print(f"[AudioSwitch] Set role {role} to: {target_device.FriendlyName}", file=sys.stderr)
 
-        print(f"[AudioSwitch] SUCCESS - Default device set to: {target_device['name']}", file=sys.stderr)
-        return {"success": True, "device": target_device['name'], "cmd_id": cmd_id}
+        print(f"[AudioSwitch] SUCCESS - Default device set to: {target_device.FriendlyName}", file=sys.stderr)
+        return {"success": True, "device": target_device.FriendlyName, "id": target_device.id}
 
-    except subprocess.TimeoutExpired:
-        return {"success": False, "error": "SoundVolumeView command timed out"}
     except Exception as e:
         import traceback
         print(f"[AudioSwitch] ERROR: {e}", file=sys.stderr)

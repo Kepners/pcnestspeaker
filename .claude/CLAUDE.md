@@ -76,116 +76,95 @@ pcnestspeaker/
 
 ## 🚨 CRITICAL: PC + Speakers Mode Architecture (January 9, 2026)
 
-### THE PROBLEM - VERIFIED AND CONFIRMED
+### ⚠️ DO NOT USE VB-CABLE! ⚠️
 
-**virtual-audio-capturer captures POST-APO audio!**
+**VB-CABLE and Virtual Desktop Audio are COMPLETELY DIFFERENT audio paths!**
 
-When APO delay is set to 2000ms:
-- HDMI speakers: 2 second delay ✓
-- Cast speakers: ALSO 2 second delay ✗ (WRONG!)
+If you set Windows default to Virtual Desktop Audio but enable "Listen to this device" on
+VB-CABLE, NO AUDIO will reach the PC speakers because the paths don't connect.
 
-Both outputs receive the SAME delayed audio because virtual-audio-capturer uses WASAPI loopback which captures AFTER APO processing.
+**WE ONLY USE:** Virtual Desktop Audio (from screen-capture-recorder)
+- Provides both RENDER (output) and CAPTURE (loopback) devices
+- These two devices ARE connected internally
 
-### CURRENT (BROKEN) ARCHITECTURE
+### CORRECT ARCHITECTURE (Working - January 9, 2026)
 
 ```
-Desktop Audio
+Desktop Audio (Apps)
      │
      ▼
-┌─────────────────┐
-│  Windows Mixer  │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│   APO Delay     │ ◀── Delay applied HERE
-│   (e.g. 700ms)  │
-└────────┬────────┘
-         │
-         ├─────────────────────────────────┐
-         │                                 │
-         ▼                                 ▼
-┌─────────────────┐              ┌─────────────────────┐
-│ ASUS VG32V      │              │ virtual-audio-      │
-│ (HDMI Speakers) │              │ capturer (POST-APO!)│
-│                 │              └─────────┬───────────┘
-│ = DELAYED       │                        │
-└─────────────────┘                        ▼
-                                 ┌─────────────────┐
-                                 │ FFmpeg → Cast   │
-                                 │                 │
-                                 │ = ALSO DELAYED! │
-                                 └─────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  Virtual Desktop Audio (RENDER) ← Windows Default            │
+│  - Apps output audio here                                    │
+│  - NO APO delay applied here (important!)                    │
+└────────────────────────┬─────────────────────────────────────┘
+                         │
+      ┌──────────────────┼──────────────────────┐
+      │                  │                      │
+      ▼                  ▼                      ▼
+┌──────────────┐  ┌────────────────────┐  ┌─────────────────────┐
+│ FFmpeg       │  │ Virtual Desktop    │  │ "Listen to this     │
+│ (DirectShow) │  │ Audio (CAPTURE)    │  │ device" routes to:  │
+│              │  │ ← Source for       │  │                     │
+│ Captures     │  │   Listen feature   │  │ ASUS VG32V (HDMI)   │
+│ PRE-APO      │  │                    │  │ + APO Delay         │
+└──────┬───────┘  └────────────────────┘  └─────────┬───────────┘
+       │                                            │
+       ▼                                            ▼
+┌──────────────┐                          ┌─────────────────────┐
+│ MediaMTX     │                          │ Monitor Speakers    │
+│ → WebRTC     │                          │ (POST-APO delayed)  │
+│ → Cast       │                          │                     │
+│              │                          │ APO adds ~700ms to  │
+│ ~1s latency  │                          │ sync with Cast      │
+└──────────────┘                          └─────────────────────┘
 
-RESULT: Both get APO delay - CAN'T SYNC THEM!
+BOTH paths originate from Virtual Desktop Audio RENDER device!
 ```
 
-### REQUIRED (CORRECT) ARCHITECTURE
+### HOW IT WORKS
 
-**Cast and HDMI must capture from SAME source, but APO only affects HDMI:**
+1. **Windows Default** = Virtual Desktop Audio (RENDER)
+   - All app audio goes here
+   - FFmpeg captures from here via virtual-audio-capturer (DirectShow)
 
+2. **"Listen to this device"** = Virtual Desktop Audio (CAPTURE) → HDMI speakers
+   - Windows routes CAPTURE output to specified RENDER device
+   - This is a SECOND path for the same audio
+   - APO delay is applied on this path only
+
+3. **APO Sync Delay** = Applied to HDMI speakers only
+   - Cast gets audio with ~1 second network latency
+   - HDMI gets audio with ~0ms latency (too fast!)
+   - APO adds 700-1000ms delay to HDMI to match Cast
+
+### KEY FILES
+
+| File | Purpose |
+|------|---------|
+| `audio-routing.js` | enablePCSpeakersMode(), findVirtualCaptureDevice() |
+| `pc-speaker-delay.js` | APO delay configuration |
+| `audio-sync-manager.js` | Equalizer APO integration |
+| `audio-streamer.js` | FFmpeg capture from virtual-audio-capturer |
+
+### SoundVolumeView Commands
+
+**Enable Listen:**
 ```
-Desktop Audio
-     │
-     ▼
-┌─────────────────┐
-│  Windows Mixer  │
-└────────┬────────┘
-         │
-         ├──────────────────────────────────┐
-         │                                  │
-         ▼                                  ▼
-┌─────────────────┐              ┌──────────────────────┐
-│ Virtual Device  │              │ APO Delay (700ms)    │
-│ (NO APO)        │              │ on REAL speakers     │
-└────────┬────────┘              └──────────┬───────────┘
-         │                                  │
-         ▼                                  ▼
-┌─────────────────┐              ┌──────────────────────┐
-│ virtual-audio-  │              │ HDMI Speakers        │
-│ capturer        │              │                      │
-└────────┬────────┘              │ = DELAYED to match   │
-         │                       │   Cast latency       │
-         ▼                       └──────────────────────┘
-┌─────────────────┐
-│ FFmpeg → Cast   │
-│                 │
-│ = NO APO delay  │
-│ + network delay │
-└─────────────────┘
-
-RESULT: Can adjust APO to sync HDMI with Cast!
+SoundVolumeView.exe /SetListenToThisDevice "Virtual Desktop Audio\Device\Virtual Desktop Audio\Capture" 1 "NVIDIA High Definition Audio\Device\ASUS VG32V\Render"
 ```
 
-### SOLUTION OPTIONS
+**Disable Listen:**
+```
+SoundVolumeView.exe /SetListenToThisDevice "Virtual Desktop Audio\Device\Virtual Desktop Audio\Capture" 0
+```
 
-1. **VB-CABLE + Audio Routing**
-   - Default = VB-CABLE (virtual, no APO)
-   - VB-CABLE monitors to HDMI (with APO delay)
-   - FFmpeg captures from VB-CABLE (no delay)
+### COMMON MISTAKES TO AVOID
 
-2. **Voicemeeter**
-   - Professional audio routing
-   - Can split to multiple outputs
-   - Complex setup for users
-
-3. **Custom Virtual Audio Driver**
-   - Build our own splitter
-   - Major development effort
-
-### FILES INVOLVED
-
-- `audio-routing.js` - Device switching (enablePCSpeakersMode, disablePCSpeakersMode)
-- `audio-sync-manager.js` - APO delay config
-- `audio-device-manager.js` - NirCmd device control
-- `audio-streamer.js` - FFmpeg capture
-
-### KEY INSIGHT
-
-**DO NOT** set default device to HDMI speakers in PC + Speakers mode!
-The capture will include APO delay, making sync impossible.
-
-**MUST** capture from a device WITHOUT APO, then route to HDMI separately.
+❌ Using VB-CABLE (different audio path!)
+❌ Setting Windows default to HDMI speakers (FFmpeg captures POST-APO!)
+❌ Enabling Listen on wrong capture device (must match render device!)
+❌ Forgetting that RENDER and CAPTURE are paired per virtual device
 
 ---
 

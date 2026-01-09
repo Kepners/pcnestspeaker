@@ -513,9 +513,10 @@ async function enablePCSpeakersMode(targetDevice = null) {
     }
 
     // Step 2: Find virtual CAPTURE device (source for "Listen to this device")
-    const virtualCaptureDevice = await findVirtualCaptureDevice();
+    // CRITICAL: Must match the render device! VDA render -> VDA capture
+    const virtualCaptureDevice = await findVirtualCaptureDevice(virtualRenderDevice);
     if (!virtualCaptureDevice) {
-      return { success: false, error: 'No virtual capture device found. Virtual Desktop Audio should have a capture device.' };
+      return { success: false, error: 'No Virtual Desktop Audio capture device found. Make sure screen-capture-recorder is installed.' };
     }
 
     // Step 3: Find PC speakers (target for Listen)
@@ -546,7 +547,12 @@ async function enablePCSpeakersMode(targetDevice = null) {
     console.log(`[AudioRouting] PC + Speakers mode enabled!`);
     console.log(`[AudioRouting]   Default: ${virtualRenderDevice} (PRE-APO, captured by FFmpeg)`);
     console.log(`[AudioRouting]   Listen: ${virtualCaptureDevice.deviceName} → ${pcSpeakers} (POST-APO)`);
-    return { success: true, virtualDevice: virtualRenderDevice, pcSpeakers };
+    return {
+      success: true,
+      virtualDevice: virtualRenderDevice,
+      pcSpeakers,
+      virtualCaptureCmdId: virtualCaptureDevice.cmdId // For quick Listen target changes
+    };
   } catch (err) {
     console.error('[AudioRouting] Failed to enable PC + Speakers mode:', err.message);
     return { success: false, error: err.message };
@@ -560,12 +566,13 @@ async function enablePCSpeakersMode(targetDevice = null) {
 async function findVirtualDevice() {
   const devices = await getRenderDevices();
 
-  // Virtual devices to look for (in priority order)
+  // Virtual device to look for
+  // NOTE: We ONLY use Virtual Desktop Audio - NOT VB-Cable or VoiceMeeter!
+  // screen-capture-recorder installs Virtual Desktop Audio which provides:
+  // - A RENDER device (where apps output to)
+  // - A CAPTURE device (loopback for "Listen to this device")
   const virtualPatterns = [
-    'Virtual Desktop Audio',
-    'CABLE Input',
-    'VB-Audio Virtual Cable',
-    'VoiceMeeter'
+    'Virtual Desktop Audio'
   ];
 
   for (const pattern of virtualPatterns) {
@@ -588,15 +595,48 @@ async function findVirtualDevice() {
  * Find a virtual audio CAPTURE device for "Listen to this device"
  * "Listen to this device" is a CAPTURE device feature - it takes audio from a capture source
  * and plays it through a render device
+ *
+ * CRITICAL: The capture device must match the render device!
+ * If Windows default is "Virtual Desktop Audio" (render), we need "Virtual Desktop Audio" (capture)
+ * NOT "VB-Audio Virtual Cable" which is a completely different audio path!
+ *
+ * @param {string} matchRenderDevice - Optional: Match capture device to this render device name
  */
-async function findVirtualCaptureDevice() {
+async function findVirtualCaptureDevice(matchRenderDevice = null) {
   const allSvvDevices = await getSVVDevices();
 
-  // Virtual capture devices to look for (in priority order)
+  // If we need to match a specific render device, look for its capture counterpart
+  if (matchRenderDevice) {
+    const matchLower = matchRenderDevice.toLowerCase();
+    console.log(`[AudioRouting] Looking for CAPTURE device matching render: ${matchRenderDevice}`);
+
+    for (const device of allSvvDevices) {
+      if (device['Direction'] !== 'Capture') continue;
+      if (device['Type'] !== 'Device') continue;
+
+      const name = device['Name'] || '';
+      const deviceName = device['Device Name'] || '';
+
+      // Match by Device Name (e.g., "Virtual Desktop Audio" matches "Virtual Desktop Audio")
+      if (deviceName.toLowerCase().includes(matchLower) ||
+          matchLower.includes(deviceName.toLowerCase())) {
+        console.log(`[AudioRouting] Found matching CAPTURE device: ${deviceName} (display: ${name})`);
+        console.log(`[AudioRouting]   Command-Line ID: ${device['Command-Line Friendly ID']}`);
+        return {
+          name: name,
+          deviceName: deviceName,
+          cmdId: device['Command-Line Friendly ID']
+        };
+      }
+    }
+    console.log(`[AudioRouting] No CAPTURE device found matching: ${matchRenderDevice}`);
+  }
+
+  // Virtual capture device to look for
+  // NOTE: We ONLY use Virtual Desktop Audio - NOT VB-Cable!
+  // VB-Cable is a completely different audio path and causes routing mismatches.
   const virtualPatterns = [
-    'Virtual Desktop Audio',
-    'CABLE Output',  // VB-Cable's capture device
-    'VB-Audio Virtual Cable'
+    'Virtual Desktop Audio'  // screen-capture-recorder's loopback device
   ];
 
   for (const pattern of virtualPatterns) {
