@@ -188,6 +188,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Initialize audio sync (PC speaker delay)
   await initAudioSync();
 
+  // Load APO device info for Settings tab
+  await loadApoDevices();
+
   // Set up first-run event listener
   setupFirstRunListener();
 
@@ -623,12 +626,6 @@ async function setCastMode(mode) {
     if (mode === 'all') {
       syncDelayRow.style.display = 'flex';
 
-      // Show APO status section and load devices
-      if (apoStatus) {
-        apoStatus.style.display = 'block';
-        loadApoDevices();
-      }
-
       // If Equalizer APO not installed, show prompt on first enable
       if (!equalizerApoInstalled) {
         // Disable slider and show install hint
@@ -645,10 +642,6 @@ async function setCastMode(mode) {
       }
     } else {
       syncDelayRow.style.display = 'none';
-      // Hide APO status section when not in PC + Speakers mode
-      if (apoStatus) {
-        apoStatus.style.display = 'none';
-      }
     }
   }
 

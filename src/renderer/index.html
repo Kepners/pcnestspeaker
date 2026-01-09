@@ -104,12 +104,6 @@
             </div>
           </div>
           <p class="option-hint sync-hint" id="sync-hint" style="display: none;">Toggle 🔊 then slide to hear both - adjust until synced</p>
-
-          <!-- APO Status (shown when PC + Speakers mode is active) -->
-          <div class="apo-status" id="apo-status" style="display: none;">
-            <p class="apo-devices" id="apo-devices-text">APO installed on: Loading...</p>
-            <button class="btn btn-small btn-secondary" id="launch-apo-btn">Configure APO</button>
-          </div>
         </div>
       </div>
 
@@ -146,6 +140,16 @@
             </label>
           </div>
           <p class="option-hint">Show visuals on TV when streaming (TVs only)</p>
+        </div>
+
+        <!-- Equalizer APO Settings (for PC + Speakers mode) -->
+        <div class="section" id="apo-section-settings">
+          <h2 class="section-label">EQUALIZER APO</h2>
+          <p class="option-hint">Required for PC + Speakers mode to sync audio delay</p>
+          <div class="apo-status" id="apo-status" style="margin-top: 12px;">
+            <p class="apo-devices" id="apo-devices-text">APO installed on: Loading...</p>
+            <button class="btn btn-small btn-secondary" id="launch-apo-btn">Configure APO</button>
+          </div>
         </div>
 
         <!-- Debug Log (hidden by default) -->
