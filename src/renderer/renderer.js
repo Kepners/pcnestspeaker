@@ -1966,20 +1966,21 @@ function updateSyncDelayUI() {
 /**
  * Handle sync delay slider change
  * - Updates display immediately
- * - Plays dual ping (PC + Nest) on each change for real-time sync testing
+ * - Plays dual ping (PC + Nest) if ping mode is enabled
  * - Debounces the actual APO config write
  */
 let lastPingTime = 0;
 const PING_THROTTLE_MS = 400; // Minimum time between pings
+let pingModeEnabled = false; // Toggle state for pings during slider movement
 
-function handleSyncDelayChange(delayMs, playPing = false) {
+function handleSyncDelayChange(delayMs) {
   // Update display immediately
   if (syncDelayValue) {
     syncDelayValue.textContent = `${delayMs}ms`;
   }
 
-  // Play dual ping if requested and throttle allows
-  if (playPing) {
+  // Play dual ping if ping mode is enabled and throttle allows
+  if (pingModeEnabled) {
     const now = Date.now();
     if (now - lastPingTime >= PING_THROTTLE_MS) {
       lastPingTime = now;
@@ -2038,10 +2039,26 @@ async function playDualSyncPing() {
   }
 }
 
-// Sync delay slider event listener - play ping on each change
+// Sync delay slider event listener
 if (syncDelaySlider) {
   syncDelaySlider.addEventListener('input', (e) => {
-    handleSyncDelayChange(parseInt(e.target.value, 10), true); // true = play ping
+    handleSyncDelayChange(parseInt(e.target.value, 10));
+  });
+}
+
+// Ping toggle button - enables/disables pings during slider movement
+const pingToggleBtn = document.getElementById('ping-toggle-btn');
+if (pingToggleBtn) {
+  pingToggleBtn.addEventListener('click', () => {
+    pingModeEnabled = !pingModeEnabled;
+    pingToggleBtn.textContent = pingModeEnabled ? '🔊' : '🔇';
+    pingToggleBtn.title = pingModeEnabled ? 'Pings ON - slide to test sync' : 'Pings OFF - click to enable';
+    pingToggleBtn.classList.toggle('active', pingModeEnabled);
+
+    // Play one ping immediately when enabled so user knows it's working
+    if (pingModeEnabled) {
+      playDualSyncPing();
+    }
   });
 }
 
@@ -2088,10 +2105,8 @@ function playTestBeep() {
     // Play for 150ms
     oscillator.start(audioContext.currentTime);
     oscillator.stop(audioContext.currentTime + 0.15);
-
-    log('🔊 Test beep played - listen for sync!');
   } catch (err) {
-    log(`Test beep failed: ${err.message}`, 'error');
+    console.error('Test beep failed:', err.message);
   }
 }
 
