@@ -405,6 +405,51 @@ async function enableListenWithAudioctl(sourceDevice, targetDevice = null) {
 }
 
 /**
+ * Enable "Listen to this device" using the Command-Line Friendly ID directly
+ * This is more reliable as we already have the exact device ID
+ *
+ * @param {string} sourceCmdId - Command-Line Friendly ID of the CAPTURE device
+ * @param {string} targetDeviceName - Name of the target RENDER device (e.g., "ASUS VG32V")
+ */
+async function enableListenToDeviceWithCmdId(sourceCmdId, targetDeviceName) {
+  console.log(`[AudioRouting] Enabling Listen with CmdId: ${sourceCmdId} → ${targetDeviceName}`);
+
+  try {
+    // Find target device's Command-Line Friendly ID
+    const allSvvDevices = await getSVVDevices();
+    const targetDeviceLower = targetDeviceName.toLowerCase();
+
+    const target = allSvvDevices.find(d =>
+      d['Direction'] === 'Render' &&
+      d['Type'] === 'Device' &&
+      ((d['Name'] || '').toLowerCase().includes(targetDeviceLower) ||
+       (d['Device Name'] || '').toLowerCase().includes(targetDeviceLower))
+    );
+
+    if (!target || !target['Command-Line Friendly ID']) {
+      console.error(`[AudioRouting] Target device not found: ${targetDeviceName}`);
+      // Try without target - will use default playback
+      console.log('[AudioRouting] Trying to enable Listen without specific target...');
+      await runSVV(`/SetListenToThisDevice '${sourceCmdId}' 1`);
+      return { success: true, warning: 'Using default playback device' };
+    }
+
+    const targetCmdId = target['Command-Line Friendly ID'];
+    console.log(`[AudioRouting] Target CmdId: ${targetCmdId}`);
+
+    // SoundVolumeView: /SetListenToThisDevice "SourceCmdId" 1 "TargetCmdId"
+    // 1 = enable, 0 = disable
+    await runSVV(`/SetListenToThisDevice '${sourceCmdId}' 1 '${targetCmdId}'`);
+
+    console.log(`[AudioRouting] Listen enabled: ${sourceCmdId} → ${targetCmdId}`);
+    return { success: true };
+  } catch (err) {
+    console.error(`[AudioRouting] Failed to enable Listen with CmdId:`, err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
  * Disable "Listen to this device" using SoundVolumeView
  *
  * @param {string} sourceDevice - Device to stop listening from
@@ -446,10 +491,14 @@ async function disableListenToDevice(sourceDevice) {
  * Enable PC + Speakers mode
  *
  * CORRECT ARCHITECTURE:
- * 1. Keep Windows default on Virtual Desktop Audio (so FFmpeg captures PRE-APO)
- * 2. Enable "Listen to this device" on Virtual Desktop Audio → PC speakers
+ * 1. Keep Windows default on Virtual Desktop Audio RENDER device (so FFmpeg captures PRE-APO)
+ * 2. Enable "Listen to this device" on Virtual Desktop Audio CAPTURE device → PC speakers
  * 3. APO delay is applied ONLY on PC speakers pipeline
  * 4. Cast gets PRE-APO audio, PC speakers get POST-APO audio
+ *
+ * KEY INSIGHT: "Listen to this device" is a CAPTURE device feature!
+ * - Virtual Desktop Audio RENDER = where apps output to
+ * - Virtual Desktop Audio CAPTURE = loopback source for "Listen"
  *
  * @param {string} targetDevice - Optional specific PC speaker device name
  */
@@ -457,36 +506,47 @@ async function enablePCSpeakersMode(targetDevice = null) {
   console.log('[AudioRouting] enablePCSpeakersMode called');
 
   try {
-    // Step 1: Find virtual device (keep this as Windows default)
-    const virtualDevice = await findVirtualDevice();
-    if (!virtualDevice) {
+    // Step 1: Find virtual RENDER device (keep this as Windows default for FFmpeg capture)
+    const virtualRenderDevice = await findVirtualDevice();
+    if (!virtualRenderDevice) {
       return { success: false, error: 'No virtual audio device found. Install Virtual Desktop Audio.' };
     }
 
-    // Step 2: Find PC speakers (target for Listen)
+    // Step 2: Find virtual CAPTURE device (source for "Listen to this device")
+    const virtualCaptureDevice = await findVirtualCaptureDevice();
+    if (!virtualCaptureDevice) {
+      return { success: false, error: 'No virtual capture device found. Virtual Desktop Audio should have a capture device.' };
+    }
+
+    // Step 3: Find PC speakers (target for Listen)
     const pcSpeakers = targetDevice || await findRealSpeakers();
     if (!pcSpeakers) {
       return { success: false, error: 'No PC speakers found. Please check your audio devices.' };
     }
 
-    // Step 3: Ensure Windows default is on virtual device (for PRE-APO capture)
+    // Step 4: Ensure Windows default is on virtual RENDER device (for PRE-APO capture)
     const currentDefault = await getCurrentDefaultDevice();
-    if (currentDefault !== virtualDevice) {
-      console.log(`[AudioRouting] Switching default to virtual device: ${virtualDevice}`);
-      await setDefaultDevice(virtualDevice);
+    if (!currentDefault || !currentDefault.toLowerCase().includes('virtual desktop audio')) {
+      console.log(`[AudioRouting] Switching default to virtual device: ${virtualRenderDevice}`);
+      await setDefaultDevice(virtualRenderDevice);
+    } else {
+      console.log(`[AudioRouting] Already on virtual device: ${currentDefault}`);
     }
 
-    // Step 4: Enable "Listen to this device" - route virtual audio to PC speakers
-    // This creates a SEPARATE pipeline where APO delay is applied
-    const listenResult = await enableListenToDevice(virtualDevice, pcSpeakers);
+    // Step 5: Enable "Listen to this device" on the CAPTURE device
+    // Route: Virtual Desktop Audio (CAPTURE) → PC speakers (RENDER)
+    console.log(`[AudioRouting] Enabling Listen on CAPTURE device: ${virtualCaptureDevice.cmdId}`);
+    console.log(`[AudioRouting] Target RENDER device: ${pcSpeakers}`);
+
+    const listenResult = await enableListenToDeviceWithCmdId(virtualCaptureDevice.cmdId, pcSpeakers);
     if (!listenResult.success) {
       return listenResult;
     }
 
     console.log(`[AudioRouting] PC + Speakers mode enabled!`);
-    console.log(`[AudioRouting]   Default: ${virtualDevice} (PRE-APO, captured by FFmpeg)`);
-    console.log(`[AudioRouting]   Listen → ${pcSpeakers} (POST-APO, delayed for sync)`);
-    return { success: true, virtualDevice, pcSpeakers };
+    console.log(`[AudioRouting]   Default: ${virtualRenderDevice} (PRE-APO, captured by FFmpeg)`);
+    console.log(`[AudioRouting]   Listen: ${virtualCaptureDevice.deviceName} → ${pcSpeakers} (POST-APO)`);
+    return { success: true, virtualDevice: virtualRenderDevice, pcSpeakers };
   } catch (err) {
     console.error('[AudioRouting] Failed to enable PC + Speakers mode:', err.message);
     return { success: false, error: err.message };
@@ -494,7 +554,7 @@ async function enablePCSpeakersMode(targetDevice = null) {
 }
 
 /**
- * Find a virtual audio device for "Speakers Only" mode
+ * Find a virtual audio RENDER device for "Speakers Only" mode
  * Returns the UNIQUE deviceName (e.g., "Virtual Desktop Audio") not ambiguous name ("Speakers")
  */
 async function findVirtualDevice() {
@@ -514,7 +574,7 @@ async function findVirtualDevice() {
           device.deviceName.toLowerCase().includes(pattern.toLowerCase())) {
         // CRITICAL: Return deviceName (unique) not name (ambiguous "Speakers")
         // Multiple devices can have name="Speakers" but deviceName is unique
-        console.log(`[AudioRouting] Found virtual device: ${device.deviceName} (display: ${device.name})`);
+        console.log(`[AudioRouting] Found virtual RENDER device: ${device.deviceName} (display: ${device.name})`);
         return device.deviceName;
       }
     }
@@ -525,31 +585,82 @@ async function findVirtualDevice() {
 }
 
 /**
+ * Find a virtual audio CAPTURE device for "Listen to this device"
+ * "Listen to this device" is a CAPTURE device feature - it takes audio from a capture source
+ * and plays it through a render device
+ */
+async function findVirtualCaptureDevice() {
+  const allSvvDevices = await getSVVDevices();
+
+  // Virtual capture devices to look for (in priority order)
+  const virtualPatterns = [
+    'Virtual Desktop Audio',
+    'CABLE Output',  // VB-Cable's capture device
+    'VB-Audio Virtual Cable'
+  ];
+
+  for (const pattern of virtualPatterns) {
+    for (const device of allSvvDevices) {
+      // Only look at CAPTURE devices (Direction = "Capture")
+      if (device['Direction'] !== 'Capture') continue;
+      if (device['Type'] !== 'Device') continue;
+
+      const name = device['Name'] || '';
+      const deviceName = device['Device Name'] || '';
+
+      if (name.toLowerCase().includes(pattern.toLowerCase()) ||
+          deviceName.toLowerCase().includes(pattern.toLowerCase())) {
+        console.log(`[AudioRouting] Found virtual CAPTURE device: ${deviceName} (display: ${name})`);
+        console.log(`[AudioRouting]   Command-Line ID: ${device['Command-Line Friendly ID']}`);
+        return {
+          name: name,
+          deviceName: deviceName,
+          cmdId: device['Command-Line Friendly ID']
+        };
+      }
+    }
+  }
+
+  console.log('[AudioRouting] No virtual CAPTURE device found');
+  return null;
+}
+
+/**
  * Disable PC + Speakers mode (switch to "Speakers Only")
  *
- * 1. Disable "Listen to this device" so PC speakers stop playing
- * 2. Keep Windows default on virtual device (FFmpeg keeps capturing)
+ * 1. Disable "Listen to this device" on the CAPTURE device so PC speakers stop playing
+ * 2. Keep Windows default on virtual RENDER device (FFmpeg keeps capturing)
  * 3. Only Cast gets audio now
  */
 async function disablePCSpeakersMode() {
   console.log('[AudioRouting] disablePCSpeakersMode called (Speakers Only mode)');
 
   try {
-    // Find virtual device
-    const virtualDevice = await findVirtualDevice();
+    // Find virtual CAPTURE device (to disable Listen on it)
+    const virtualCaptureDevice = await findVirtualCaptureDevice();
 
-    if (virtualDevice) {
-      // Disable Listen - PC speakers stop playing
-      await disableListenToDevice(virtualDevice);
-
-      // Ensure default is still virtual device
-      const currentDefault = await getCurrentDefaultDevice();
-      if (currentDefault !== virtualDevice) {
-        await setDefaultDevice(virtualDevice);
+    if (virtualCaptureDevice && virtualCaptureDevice.cmdId) {
+      // Disable Listen on the CAPTURE device - PC speakers stop playing
+      console.log(`[AudioRouting] Disabling Listen on CAPTURE device: ${virtualCaptureDevice.cmdId}`);
+      await runSVV(`/SetListenToThisDevice '${virtualCaptureDevice.cmdId}' 0`);
+      console.log(`[AudioRouting] Listen disabled`);
+    } else {
+      // Fallback: try finding any virtual device
+      const virtualDevice = await findVirtualDevice();
+      if (virtualDevice) {
+        await disableListenToDevice(virtualDevice);
       }
+    }
 
-      console.log(`[AudioRouting] Speakers Only mode: ${virtualDevice} → Cast only (no PC speakers)`);
-      return { success: true, device: virtualDevice };
+    // Ensure default is still virtual RENDER device
+    const virtualRenderDevice = await findVirtualDevice();
+    if (virtualRenderDevice) {
+      const currentDefault = await getCurrentDefaultDevice();
+      if (!currentDefault || !currentDefault.toLowerCase().includes('virtual desktop audio')) {
+        await setDefaultDevice(virtualRenderDevice);
+      }
+      console.log(`[AudioRouting] Speakers Only mode: ${virtualRenderDevice} → Cast only (no PC speakers)`);
+      return { success: true, device: virtualRenderDevice };
     }
 
     console.log('[AudioRouting] No virtual device found');
@@ -569,7 +680,9 @@ module.exports = {
   setDefaultDevice,
   findRealSpeakers,
   findVirtualDevice,
+  findVirtualCaptureDevice,
   enableListenToDevice,
+  enableListenToDeviceWithCmdId,
   disableListenToDevice,
   enablePCSpeakersMode,
   disablePCSpeakersMode
