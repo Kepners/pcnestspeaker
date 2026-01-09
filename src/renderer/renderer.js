@@ -1964,15 +1964,30 @@ function updateSyncDelayUI() {
 }
 
 /**
- * Handle sync delay slider change (with debounce)
+ * Handle sync delay slider change
+ * - Updates display immediately
+ * - Plays dual ping (PC + Nest) on each change for real-time sync testing
+ * - Debounces the actual APO config write
  */
-function handleSyncDelayChange(delayMs) {
+let lastPingTime = 0;
+const PING_THROTTLE_MS = 400; // Minimum time between pings
+
+function handleSyncDelayChange(delayMs, playPing = false) {
   // Update display immediately
   if (syncDelayValue) {
     syncDelayValue.textContent = `${delayMs}ms`;
   }
 
-  // Debounce the actual delay setting (wait 300ms after user stops sliding)
+  // Play dual ping if requested and throttle allows
+  if (playPing) {
+    const now = Date.now();
+    if (now - lastPingTime >= PING_THROTTLE_MS) {
+      lastPingTime = now;
+      playDualSyncPing();
+    }
+  }
+
+  // Debounce the actual delay setting (wait 500ms after user stops sliding)
   if (syncDelayTimeout) {
     clearTimeout(syncDelayTimeout);
   }
@@ -1994,13 +2009,39 @@ function handleSyncDelayChange(delayMs) {
     } catch (error) {
       log(`Sync delay error: ${error.message}`, 'error');
     }
-  }, 300);
+  }, 500);
 }
 
-// Sync delay slider event listener
+/**
+ * Play dual sync ping - beep on PC speakers AND ping on Nest speaker
+ * This helps user adjust the delay until both sounds are in sync
+ */
+async function playDualSyncPing() {
+  // Get the currently selected speaker
+  const speakerName = selectedSpeaker?.name ||
+    (stereoMode.leftSpeaker !== null ? speakers[stereoMode.leftSpeaker]?.name : null);
+
+  if (!speakerName) {
+    // No speaker selected - just play PC beep
+    playTestBeep();
+    return;
+  }
+
+  // Play BOTH simultaneously:
+  // 1. PC beep (instant through Web Audio)
+  // 2. Nest ping (via cast-helper)
+  playTestBeep();
+  try {
+    await window.api.pingSpeaker(speakerName);
+  } catch (e) {
+    // Ignore ping errors during sync testing
+  }
+}
+
+// Sync delay slider event listener - play ping on each change
 if (syncDelaySlider) {
   syncDelaySlider.addEventListener('input', (e) => {
-    handleSyncDelayChange(parseInt(e.target.value, 10));
+    handleSyncDelayChange(parseInt(e.target.value, 10), true); // true = play ping
   });
 }
 
