@@ -19,38 +19,38 @@ For PC + Speakers mode to work correctly, we need **TWO SEPARATE audio paths**:
 │        ▼                                                                     │
 │   ┌─────────────────────────────────────────┐                               │
 │   │  Windows Default: Virtual Desktop Audio │  ◀── NO APO on this device   │
-│   │  (The capture source - PRE-APO)         │                               │
+│   │  (SINGLE SOURCE - both pipelines here)  │                               │
 │   └────────────────────┬────────────────────┘                               │
 │                        │                                                     │
-│           ┌────────────┴────────────┐                                       │
-│           │                         │                                        │
-│           ▼                         ▼                                        │
-│   ┌───────────────────┐   ┌───────────────────────────────────┐             │
-│   │ CAST PIPELINE     │   │ HDMI PIPELINE                     │             │
-│   │                   │   │ ("Listen to this device")         │             │
-│   │ virtual-audio-    │   │                                   │             │
-│   │ capturer captures │   │ Virtual Desktop Audio             │             │
-│   │ PRE-APO audio     │   │       │                           │             │
-│   │       │           │   │       ▼                           │             │
-│   │       ▼           │   │ Windows routes via                │             │
-│   │   FFmpeg          │   │ "Listen to this device"           │             │
-│   │   (Opus encode)   │   │       │                           │             │
-│   │       │           │   │       ▼                           │             │
-│   │       ▼           │   │ ASUS VG32V (HDMI speakers)        │             │
-│   │   MediaMTX        │   │       │                           │             │
-│   │   (WebRTC)        │   │       ▼                           │             │
-│   │       │           │   │   APO Delay (e.g., 700ms)         │             │
-│   │       ▼           │   │   Applied ONLY here!              │             │
-│   └───────────────────┘   └───────────────────────────────────┘             │
-│           │                         │                                        │
-│           ▼                         ▼                                        │
-│   ┌───────────────────┐   ┌───────────────────┐                             │
-│   │  Nest Speakers    │   │  HDMI Speakers    │                             │
-│   │  (PRE-APO audio)  │   │  (POST-APO audio) │                             │
-│   │  + network latency│   │  Delayed to sync  │                             │
-│   └───────────────────┘   └───────────────────┘                             │
+│        ┌───────────────┴───────────────┐                                    │
+│        │                               │                                     │
+│        ▼                               ▼                                     │
+│   ┌─────────────┐             ┌─────────────────────┐                       │
+│   │ CAST        │             │ HDMI PIPELINE       │                       │
+│   │ PIPELINE    │             │ (Listen to device)  │                       │
+│   │             │             │                     │                       │
+│   │ virtual-    │             │ "Listen to this     │                       │
+│   │ audio-      │             │ device" enabled on  │                       │
+│   │ capturer    │             │ Virtual Desktop     │                       │
+│   │ (captures   │             │ Audio, outputs to:  │                       │
+│   │ from VDA)   │             │                     │                       │
+│   │     │       │             │  ASUS VG32V (HDMI)  │                       │
+│   │     ▼       │             │  with APO:          │                       │
+│   │  FFmpeg     │             │    → Delay 700ms    │                       │
+│   │     │       │             │    → Then speakers  │                       │
+│   │     ▼       │             │                     │                       │
+│   │  MediaMTX   │             │                     │                       │
+│   └──────┬──────┘             └──────────┬──────────┘                       │
+│          │                               │                                   │
+│          ▼                               ▼                                   │
+│   ┌─────────────┐             ┌─────────────────────┐                       │
+│   │ Nest        │             │ HDMI Speakers       │                       │
+│   │ (no delay)  │             │ (700ms delayed)     │                       │
+│   │ +500ms net  │             │ = synced with Nest  │                       │
+│   └─────────────┘             └─────────────────────┘                       │
 │                                                                              │
-│   RESULT: Adjust APO delay to sync HDMI with Nest latency!                  │
+│   BOTH PIPELINES LISTEN TO SAME SOURCE: Virtual Desktop Audio               │
+│   APO delay ONLY on HDMI endpoint, NOT on Virtual Desktop Audio             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -166,16 +166,18 @@ disablePCSpeakersMode()
   1. Disable "Listen to this device" (HDMI goes silent)
   2. Keep Windows default on Virtual Desktop Audio (Cast only)
 
-// Low-level functions
-enableListenToDevice(source, target)  // svcl /SetListenToThisDevice
-disableListenToDevice(source)         // svcl /SetListenToThisDevice off
+// Low-level functions (using audioctl CLI)
+enableListenToDevice(source, target)  // audioctl listen --enable
+disableListenToDevice(source)         // audioctl listen --disable
 ```
 
 ### Requirements
 
 1. **Virtual Desktop Audio** - Must be installed as Windows audio device
 2. **Equalizer APO** - Must be installed on HDMI speakers (NOT on virtual device)
-3. **svcl.exe** - NirSoft SoundVolumeCommandLine bundled with app
+3. **svcl.exe** - NirSoft SoundVolumeCommandLine for device switching
+4. **audioctl.exe** - WindowsAudioControl-CLI for "Listen to this device" control
+   - Download: https://github.com/Mr5niper/WindowsAudioControl-CLI-wGUI/releases
 
 ### The Golden Rule
 

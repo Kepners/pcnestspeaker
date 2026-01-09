@@ -139,7 +139,9 @@
       "Bash(\"svcl\\\\svcl.exe\" /stab \"\")",
       "Bash(\"svcl\\\\svcl.exe\" /scomma \"devices.csv\")",
       "Bash(Select-Object -First 10)",
-      "Bash(.svclsvcl.exe /scomma \"\")"
+      "Bash(.svclsvcl.exe /scomma \"\")",
+      "Bash(svcl.exe:*)",
+      "Bash(\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\svcl\\\\svcl.exe\" /?)"
     ]
   }
 }

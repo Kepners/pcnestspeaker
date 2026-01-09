@@ -2,12 +2,14 @@
  * Audio Routing Module - Manages Windows audio device switching for PC + Speakers mode
  *
  * PC + Speakers mode works by:
- * 1. Setting Windows default output to the user's PC speakers (e.g., ASUS VG32V)
- * 2. virtual-audio-capturer captures system audio (what's playing on default device)
- * 3. FFmpeg sends that audio to Cast
- * 4. Equalizer APO delays the PC speakers to sync with Cast latency
+ * 1. Keep Windows default on Virtual Desktop Audio (PRE-APO capture for Cast)
+ * 2. Enable "Listen to this device" on Virtual Desktop Audio → PC speakers
+ * 3. APO delay is applied ONLY on PC speakers output pipeline
+ * 4. Cast gets PRE-APO audio, PC speakers get POST-APO delayed audio
  *
- * Uses NirSoft SoundVolumeCommandLine (svcl.exe) for device switching.
+ * Uses:
+ * - NirSoft SoundVolumeCommandLine (svcl.exe) for device switching
+ * - WindowsAudioControl-CLI (audioctl.exe) for "Listen to this device" control
  */
 
 const { exec } = require('child_process');
@@ -17,6 +19,11 @@ const fs = require('fs');
 // Path to SoundVolumeCommandLine tool
 const SVCL_DIR = path.join(__dirname, '..', '..', 'svcl');
 const SVCL_PATH = path.join(SVCL_DIR, 'svcl.exe');
+
+// Path to WindowsAudioControl-CLI (audioctl) tool
+const AUDIOCTL_DIR = path.join(__dirname, '..', '..', 'audioctl');
+const AUDIOCTL_PATH = path.join(AUDIOCTL_DIR, 'audioctl.exe');
+
 // Store original default device for restoration
 let originalDefaultDevice = null;
 
@@ -25,6 +32,52 @@ let originalDefaultDevice = null;
  */
 function isAvailable() {
   return fs.existsSync(SVCL_PATH);
+}
+
+/**
+ * Check if WindowsAudioControl-CLI (audioctl) is available
+ */
+function isAudioctlAvailable() {
+  const available = fs.existsSync(AUDIOCTL_PATH);
+  if (!available) {
+    console.log(`[AudioRouting] audioctl.exe not found at: ${AUDIOCTL_PATH}`);
+    console.log('[AudioRouting] Download from: https://github.com/Mr5niper/WindowsAudioControl-CLI-wGUI/releases');
+  }
+  return available;
+}
+
+/**
+ * Run audioctl.exe command
+ * @param {string} args - Command line arguments
+ * @returns {Promise<object>} - Parsed JSON response from audioctl
+ */
+async function runAudioctl(args) {
+  if (!isAudioctlAvailable()) {
+    throw new Error('audioctl.exe not found. Download from GitHub and place in audioctl/ folder.');
+  }
+
+  return new Promise((resolve, reject) => {
+    const cmd = `"${AUDIOCTL_PATH}" ${args}`;
+    console.log(`[AudioRouting] Running: ${cmd}`);
+
+    exec(cmd, { windowsHide: true, timeout: 15000 }, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`[AudioRouting] audioctl error:`, error.message);
+        console.error(`[AudioRouting] stderr:`, stderr);
+        reject(new Error(stderr || error.message));
+      } else {
+        console.log(`[AudioRouting] audioctl output:`, stdout.trim());
+        // audioctl returns JSON on success
+        try {
+          const result = JSON.parse(stdout.trim());
+          resolve(result);
+        } catch (e) {
+          // Not JSON, just return the raw output
+          resolve({ success: true, output: stdout.trim() });
+        }
+      }
+    });
+  });
 }
 
 /**
@@ -195,18 +248,36 @@ async function findRealSpeakers() {
 }
 
 /**
- * Enable "Listen to this device" - routes audio from source to target device
+ * Enable "Listen to this device" using audioctl CLI tool
+ *
+ * Uses WindowsAudioControl-CLI (audioctl.exe) which properly handles the Windows
+ * Core Audio API to enable Listen just like the UI does.
  *
  * @param {string} sourceDevice - Device to listen FROM (e.g., "Virtual Desktop Audio")
- * @param {string} targetDevice - Device to play TO (e.g., "ASUS VG32V")
+ * @param {string} targetDevice - Device to play TO (e.g., "ASUS VG32V") - if null, uses default
  */
-async function enableListenToDevice(sourceDevice, targetDevice) {
+async function enableListenToDevice(sourceDevice, targetDevice = null) {
+  console.log(`[AudioRouting] Enabling Listen: ${sourceDevice} → ${targetDevice || 'default output'}`);
+
   try {
-    // svcl /SetListenToThisDevice <device> <target> 1
-    // The "1" at the end enables listening
-    await runSvcl(`/SetListenToThisDevice "${sourceDevice}" "${targetDevice}" 1`);
-    console.log(`[AudioRouting] Enabled Listen: ${sourceDevice} → ${targetDevice}`);
-    return { success: true };
+    // Build the audioctl command
+    // audioctl listen --name "Virtual Desktop Audio" --flow Capture --enable [--playback-target-id ""]
+    let args = `listen --name "${sourceDevice}" --flow Capture --enable`;
+
+    // If targetDevice is specified, we need to get its endpoint ID first
+    // For now, use "" which means default playback device
+    // TODO: If targetDevice specified, look up its endpoint ID
+    if (targetDevice) {
+      // Use default playback for now - audioctl will route to current default
+      args += ` --playback-target-id ""`;
+    } else {
+      args += ` --playback-target-id ""`;
+    }
+
+    const result = await runAudioctl(args);
+
+    console.log(`[AudioRouting] Listen enabled successfully`);
+    return { success: true, result };
   } catch (err) {
     console.error(`[AudioRouting] Failed to enable Listen:`, err.message);
     return { success: false, error: err.message };
@@ -214,17 +285,24 @@ async function enableListenToDevice(sourceDevice, targetDevice) {
 }
 
 /**
- * Disable "Listen to this device"
+ * Disable "Listen to this device" using audioctl CLI tool
+ *
+ * Uses WindowsAudioControl-CLI (audioctl.exe) which properly handles the Windows
+ * Core Audio API to disable Listen just like the UI does.
  *
  * @param {string} sourceDevice - Device to stop listening from
  */
 async function disableListenToDevice(sourceDevice) {
+  console.log(`[AudioRouting] Disabling Listen on: ${sourceDevice}`);
+
   try {
-    // svcl /SetListenToThisDevice <device> "" 0
-    // The "0" disables listening
-    await runSvcl(`/SetListenToThisDevice "${sourceDevice}" "" 0`);
-    console.log(`[AudioRouting] Disabled Listen on: ${sourceDevice}`);
-    return { success: true };
+    // audioctl listen --name "Virtual Desktop Audio" --flow Capture --disable
+    const args = `listen --name "${sourceDevice}" --flow Capture --disable`;
+
+    const result = await runAudioctl(args);
+
+    console.log(`[AudioRouting] Listen disabled successfully`);
+    return { success: true, result };
   } catch (err) {
     console.error(`[AudioRouting] Failed to disable Listen:`, err.message);
     return { success: false, error: err.message };
@@ -349,6 +427,7 @@ async function disablePCSpeakersMode() {
 
 module.exports = {
   isAvailable,
+  isAudioctlAvailable,
   getDevices,
   getRenderDevices,
   getCurrentDefaultDevice,
