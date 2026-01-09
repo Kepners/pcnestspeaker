@@ -16,11 +16,11 @@ const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-// Path to SoundVolumeCommandLine tool
-const SVCL_DIR = path.join(__dirname, '..', '..', 'svcl');
-const SVCL_PATH = path.join(SVCL_DIR, 'svcl.exe');
+// Path to NirSoft SoundVolumeView (RELIABLE device switching)
+const SVV_DIR = path.join(__dirname, '..', '..', 'soundvolumeview');
+const SVV_PATH = path.join(SVV_DIR, 'SoundVolumeView.exe');
 
-// Path to WindowsAudioControl-CLI (audioctl) tool
+// Path to WindowsAudioControl-CLI (audioctl) tool for "Listen to this device"
 const AUDIOCTL_DIR = path.join(__dirname, '..', '..', 'audioctl');
 const AUDIOCTL_PATH = path.join(AUDIOCTL_DIR, 'audioctl.exe');
 
@@ -28,10 +28,10 @@ const AUDIOCTL_PATH = path.join(AUDIOCTL_DIR, 'audioctl.exe');
 let originalDefaultDevice = null;
 
 /**
- * Check if SoundVolumeCommandLine is available (bundled with app)
+ * Check if SoundVolumeView is available (bundled with app)
  */
 function isAvailable() {
-  return fs.existsSync(SVCL_PATH);
+  return fs.existsSync(SVV_PATH);
 }
 
 /**
@@ -81,18 +81,19 @@ async function runAudioctl(args) {
 }
 
 /**
- * Run svcl.exe command
+ * Run SoundVolumeView command via PowerShell (for proper escaping)
  */
-async function runSvcl(args) {
+async function runSVV(args) {
   if (!isAvailable()) {
-    throw new Error('svcl.exe not found. It should be bundled with the app.');
+    throw new Error('SoundVolumeView.exe not found. It should be bundled with the app.');
   }
 
   return new Promise((resolve, reject) => {
-    const cmd = `"${SVCL_PATH}" ${args}`;
+    // Use PowerShell for reliable execution with proper escaping
+    const cmd = `powershell -Command "& '${SVV_PATH}' ${args}"`;
     console.log(`[AudioRouting] Running: ${cmd}`);
 
-    exec(cmd, { windowsHide: true, timeout: 10000 }, (error, stdout, stderr) => {
+    exec(cmd, { windowsHide: true, timeout: 15000 }, (error, stdout, stderr) => {
       if (error) {
         console.error(`[AudioRouting] Error:`, error.message);
         reject(error);
@@ -102,6 +103,52 @@ async function runSvcl(args) {
       }
     });
   });
+}
+
+/**
+ * Export SoundVolumeView device list to temp CSV and parse it
+ */
+async function getSVVDevices() {
+  const os = require('os');
+  const tmpPath = path.join(os.tmpdir(), 'svv_devices.csv');
+
+  // Export device list
+  await runSVV(`/scomma '${tmpPath}'`);
+
+  // Wait a bit for file to be written
+  await new Promise(resolve => setTimeout(resolve, 500));
+
+  if (!fs.existsSync(tmpPath)) {
+    throw new Error('Failed to export device list');
+  }
+
+  // Read and parse CSV (handle BOM with utf-8-sig equivalent)
+  let content = fs.readFileSync(tmpPath, 'utf8');
+  // Remove BOM if present
+  if (content.charCodeAt(0) === 0xFEFF) {
+    content = content.slice(1);
+  }
+
+  const lines = content.split('\n').filter(l => l.trim());
+  if (lines.length === 0) return [];
+
+  // Parse header
+  const headers = parseCSVLine(lines[0]);
+  const devices = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseCSVLine(lines[i]);
+    const device = {};
+    headers.forEach((h, idx) => {
+      device[h] = values[idx] || '';
+    });
+    devices.push(device);
+  }
+
+  // Clean up
+  try { fs.unlinkSync(tmpPath); } catch (e) {}
+
+  return devices;
 }
 
 /**
@@ -128,28 +175,27 @@ function parseCSVLine(line) {
 }
 
 /**
- * Get list of audio devices
+ * Get list of audio devices using SoundVolumeView
  */
 async function getDevices() {
   try {
-    const output = await runSvcl('/scomma ""');
-    // Parse CSV output with proper quote handling
-    // Format: Name,Type,Direction,Device Name,Default,...
-    const lines = output.split('\n').filter(l => l.trim());
+    const svvDevices = await getSVVDevices();
     const devices = [];
 
-    for (const line of lines) {
-      const parts = parseCSVLine(line);
-      if (parts.length >= 5 && parts[1] === 'Device') {
-        devices.push({
-          name: parts[0],
-          type: parts[1],           // "Device" or "Application" etc.
-          direction: parts[2],      // "Capture" or "Render"
-          deviceName: parts[3],     // Full device name (e.g., "NVIDIA High Definition Audio")
-          isDefault: parts[4] === 'Render' // Check if this is the default render device
-        });
-      }
+    for (const d of svvDevices) {
+      // Only include Device type (not Application, Subunit, etc.)
+      if (d['Type'] !== 'Device') continue;
+
+      devices.push({
+        name: d['Name'] || '',
+        type: d['Type'] || '',
+        direction: d['Direction'] || '',
+        deviceName: d['Device Name'] || '',
+        cmdId: d['Command-Line Friendly ID'] || '',  // KEY: Used for /SetDefault
+        isDefault: d['Default'] === 'Render'  // "Render" in Default column = default
+      });
     }
+
     console.log(`[AudioRouting] Parsed ${devices.length} device entries`);
     return devices;
   } catch (err) {
@@ -172,15 +218,40 @@ async function getCurrentDefaultDevice() {
 }
 
 /**
- * Set the default Windows audio output device
- * @param {string} deviceName - Name of the device (e.g., "ASUS VG32V")
+ * Set the default Windows audio output device using SoundVolumeView
+ * @param {string} deviceName - Name of the device (e.g., "ASUS VG32V" or full device name)
  */
 async function setDefaultDevice(deviceName) {
   try {
-    // svcl uses /SetDefault to set a device as default for all roles
-    await runSvcl(`/SetDefault "${deviceName}" all`);
-    console.log(`[AudioRouting] Set default device to: ${deviceName}`);
-    return { success: true };
+    // Get all devices to find the Command-Line Friendly ID
+    const devices = await getDevices();
+    const deviceNameLower = deviceName.toLowerCase();
+
+    // Find matching Render device
+    const target = devices.find(d =>
+      d.direction === 'Render' &&
+      (d.name.toLowerCase().includes(deviceNameLower) ||
+       d.deviceName.toLowerCase().includes(deviceNameLower))
+    );
+
+    if (!target) {
+      console.error(`[AudioRouting] Device not found: ${deviceName}`);
+      return { success: false, error: `Device '${deviceName}' not found` };
+    }
+
+    if (!target.cmdId) {
+      console.error(`[AudioRouting] Device has no Command-Line Friendly ID: ${deviceName}`);
+      return { success: false, error: 'Device has no Command-Line Friendly ID' };
+    }
+
+    console.log(`[AudioRouting] Found device: ${target.name} (${target.deviceName})`);
+    console.log(`[AudioRouting] Command-Line ID: ${target.cmdId}`);
+
+    // Use SoundVolumeView with the Command-Line Friendly ID
+    await runSVV(`/SetDefault '${target.cmdId}' all`);
+
+    console.log(`[AudioRouting] Set default device to: ${target.name}`);
+    return { success: true, device: target.name };
   } catch (err) {
     console.error(`[AudioRouting] Failed to set default device:`, err.message);
     return { success: false, error: err.message };
@@ -249,10 +320,10 @@ async function findRealSpeakers() {
 }
 
 /**
- * Enable "Listen to this device" using audioctl CLI tool
+ * Enable "Listen to this device" using SoundVolumeView
  *
- * Uses WindowsAudioControl-CLI (audioctl.exe) which properly handles the Windows
- * Core Audio API to enable Listen just like the UI does.
+ * SoundVolumeView /SetListenToThisDevice is more reliable than audioctl.
+ * Syntax: /SetListenToThisDevice "SourceDevice" 1 "TargetDevice"
  *
  * @param {string} sourceDevice - Device to listen FROM (e.g., "Virtual Desktop Audio")
  * @param {string} targetDevice - Device to play TO (e.g., "ASUS VG32V") - if null, uses default
@@ -261,34 +332,80 @@ async function enableListenToDevice(sourceDevice, targetDevice = null) {
   console.log(`[AudioRouting] Enabling Listen: ${sourceDevice} → ${targetDevice || 'default output'}`);
 
   try {
-    // Build the audioctl command
-    // audioctl listen --name "Virtual Desktop Audio" --enable --playback-target-name "ASUS VG32V"
-    // Note: NO --flow parameter - audioctl doesn't have that option!
-    let args = `listen --name "${sourceDevice}" --enable`;
+    // Get all devices to find Command-Line Friendly IDs
+    const devices = await getDevices();
 
-    // If targetDevice is specified, use --playback-target-name for the output device
+    // Find source device (usually a Capture device like "Virtual Desktop Audio")
+    // But for loopback, it might be the Render version
+    const allSvvDevices = await getSVVDevices();
+    const sourceDeviceLower = sourceDevice.toLowerCase();
+
+    // Look for the source device (could be Capture or Render depending on setup)
+    const source = allSvvDevices.find(d =>
+      (d['Name'] || '').toLowerCase().includes(sourceDeviceLower) ||
+      (d['Device Name'] || '').toLowerCase().includes(sourceDeviceLower)
+    );
+
+    if (!source || !source['Command-Line Friendly ID']) {
+      // Fallback to audioctl if SoundVolumeView can't find it
+      console.log('[AudioRouting] Source device not found in SVV, trying audioctl...');
+      return await enableListenWithAudioctl(sourceDevice, targetDevice);
+    }
+
+    // Find target device
+    let targetCmdId = '';
+    if (targetDevice) {
+      const targetDeviceLower = targetDevice.toLowerCase();
+      const target = allSvvDevices.find(d =>
+        d['Direction'] === 'Render' &&
+        ((d['Name'] || '').toLowerCase().includes(targetDeviceLower) ||
+         (d['Device Name'] || '').toLowerCase().includes(targetDeviceLower))
+      );
+      if (target && target['Command-Line Friendly ID']) {
+        targetCmdId = target['Command-Line Friendly ID'];
+      }
+    }
+
+    // Use SoundVolumeView: /SetListenToThisDevice "Source" 1 "Target"
+    // 1 = enable, 0 = disable
+    const sourceCmdId = source['Command-Line Friendly ID'];
+    const cmd = targetCmdId
+      ? `/SetListenToThisDevice '${sourceCmdId}' 1 '${targetCmdId}'`
+      : `/SetListenToThisDevice '${sourceCmdId}' 1`;
+
+    await runSVV(cmd);
+
+    console.log(`[AudioRouting] Listen enabled successfully via SoundVolumeView`);
+    return { success: true };
+  } catch (err) {
+    console.error(`[AudioRouting] SoundVolumeView Listen failed, trying audioctl:`, err.message);
+    // Fallback to audioctl
+    return await enableListenWithAudioctl(sourceDevice, targetDevice);
+  }
+}
+
+/**
+ * Fallback: Enable "Listen to this device" using audioctl CLI tool
+ */
+async function enableListenWithAudioctl(sourceDevice, targetDevice = null) {
+  try {
+    let args = `listen --name "${sourceDevice}" --enable`;
     if (targetDevice) {
       args += ` --playback-target-name "${targetDevice}"`;
     } else {
-      // Empty string means default playback device
       args += ` --playback-target-name ""`;
     }
-
     const result = await runAudioctl(args);
-
-    console.log(`[AudioRouting] Listen enabled successfully`);
+    console.log(`[AudioRouting] Listen enabled via audioctl`);
     return { success: true, result };
   } catch (err) {
-    console.error(`[AudioRouting] Failed to enable Listen:`, err.message);
+    console.error(`[AudioRouting] audioctl also failed:`, err.message);
     return { success: false, error: err.message };
   }
 }
 
 /**
- * Disable "Listen to this device" using audioctl CLI tool
- *
- * Uses WindowsAudioControl-CLI (audioctl.exe) which properly handles the Windows
- * Core Audio API to disable Listen just like the UI does.
+ * Disable "Listen to this device" using SoundVolumeView
  *
  * @param {string} sourceDevice - Device to stop listening from
  */
@@ -296,13 +413,28 @@ async function disableListenToDevice(sourceDevice) {
   console.log(`[AudioRouting] Disabling Listen on: ${sourceDevice}`);
 
   try {
-    // audioctl listen --name "Virtual Desktop Audio" --disable
-    // Note: NO --flow parameter - audioctl doesn't have that option!
+    // Try SoundVolumeView first
+    const allSvvDevices = await getSVVDevices();
+    const sourceDeviceLower = sourceDevice.toLowerCase();
+
+    const source = allSvvDevices.find(d =>
+      (d['Name'] || '').toLowerCase().includes(sourceDeviceLower) ||
+      (d['Device Name'] || '').toLowerCase().includes(sourceDeviceLower)
+    );
+
+    if (source && source['Command-Line Friendly ID']) {
+      // Use SoundVolumeView: /SetListenToThisDevice "Source" 0
+      // 0 = disable
+      await runSVV(`/SetListenToThisDevice '${source['Command-Line Friendly ID']}' 0`);
+      console.log(`[AudioRouting] Listen disabled via SoundVolumeView`);
+      return { success: true };
+    }
+
+    // Fallback to audioctl
+    console.log('[AudioRouting] Source device not found in SVV, trying audioctl...');
     const args = `listen --name "${sourceDevice}" --disable`;
-
     const result = await runAudioctl(args);
-
-    console.log(`[AudioRouting] Listen disabled successfully`);
+    console.log(`[AudioRouting] Listen disabled via audioctl`);
     return { success: true, result };
   } catch (err) {
     console.error(`[AudioRouting] Failed to disable Listen:`, err.message);
