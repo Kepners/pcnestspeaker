@@ -1077,7 +1077,7 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None):
 
     Args:
         speaker_name: Name of the TV/device
-        hls_url: HLS playlist URL (e.g., http://192.168.50.48:8888/pcaudio/index.m3u8)
+        hls_url: HLS playlist URL (e.g., http://<local-ip>:8888/pcaudio/index.m3u8)
         speaker_ip: Optional direct IP for faster connection
         device_model: Model name from discovery (e.g., "SHIELD Android TV")
                      Used to determine wake method (ADB for Shield, CEC for others)

@@ -294,7 +294,7 @@ function getAPOInstalledDevices() {
     const files = fs.readdirSync(apoFolder);
     for (const file of files) {
       if (file.startsWith('backup_') && file.endsWith('.reg')) {
-        // Extract device name from filename like: backup_NVIDIA High Definition Audio_ASUS VG32V.reg
+        // Extract device name from filename like: backup_NVIDIA High Definition Audio_Monitor Name.reg
         const match = file.match(/^backup_(.+)\.reg$/);
         if (match) {
           devices.push(match[1].replace(/_/g, ' '));
@@ -310,7 +310,7 @@ function getAPOInstalledDevices() {
 
 /**
  * Check if APO is installed on a specific device
- * @param {string} deviceName - The device name to check (e.g., "ASUS VG32V", "Speakers")
+ * @param {string} deviceName - The device name to check (e.g., "Realtek HD Audio", "Speakers")
  * @returns {boolean} True if APO is installed on this device
  */
 function isAPOInstalledOnDevice(deviceName) {
@@ -320,7 +320,7 @@ function isAPOInstalledOnDevice(deviceName) {
   const deviceLower = deviceName.toLowerCase();
 
   // Check if any APO backup file contains the device name
-  // APO backup files are like: "NVIDIA High Definition Audio_ASUS VG32V"
+  // APO backup files are like: "NVIDIA High Definition Audio_Monitor Name"
   // We need fuzzy matching since device names vary
   for (const apoDevice of apoDevices) {
     const apoLower = apoDevice.toLowerCase();

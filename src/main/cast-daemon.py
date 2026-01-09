@@ -6,7 +6,7 @@ Runs as a long-lived subprocess, maintaining persistent connections to Cast devi
 This eliminates the 3-5 second mDNS discovery delay on each command.
 
 Communication is via JSON lines on stdin/stdout:
-  Input:  {"cmd": "set-volume", "speaker": "Den pair", "volume": 0.5, "ip": "192.168.1.100"}
+  Input:  {"cmd": "set-volume", "speaker": "Living Room", "volume": 0.5, "ip": "192.168.x.x"}
   Output: {"success": true, "volume": 0.5}
 
 Supported commands:

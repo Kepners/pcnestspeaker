@@ -219,7 +219,7 @@ async function getCurrentDefaultDevice() {
 
 /**
  * Set the default Windows audio output device using SoundVolumeView
- * @param {string} deviceName - Name of the device (e.g., "ASUS VG32V" or full device name)
+ * @param {string} deviceName - Name of the device (e.g., "HDMI Output" or full device name)
  */
 async function setDefaultDevice(deviceName) {
   try {
@@ -273,15 +273,18 @@ async function getRenderDevices() {
 async function findRealSpeakers() {
   const devices = await getRenderDevices();
 
-  // Priority order for finding real speakers
+  // Priority order for finding real speakers (universal patterns only)
   const priorityPatterns = [
-    'ASUS',                    // Gaming monitors with speakers (user's device)
-    'HDMI',                    // HDMI audio output
-    'NVIDIA High Definition',  // NVIDIA HDMI
-    'Realtek',                 // Onboard audio
+    'HDMI',                    // HDMI audio output (monitors, TVs)
+    'NVIDIA High Definition',  // NVIDIA GPU HDMI audio
+    'AMD High Definition',     // AMD GPU HDMI audio
+    'Intel Display Audio',     // Intel GPU audio
+    'Realtek',                 // Onboard audio (most common)
     'High Definition Audio',   // Generic HD Audio
     'Speakers',                // Default speakers
-    'Headphones'               // Headphones
+    'Headphones',              // Headphones
+    'Line Out',                // Line out jacks
+    'DisplayPort'              // DisplayPort audio
   ];
 
   // Skip these virtual devices
@@ -326,7 +329,7 @@ async function findRealSpeakers() {
  * Syntax: /SetListenToThisDevice "SourceDevice" 1 "TargetDevice"
  *
  * @param {string} sourceDevice - Device to listen FROM (e.g., "Virtual Desktop Audio")
- * @param {string} targetDevice - Device to play TO (e.g., "ASUS VG32V") - if null, uses default
+ * @param {string} targetDevice - Device to play TO (e.g., "HDMI Output") - if null, uses default
  */
 async function enableListenToDevice(sourceDevice, targetDevice = null) {
   console.log(`[AudioRouting] Enabling Listen: ${sourceDevice} → ${targetDevice || 'default output'}`);
@@ -409,7 +412,7 @@ async function enableListenWithAudioctl(sourceDevice, targetDevice = null) {
  * This is more reliable as we already have the exact device ID
  *
  * @param {string} sourceCmdId - Command-Line Friendly ID of the CAPTURE device
- * @param {string} targetDeviceName - Name of the target RENDER device (e.g., "ASUS VG32V")
+ * @param {string} targetDeviceName - Name of the target RENDER device (e.g., "HDMI Output")
  */
 async function enableListenToDeviceWithCmdId(sourceCmdId, targetDeviceName) {
   console.log(`[AudioRouting] Enabling Listen with CmdId: ${sourceCmdId} → ${targetDeviceName}`);

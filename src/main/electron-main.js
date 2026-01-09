@@ -443,7 +443,7 @@ function cleanup() {
   volumeSync.stopMonitoring(); // Stop Windows volume sync
 
   // CRITICAL: Disconnect Cast devices FIRST (before killing processes)
-  // This ensures Green TV and other Cast devices properly stop playing
+  // This ensures all Cast devices (TVs, speakers) properly stop playing
   if (currentConnectedSpeakers.length > 0) {
     sendLog(`Disconnecting ${currentConnectedSpeakers.length} speaker(s)...`);
     for (const speaker of currentConnectedSpeakers) {
@@ -2491,7 +2491,7 @@ ipcMain.handle('update-settings', (event, updates) => {
 // - Windows stays on Virtual Desktop Audio for clean capture
 // - Audio is MIRRORED to HDMI via Windows "Stereo Mix" → "Listen to this device"
 // PC + Speakers mode:
-// 1. Switches Windows default output to PC speakers (e.g., ASUS VG32V)
+// 1. Switches Windows default output to PC speakers (e.g., monitor HDMI, Realtek)
 // 2. virtual-audio-capturer captures system audio (plays on PC speakers)
 // 3. FFmpeg sends to Cast
 // 4. APO delays PC speakers to sync with Cast latency
