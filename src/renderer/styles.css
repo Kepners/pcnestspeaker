@@ -615,6 +615,7 @@ body::before {
   display: flex;
   gap: 4px;
   background: rgba(26, 26, 26, 0.06);
+  border: 1px solid rgba(26, 26, 26, 0.1);
   border-radius: 8px;
   padding: 3px;
 }
@@ -1438,6 +1439,10 @@ body::before {
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 10px;
+  background: rgba(26, 26, 26, 0.03);
+  border: 1px solid rgba(26, 26, 26, 0.1);
+  border-radius: 8px;
+  padding: 4px;
 }
 
 .audio-output-loading {

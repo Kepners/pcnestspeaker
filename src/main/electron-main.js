@@ -1084,7 +1084,11 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           sendLog(`Disconnecting "${speaker.name}"...`);
           if (daemonManager.isDaemonRunning()) {
             await daemonManager.disconnectSpeaker(speaker.name).catch(() => {});
+          } else if (speaker.ip) {
+            // Use fast stop with cached IP (no network scan needed)
+            await runPython(['stop-fast', speaker.name, speaker.ip]).catch(() => {});
           } else {
+            // Fallback to slow stop if no IP cached
             await runPython(['stop', speaker.name]).catch(() => {});
           }
         } catch (e) {
@@ -1980,7 +1984,11 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
           sendLog(`Disconnecting "${speaker.name}"...`);
           if (daemonManager.isDaemonRunning()) {
             await daemonManager.disconnectSpeaker(speaker.name).catch(() => {});
+          } else if (speaker.ip) {
+            // Use fast stop with cached IP (no network scan needed)
+            await runPython(['stop-fast', speaker.name, speaker.ip]).catch(() => {});
           } else {
+            // Fallback to slow stop if no IP cached
             await runPython(['stop', speaker.name]).catch(() => {});
           }
         } catch (e) {
@@ -2470,7 +2478,9 @@ ipcMain.handle('set-cast-mode', async (event, mode) => {
       console.log(`[Main] PC + Speakers mode - audio to Cast + local HDMI`);
 
       // 1. Enable audio routing: Virtual Desktop Audio → HDMI speakers
-      if (audioRouting.isAvailable()) {
+      // Auto-download svcl.exe if not available
+      const ensureResult = await audioRouting.ensureAvailable();
+      if (ensureResult.success) {
         const routeResult = await audioRouting.enablePCSpeakersMode();
         if (routeResult.success) {
           sendLog(`Audio routing enabled: Virtual Audio → HDMI`, 'success');
@@ -2479,8 +2489,9 @@ ipcMain.handle('set-cast-mode', async (event, mode) => {
           sendLog(`Please configure Windows Stereo Mix manually`, 'info');
         }
       } else {
-        // svcl.exe not found - guide user to manual setup
-        sendLog(`For automatic routing, install svcl.exe from nirsoft.net`, 'info');
+        // Download failed - guide user to manual setup
+        sendLog(`Could not download svcl.exe: ${ensureResult.error}`, 'warning');
+        sendLog(`For manual routing, enable "Listen to this device" on Virtual Desktop Audio`, 'info');
       }
 
       // 2. Restore saved APO delay

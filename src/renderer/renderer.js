@@ -624,12 +624,7 @@ async function setCastMode(mode) {
     if (mode === 'speakers') {
       castModeHint.textContent = 'Audio only goes to Nest speakers';
     } else {
-      // Check if Equalizer APO is installed for sync delay
-      if (!equalizerApoInstalled) {
-        castModeHint.innerHTML = 'PC speakers + Nest <span style="color: var(--color-warning);">(install Equalizer APO for sync)</span>';
-      } else {
-        castModeHint.textContent = 'PC speakers + Nest (use delay to sync)';
-      }
+      castModeHint.textContent = 'PC speakers + Nest (install Equalizer APO for sync)';
     }
   }
 

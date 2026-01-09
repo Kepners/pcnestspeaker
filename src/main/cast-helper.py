@@ -882,6 +882,27 @@ def stop_cast(speaker_name):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+
+def stop_cast_fast(speaker_name, speaker_ip):
+    """
+    Stop casting using cached IP - no network scan needed.
+    Much faster than stop_cast() (~1s vs 10s).
+    """
+    try:
+        if not speaker_ip:
+            # Fallback to regular stop if no IP provided
+            return stop_cast(speaker_name)
+
+        print(f"[stop-fast] Connecting directly to {speaker_name} at {speaker_ip}", file=sys.stderr)
+        cast = pychromecast.Chromecast(speaker_ip)
+        cast.wait(timeout=5)
+        cast.quit_app()
+        return {"success": True}
+
+    except Exception as e:
+        print(f"[stop-fast] Error: {e}", file=sys.stderr)
+        return {"success": False, "error": str(e)}
+
 def get_volume(speaker_name):
     """
     Get current volume and mute state from speaker
@@ -1518,6 +1539,13 @@ if __name__ == "__main__":
     elif command == "stop" and len(sys.argv) >= 3:
         speaker = sys.argv[2]
         result = stop_cast(speaker)
+        print(json.dumps(result))
+
+    elif command == "stop-fast" and len(sys.argv) >= 4:
+        # Fast stop using cached IP - no network scan
+        speaker = sys.argv[2]
+        speaker_ip = sys.argv[3]
+        result = stop_cast_fast(speaker, speaker_ip)
         print(json.dumps(result))
 
     elif command == "get-volume" and len(sys.argv) >= 3:
