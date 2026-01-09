@@ -170,7 +170,7 @@
       <div class="tab-content" id="tab-license">
         <div class="section">
           <h2 class="section-label">LICENSE</h2>
-          <div class="option-row" id="license-row" onclick="toggleLicenseDetails(event)" style="cursor: pointer;">
+          <div class="option-row" id="license-row" style="cursor: pointer;">
             <span class="option-label">Status</span>
             <span id="license-status" class="license-status">Active &#10003;</span>
           </div>
@@ -181,8 +181,8 @@
             </div>
             <p class="option-hint">Personal use on up to 2 devices. Lifetime updates.</p>
             <div class="license-actions">
-              <button class="btn btn-small btn-secondary" onclick="showLicenseModal(); event.stopPropagation();">Change Key</button>
-              <button class="btn btn-small btn-danger" onclick="deactivateLicense(); event.stopPropagation();">Deactivate</button>
+              <button class="btn btn-small btn-secondary" id="change-key-btn">Change Key</button>
+              <button class="btn btn-small btn-danger" id="deactivate-btn">Deactivate</button>
             </div>
           </div>
         </div>
@@ -287,11 +287,11 @@
       <input type="text" class="modal-input" id="license-input" placeholder="PNS-XXXX-XXXX-XXXX-XXXX">
       <div class="modal-error" id="license-error" style="display: none;"></div>
       <div class="modal-buttons">
-        <button class="btn btn-secondary" onclick="openPurchaseLink()">Buy License</button>
-        <button class="btn btn-primary" onclick="activateLicense()">Activate</button>
+        <button class="btn btn-secondary" id="buy-license-btn">Buy License</button>
+        <button class="btn btn-primary" id="activate-license-btn">Activate</button>
       </div>
       <p class="modal-footer-text">
-        Lost your key? <a href="#" onclick="openSupportLink(); return false;" class="modal-link">Contact support</a>
+        Lost your key? <a href="#" id="support-link" class="modal-link">Contact support</a>
       </p>
     </div>
   </div>

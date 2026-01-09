@@ -552,6 +552,57 @@ function setupEventListeners() {
       await loadAudioOutputs();
     });
   }
+
+  // License row click - expand/collapse
+  const licenseRow = document.getElementById('license-row');
+  if (licenseRow) {
+    licenseRow.addEventListener('click', (event) => {
+      toggleLicenseDetails(event);
+    });
+  }
+
+  // Change Key button
+  const changeKeyBtn = document.getElementById('change-key-btn');
+  if (changeKeyBtn) {
+    changeKeyBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      showLicenseModal();
+    });
+  }
+
+  // Deactivate button
+  const deactivateBtn = document.getElementById('deactivate-btn');
+  if (deactivateBtn) {
+    deactivateBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      deactivateLicense();
+    });
+  }
+
+  // Buy License button (in modal)
+  const buyLicenseBtn = document.getElementById('buy-license-btn');
+  if (buyLicenseBtn) {
+    buyLicenseBtn.addEventListener('click', () => {
+      openPurchaseLink();
+    });
+  }
+
+  // Activate button (in modal)
+  const activateLicenseBtn = document.getElementById('activate-license-btn');
+  if (activateLicenseBtn) {
+    activateLicenseBtn.addEventListener('click', () => {
+      activateLicense();
+    });
+  }
+
+  // Support link (in modal)
+  const supportLink = document.getElementById('support-link');
+  if (supportLink) {
+    supportLink.addEventListener('click', (event) => {
+      event.preventDefault();
+      openSupportLink();
+    });
+  }
 }
 
 // Track if Equalizer APO is installed
