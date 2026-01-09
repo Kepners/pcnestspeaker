@@ -187,13 +187,21 @@ def connect_speaker(speaker_name, speaker_ip=None):
 
 
 def disconnect_speaker(speaker_name):
-    """Close connection to speaker."""
+    """Close connection to speaker and quit the Cast app."""
     try:
         with connections_lock:
             if speaker_name in connections:
                 conn = connections[speaker_name]
+                cast = conn['cast']
+                # CRITICAL: quit_app() stops the Cast receiver - this actually stops audio!
                 try:
-                    conn['cast'].disconnect()
+                    cast.quit_app()
+                    log(f"Quit Cast app on '{speaker_name}'")
+                except Exception as e:
+                    log(f"quit_app failed: {e}")
+                # Then disconnect the socket
+                try:
+                    cast.disconnect()
                 except:
                     pass
                 try:
