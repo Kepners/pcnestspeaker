@@ -191,18 +191,22 @@ async function getDevices() {
   try {
     const output = await runSvcl('/scomma ""');
     // Parse CSV output
+    // Format: Name,Type,Direction,DeviceName,...
+    // Example: "CABLE Output","Device","Capture","VB-Audio Virtual Cable",...
     const lines = output.split('\n');
     const devices = [];
     for (const line of lines) {
       const parts = line.split(',');
-      if (parts.length >= 3) {
+      if (parts.length >= 4) {
         devices.push({
           name: parts[0].replace(/"/g, ''),
-          type: parts[1].replace(/"/g, ''),
-          id: parts[2].replace(/"/g, '')
+          type: parts[1].replace(/"/g, ''),        // Always "Device"
+          direction: parts[2].replace(/"/g, ''),   // "Capture" or "Render"
+          deviceName: parts[3].replace(/"/g, '')   // Full device name
         });
       }
     }
+    console.log(`[AudioRouting] Parsed ${devices.length} devices`);
     return devices;
   } catch (err) {
     console.error('[AudioRouting] Failed to get devices:', err.message);
@@ -270,9 +274,11 @@ async function findVirtualDevice() {
   ];
 
   for (const device of devices) {
-    if (device.type === 'Capture') {
+    // Check direction === 'Capture' (not type!)
+    if (device.direction === 'Capture') {
       for (const name of virtualNames) {
         if (device.name.toLowerCase().includes(name.toLowerCase())) {
+          console.log(`[AudioRouting] Found virtual device: ${device.name}`);
           return device.name;
         }
       }
@@ -291,13 +297,17 @@ async function findRealSpeakers() {
     'Speakers',
     'Realtek',
     'High Definition Audio',
-    'Headphones'
+    'Headphones',
+    'ASUS',        // Common gaming monitors with speakers
+    'NVIDIA'       // NVIDIA HDMI audio
   ];
 
   for (const device of devices) {
-    if (device.type === 'Render') {
+    // Check direction === 'Render' (not type!)
+    if (device.direction === 'Render') {
       for (const name of realNames) {
         if (device.name.toLowerCase().includes(name.toLowerCase())) {
+          console.log(`[AudioRouting] Found real speakers: ${device.name}`);
           return device.name;
         }
       }
