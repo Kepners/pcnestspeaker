@@ -122,10 +122,8 @@ async function loadSettings() {
       log(`Sync delay: ${currentSyncDelayMs}ms`);
     }
 
-    // Apply cast mode state
-    if (settings.castMode) {
-      setCastMode(settings.castMode);
-    }
+    // Apply cast mode state (default to 'speakers' if not set)
+    await setCastMode(settings.castMode || 'speakers');
   } catch (error) {
     log(`Failed to load settings: ${error.message}`, 'error');
   }
@@ -199,8 +197,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load APO device info for Settings tab
   await loadApoDevices();
 
-  // Load audio output devices for quick switcher
-  await loadAudioOutputs();
+  // Audio outputs are loaded by setCastMode() when mode is 'all'
+  // No need to pre-load here since 'speakers' mode is default
 
   // Set up first-run event listener
   setupFirstRunListener();
@@ -683,6 +681,18 @@ async function setCastMode(mode) {
       castModeHint.textContent = 'Audio only goes to Nest speakers';
     } else {
       castModeHint.textContent = 'PC speakers + Nest (install Equalizer APO for sync)';
+    }
+  }
+
+  // Show/hide audio output grid based on mode
+  const audioOutputList = document.getElementById('audio-output-list');
+  if (audioOutputList) {
+    if (mode === 'all') {
+      audioOutputList.style.display = 'flex';
+      // Refresh the list when switching to PC + Speakers mode
+      await loadAudioOutputs();
+    } else {
+      audioOutputList.style.display = 'none';
     }
   }
 

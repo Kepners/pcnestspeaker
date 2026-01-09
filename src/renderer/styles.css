@@ -1479,7 +1479,7 @@ body::before {
    ═══════════════════════════════════════════════════════════ */
 
 .audio-output-grid {
-  display: flex;
+  display: none; /* Hidden by default, shown in PC + Speakers mode */
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 10px;

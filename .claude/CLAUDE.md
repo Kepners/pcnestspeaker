@@ -74,6 +74,121 @@ pcnestspeaker/
 
 ---
 
+## 🚨 CRITICAL: PC + Speakers Mode Architecture (January 9, 2026)
+
+### THE PROBLEM - VERIFIED AND CONFIRMED
+
+**virtual-audio-capturer captures POST-APO audio!**
+
+When APO delay is set to 2000ms:
+- HDMI speakers: 2 second delay ✓
+- Cast speakers: ALSO 2 second delay ✗ (WRONG!)
+
+Both outputs receive the SAME delayed audio because virtual-audio-capturer uses WASAPI loopback which captures AFTER APO processing.
+
+### CURRENT (BROKEN) ARCHITECTURE
+
+```
+Desktop Audio
+     │
+     ▼
+┌─────────────────┐
+│  Windows Mixer  │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   APO Delay     │ ◀── Delay applied HERE
+│   (e.g. 700ms)  │
+└────────┬────────┘
+         │
+         ├─────────────────────────────────┐
+         │                                 │
+         ▼                                 ▼
+┌─────────────────┐              ┌─────────────────────┐
+│ ASUS VG32V      │              │ virtual-audio-      │
+│ (HDMI Speakers) │              │ capturer (POST-APO!)│
+│                 │              └─────────┬───────────┘
+│ = DELAYED       │                        │
+└─────────────────┘                        ▼
+                                 ┌─────────────────┐
+                                 │ FFmpeg → Cast   │
+                                 │                 │
+                                 │ = ALSO DELAYED! │
+                                 └─────────────────┘
+
+RESULT: Both get APO delay - CAN'T SYNC THEM!
+```
+
+### REQUIRED (CORRECT) ARCHITECTURE
+
+**Cast and HDMI must capture from SAME source, but APO only affects HDMI:**
+
+```
+Desktop Audio
+     │
+     ▼
+┌─────────────────┐
+│  Windows Mixer  │
+└────────┬────────┘
+         │
+         ├──────────────────────────────────┐
+         │                                  │
+         ▼                                  ▼
+┌─────────────────┐              ┌──────────────────────┐
+│ Virtual Device  │              │ APO Delay (700ms)    │
+│ (NO APO)        │              │ on REAL speakers     │
+└────────┬────────┘              └──────────┬───────────┘
+         │                                  │
+         ▼                                  ▼
+┌─────────────────┐              ┌──────────────────────┐
+│ virtual-audio-  │              │ HDMI Speakers        │
+│ capturer        │              │                      │
+└────────┬────────┘              │ = DELAYED to match   │
+         │                       │   Cast latency       │
+         ▼                       └──────────────────────┘
+┌─────────────────┐
+│ FFmpeg → Cast   │
+│                 │
+│ = NO APO delay  │
+│ + network delay │
+└─────────────────┘
+
+RESULT: Can adjust APO to sync HDMI with Cast!
+```
+
+### SOLUTION OPTIONS
+
+1. **VB-CABLE + Audio Routing**
+   - Default = VB-CABLE (virtual, no APO)
+   - VB-CABLE monitors to HDMI (with APO delay)
+   - FFmpeg captures from VB-CABLE (no delay)
+
+2. **Voicemeeter**
+   - Professional audio routing
+   - Can split to multiple outputs
+   - Complex setup for users
+
+3. **Custom Virtual Audio Driver**
+   - Build our own splitter
+   - Major development effort
+
+### FILES INVOLVED
+
+- `audio-routing.js` - Device switching (enablePCSpeakersMode, disablePCSpeakersMode)
+- `audio-sync-manager.js` - APO delay config
+- `audio-device-manager.js` - NirCmd device control
+- `audio-streamer.js` - FFmpeg capture
+
+### KEY INSIGHT
+
+**DO NOT** set default device to HDMI speakers in PC + Speakers mode!
+The capture will include APO delay, making sync impossible.
+
+**MUST** capture from a device WITHOUT APO, then route to HDMI separately.
+
+---
+
 ## Key Technical Details
 
 ### Audio Pipeline (Updated - No External Software)

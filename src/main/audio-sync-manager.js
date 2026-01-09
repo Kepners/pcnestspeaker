@@ -284,6 +284,7 @@ function isAvailable() {
 
 /**
  * Get list of devices that have APO installed (from backup .reg files)
+ * Returns array of device names extracted from backup files
  */
 function getAPOInstalledDevices() {
   const apoFolder = 'C:\\Program Files\\EqualizerAPO';
@@ -293,7 +294,7 @@ function getAPOInstalledDevices() {
     const files = fs.readdirSync(apoFolder);
     for (const file of files) {
       if (file.startsWith('backup_') && file.endsWith('.reg')) {
-        // Extract device name from filename like: backup_DeviceName_Output.reg
+        // Extract device name from filename like: backup_NVIDIA High Definition Audio_ASUS VG32V.reg
         const match = file.match(/^backup_(.+)\.reg$/);
         if (match) {
           devices.push(match[1].replace(/_/g, ' '));
@@ -305,6 +306,71 @@ function getAPOInstalledDevices() {
   }
 
   return devices;
+}
+
+/**
+ * Check if APO is installed on a specific device
+ * @param {string} deviceName - The device name to check (e.g., "ASUS VG32V", "Speakers")
+ * @returns {boolean} True if APO is installed on this device
+ */
+function isAPOInstalledOnDevice(deviceName) {
+  if (!deviceName) return false;
+
+  const apoDevices = getAPOInstalledDevices();
+  const deviceLower = deviceName.toLowerCase();
+
+  // Check if any APO backup file contains the device name
+  // APO backup files are like: "NVIDIA High Definition Audio_ASUS VG32V"
+  // We need fuzzy matching since device names vary
+  for (const apoDevice of apoDevices) {
+    const apoLower = apoDevice.toLowerCase();
+    // Check for exact match or partial match (device name is part of APO name)
+    if (apoLower.includes(deviceLower) || deviceLower.includes(apoLower.split(' ').pop())) {
+      console.log(`[AudioSync] APO IS installed on "${deviceName}" (matched: ${apoDevice})`);
+      return true;
+    }
+  }
+
+  console.log(`[AudioSync] APO NOT installed on "${deviceName}". APO devices: ${apoDevices.join(', ')}`);
+  return false;
+}
+
+/**
+ * Check APO status for the current default audio device
+ * Returns detailed info about whether APO will work
+ */
+async function checkAPOStatusForCurrentDevice() {
+  const audioDeviceManager = require('./audio-device-manager');
+
+  try {
+    const currentDevice = await audioDeviceManager.getCurrentAudioDevice();
+    const apoInstalled = isEqualizerAPOInstalled();
+    const apoOnDevice = isAPOInstalledOnDevice(currentDevice);
+    const apoDevices = getAPOInstalledDevices();
+
+    return {
+      currentDevice,
+      apoInstalled,
+      apoOnDevice,
+      apoDevices,
+      canUseDelay: apoInstalled && apoOnDevice,
+      message: !apoInstalled
+        ? 'Equalizer APO is not installed'
+        : !apoOnDevice
+          ? `APO is not enabled for "${currentDevice}". Run APO Configurator and check this device.`
+          : `APO delay ready for "${currentDevice}"`
+    };
+  } catch (err) {
+    console.error('[AudioSync] Failed to check APO status:', err.message);
+    return {
+      currentDevice: null,
+      apoInstalled: isEqualizerAPOInstalled(),
+      apoOnDevice: false,
+      apoDevices: getAPOInstalledDevices(),
+      canUseDelay: false,
+      message: `Could not detect current device: ${err.message}`
+    };
+  }
 }
 
 /**
@@ -375,7 +441,9 @@ module.exports = {
   getMethod,
   isAvailable,
   isEqualizerAPOInstalled,
+  isAPOInstalledOnDevice,
   getAPOInstalledDevices,
+  checkAPOStatusForCurrentDevice,
   launchAPOConfigurator,
   promptInstallEqualizerAPO,
   cleanup

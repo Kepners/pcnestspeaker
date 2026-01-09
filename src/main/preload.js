@@ -70,6 +70,7 @@ contextBridge.exposeInMainWorld('api', {
   installEqualizerApo: () => ipcRenderer.invoke('install-equalizer-apo'),
   getApoDevices: () => ipcRenderer.invoke('get-apo-devices'),
   launchApoConfigurator: () => ipcRenderer.invoke('launch-apo-configurator'),
+  checkApoStatus: () => ipcRenderer.invoke('check-apo-status'),
 
   // Quick Audio Output Switcher
   getAudioOutputs: () => ipcRenderer.invoke('get-audio-outputs'),

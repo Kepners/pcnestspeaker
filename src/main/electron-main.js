@@ -2667,6 +2667,24 @@ ipcMain.handle('launch-apo-configurator', async () => {
   }
 });
 
+// Check APO status for current default audio device
+ipcMain.handle('check-apo-status', async () => {
+  try {
+    const status = await audioSyncManager.checkAPOStatusForCurrentDevice();
+    sendLog(`APO Status: ${status.message}`, status.canUseDelay ? 'info' : 'warning');
+    return status;
+  } catch (error) {
+    sendLog(`APO status check failed: ${error.message}`, 'error');
+    return {
+      currentDevice: null,
+      apoInstalled: false,
+      apoOnDevice: false,
+      canUseDelay: false,
+      message: error.message
+    };
+  }
+});
+
 // ═══════════════════════════════════════════════════════════
 // QUICK AUDIO OUTPUT SWITCHER
 // ═══════════════════════════════════════════════════════════
