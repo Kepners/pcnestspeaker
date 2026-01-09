@@ -28,7 +28,7 @@
 
 ### 1. Process Cleanup (0ms)
 ```javascript
-killLeftoverProcesses();  // Kills: mediamtx.exe, cloudflared.exe
+killLeftoverProcesses();  // Kills: mediamtx.exe, ffmpeg.exe
 ```
 
 ### 2. Firewall Setup (0ms)

@@ -45,7 +45,7 @@ Stream Windows system audio to Google Nest speakers over Wi-Fi with sub-second l
 PC Audio -> virtual-audio-capturer -> FFmpeg (Opus) -> MediaMTX -> WebRTC -> Cast Receiver -> Nest Speaker
 ```
 
-The app uses WebRTC for sub-second latency streaming. A custom Cast receiver running on your Nest speaker connects to a local MediaMTX server via Cloudflare tunnel to receive the WebRTC stream.
+The app uses WebRTC for sub-second latency streaming. A custom Cast receiver running on your Nest speaker connects to your local MediaMTX server (port 8889) via WHEP protocol to receive the WebRTC stream.
 
 For older devices that don't support custom receivers, the app falls back to HTTP/MP3 streaming (~8 second latency).
 
@@ -130,7 +130,8 @@ PC Nest Speaker is proprietary software. 10-hour free trial, then one-time purch
 - [MediaMTX](https://github.com/bluenviron/mediamtx) - WebRTC streaming
 - [pychromecast](https://github.com/home-assistant-libs/pychromecast) - Cast control
 - [Electron](https://www.electronjs.org/) - Desktop framework
-- [cloudflared](https://github.com/cloudflare/cloudflared) - HTTPS tunneling
+- [audioctl](https://github.com/Mr5niper/WindowsAudioControl-CLI-wGUI) - Windows audio control
+- [NirSoft utilities](https://www.nirsoft.net/) - svcl.exe, nircmd.exe
 
 ## Support
 
