@@ -84,7 +84,7 @@ FFmpeg (Opus encoding, RTSP output)
 MediaMTX (RTSP to WebRTC bridge)
         |
         v
-Cloudflare Tunnel (HTTPS)
+Local HTTP (port 8889)
         |
         v
 Custom Cast Receiver (WHEP protocol)
@@ -120,7 +120,7 @@ Google Nest Speaker
 |-----------|---------|------|
 | MediaMTX | RTSP to WebRTC bridge | 8554 (RTSP), 8889 (WHEP), 9997 (API) |
 | FFmpeg | Audio capture & encoding | N/A |
-| cloudflared | HTTPS tunnel for Cast | Dynamic |
+| Local HTTP | WebRTC WHEP endpoint | 8889 |
 | HTTP Server | MP3 streaming fallback | 8000 |
 | Python cast-helper | Chromecast control | N/A |
 
@@ -273,9 +273,9 @@ paths:
 
 - **Latency**: Sub-1 second
 - **Codec**: Opus 128kbps
-- **Transport**: WebRTC via WHEP protocol
+- **Transport**: WebRTC via WHEP protocol (local HTTP)
 - **Devices**: Requires custom Cast receiver support
-- **Tunnel**: cloudflared (HTTPS required for Cast)
+- **Endpoint**: `http://<local-ip>:8889/pcaudio/whep`
 
 ### HTTP/MP3 Mode (Fallback)
 
@@ -394,7 +394,6 @@ Works on ALL Google Cast devices including:
 ### Dependencies (Auto-installed)
 
 - virtual-audio-capturer (screen-capture-recorder)
-- cloudflared (Cloudflare tunnel)
 
 ---
 
@@ -437,7 +436,6 @@ Works on ALL Google Cast devices including:
 - **MediaMTX**: WebRTC streaming server (bluenviron)
 - **pychromecast**: Google Cast control
 - **Electron**: Desktop framework
-- **cloudflared**: HTTPS tunneling (Cloudflare)
 - **audioctl**: WindowsAudioControl-CLI for "Listen to this device" (Mr5niper)
 - **svcl**: SoundVolumeCommandLine (NirSoft)
 - **nircmd**: NirCmd utility (NirSoft)
