@@ -420,10 +420,12 @@ function showEqualizerApoPrompt() {
     '🔊 Sync Delay requires Equalizer APO\n\n' +
     'This free software adds audio delay to your PC speakers so they sync with Cast speakers.\n\n' +
     'Click OK to download Equalizer APO (30 second install).\n\n' +
+    'IMPORTANT - During install:\n' +
+    '✓ CHECK ALL "Playback devices" boxes!\n' +
+    '   (This ensures sync works with any audio output)\n\n' +
     'After installing:\n' +
-    '1. Select your HDMI/speaker device during setup\n' +
-    '2. Restart Windows\n' +
-    '3. The sync delay slider will work!'
+    '1. Restart Windows\n' +
+    '2. The sync delay slider will work!'
   );
 
   if (confirmed) {
