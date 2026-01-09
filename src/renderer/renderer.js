@@ -2051,13 +2051,21 @@ async function loadAudioOutputs() {
 
       return `
         <div class="audio-output-item ${isActive ? 'active' : ''}"
-             data-device-name="${escapeHtml(device.name)}"
-             onclick="switchAudioOutput('${escapeHtml(device.name)}')">
+             data-device-name="${escapeHtml(device.name)}">
           <span class="audio-output-icon">${icon}</span>
           <span class="audio-output-name">${escapeHtml(device.name)}</span>
         </div>
       `;
     }).join('');
+
+    // Add click handlers via event delegation (safer than inline onclick)
+    listEl.querySelectorAll('.audio-output-item').forEach(item => {
+      item.addEventListener('click', async () => {
+        const deviceName = item.dataset.deviceName;
+        console.log('[AudioOutput] Clicked device:', deviceName);
+        await switchAudioOutput(deviceName);
+      });
+    });
 
     log(`Loaded ${result.devices.length} audio outputs`, 'info');
   } catch (error) {
@@ -2083,8 +2091,12 @@ function getAudioDeviceIcon(name) {
  * Switch to a specific audio output device (toggle on/off)
  */
 async function switchAudioOutput(deviceName) {
+  console.log('[switchAudioOutput] Called with:', deviceName);
   const listEl = document.getElementById('audio-output-list');
-  if (!listEl) return;
+  if (!listEl) {
+    console.log('[switchAudioOutput] ERROR: listEl not found');
+    return;
+  }
 
   // Find the clicked item
   const items = listEl.querySelectorAll('.audio-output-item');
@@ -2094,6 +2106,8 @@ async function switchAudioOutput(deviceName) {
       clickedItem = item;
     }
   });
+
+  console.log('[switchAudioOutput] Found item:', !!clickedItem);
 
   // TOGGLE: If already active, deselect it (remove active from all)
   if (clickedItem && clickedItem.classList.contains('active')) {
@@ -2107,7 +2121,9 @@ async function switchAudioOutput(deviceName) {
   log(`Switching audio to: ${deviceName}`, 'info');
 
   try {
+    console.log('[switchAudioOutput] Calling API...');
     const result = await window.api.switchAudioOutput(deviceName);
+    console.log('[switchAudioOutput] API result:', result);
 
     if (result.success) {
       // Update active states
@@ -2123,6 +2139,7 @@ async function switchAudioOutput(deviceName) {
       log(`Failed to switch: ${result.error}`, 'error');
     }
   } catch (error) {
+    console.log('[switchAudioOutput] ERROR:', error);
     if (clickedItem) clickedItem.classList.remove('switching');
     log(`Error switching audio: ${error.message}`, 'error');
   }
