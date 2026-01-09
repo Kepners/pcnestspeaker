@@ -2317,39 +2317,182 @@ async function playDualSyncPing() {
 // Sync Calibration Mode
 // ===================
 
-/**
- * Start calibration mode - plays pings on scroll
- */
-function startCalibration() {
-  isCalibrating = true;
-  pingModeEnabled = true;
+let calibrationStarting = false; // Prevent double-clicks during startup
 
+/**
+ * Start calibration mode - sets up EVERYTHING needed first:
+ * 1. Ensures speakers are discovered
+ * 2. Switches to PC + Speakers mode (changes Windows audio device)
+ * 3. Starts streaming to a speaker
+ * 4. Waits for pipeline to stabilize
+ * 5. Then enables ping testing
+ */
+async function startCalibration() {
+  // Prevent double-clicks
+  if (calibrationStarting) return;
+  calibrationStarting = true;
+
+  // Show "starting" state immediately
   if (syncCalibrateBtn) {
-    syncCalibrateBtn.textContent = '✓ Done';
-    syncCalibrateBtn.classList.add('calibrating');
-  }
-  if (syncVisual) {
-    syncVisual.classList.add('calibrating');
+    syncCalibrateBtn.textContent = '⏳ Starting...';
+    syncCalibrateBtn.disabled = true;
   }
   if (syncHint) {
-    syncHint.textContent = 'Scroll up/down until you hear ONE ping, then click Done';
+    syncHint.textContent = 'Checking speakers...';
   }
 
-  // Play initial ping to start
-  playDualSyncPing();
+  try {
+    // Step 1: Make sure we have speakers discovered
+    if (!speakers || speakers.length === 0) {
+      log('No speakers found, discovering...');
+      if (syncHint) syncHint.textContent = 'Discovering speakers...';
 
-  log('Calibration started - scroll to adjust sync delay');
+      try {
+        speakers = await window.api.discoverSpeakers();
+        renderSpeakers();
+        log(`Found ${speakers.length} speaker(s)`);
+      } catch (e) {
+        throw new Error('Could not discover speakers. Check your network.');
+      }
+    }
+
+    if (speakers.length === 0) {
+      throw new Error('No speakers found on network');
+    }
+
+    // Step 2: Make sure we have a speaker to stream to
+    // Priority: stereo pair > selected speaker > last speaker from settings > first available
+    let targetSpeakerIndex = null;
+
+    if (stereoMode.leftSpeaker !== null && stereoMode.rightSpeaker !== null) {
+      // Stereo pair is set - use that
+      log('Using stereo pair for calibration');
+    } else if (stereoMode.leftSpeaker !== null) {
+      targetSpeakerIndex = stereoMode.leftSpeaker;
+    } else if (stereoMode.rightSpeaker !== null) {
+      targetSpeakerIndex = stereoMode.rightSpeaker;
+    } else if (selectedSpeaker) {
+      targetSpeakerIndex = speakers.findIndex(s => s.name === selectedSpeaker.name);
+      if (targetSpeakerIndex < 0) targetSpeakerIndex = null;
+    }
+
+    // If still no speaker, try to get last used from settings
+    if (targetSpeakerIndex === null && stereoMode.leftSpeaker === null && stereoMode.rightSpeaker === null) {
+      try {
+        const settings = await window.api.getSettings();
+        if (settings.lastSpeaker) {
+          targetSpeakerIndex = speakers.findIndex(s => s.name === settings.lastSpeaker.name);
+          if (targetSpeakerIndex >= 0) {
+            log(`Using last speaker: ${settings.lastSpeaker.name}`);
+          }
+        }
+      } catch (e) {
+        // Ignore settings error
+      }
+    }
+
+    // Last resort: use first available speaker
+    if (targetSpeakerIndex === null && stereoMode.leftSpeaker === null && stereoMode.rightSpeaker === null) {
+      targetSpeakerIndex = 0;
+      log(`Using first available speaker: ${speakers[0].name}`);
+    }
+
+    // Step 3: Switch to PC + Speakers mode (this switches Windows audio device!)
+    if (syncHint) syncHint.textContent = 'Switching to PC + Speakers mode...';
+
+    if (castMode !== 'all') {
+      log('Switching to PC + Speakers mode...');
+      await setCastMode('all');
+      // Wait for Windows audio device to switch
+      await new Promise(r => setTimeout(r, 2000));
+    }
+
+    // Step 4: Start streaming if not already active
+    if (!isStreaming && !stereoMode.streaming) {
+      if (syncHint) syncHint.textContent = 'Starting audio stream...';
+      log('Starting stream for calibration...');
+
+      if (stereoMode.leftSpeaker !== null && stereoMode.rightSpeaker !== null) {
+        await startStereoStreaming();
+      } else if (targetSpeakerIndex !== null) {
+        await startStreamingToSpeaker(targetSpeakerIndex, false);
+      }
+    }
+
+    // Step 5: Verify streaming actually started
+    await new Promise(r => setTimeout(r, 1000));
+    if (!isStreaming && !stereoMode.streaming) {
+      throw new Error('Stream failed to start. Try selecting a speaker manually.');
+    }
+
+    // Step 6: Wait for pipeline to stabilize (10 seconds)
+    if (syncHint) syncHint.textContent = 'Waiting for audio to stabilize...';
+    log('Waiting 10 seconds for pipeline to stabilize...');
+
+    // Countdown display
+    for (let i = 10; i > 0; i--) {
+      // Allow cancellation during countdown
+      if (!calibrationStarting) {
+        log('Calibration cancelled during countdown');
+        return;
+      }
+      if (syncCalibrateBtn) {
+        syncCalibrateBtn.textContent = `⏳ ${i}s...`;
+      }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+
+    // Step 7: Now enable actual calibration mode
+    isCalibrating = true;
+    pingModeEnabled = true;
+
+    if (syncCalibrateBtn) {
+      syncCalibrateBtn.textContent = '✓ Done';
+      syncCalibrateBtn.disabled = false;
+      syncCalibrateBtn.classList.add('calibrating');
+    }
+    if (syncVisual) {
+      syncVisual.classList.add('calibrating');
+    }
+    if (syncHint) {
+      syncHint.textContent = 'Scroll up/down until you hear ONE ping, then click Done';
+    }
+
+    // Play initial ping
+    playDualSyncPing();
+
+    log('Calibration ready - scroll to adjust sync delay');
+
+  } catch (err) {
+    log(`Calibration setup failed: ${err.message}`, 'error');
+    if (syncCalibrateBtn) {
+      syncCalibrateBtn.textContent = '🔊 Calibrate';
+      syncCalibrateBtn.disabled = false;
+    }
+    if (syncHint) {
+      syncHint.textContent = `Error: ${err.message}`;
+    }
+  } finally {
+    calibrationStarting = false;
+  }
 }
 
 /**
- * Stop calibration mode
+ * Stop calibration mode (or cancel startup)
  */
 function stopCalibration() {
+  // If still starting up, just cancel the startup
+  if (calibrationStarting) {
+    calibrationStarting = false;
+    log('Calibration startup cancelled');
+  }
+
   isCalibrating = false;
   pingModeEnabled = false;
 
   if (syncCalibrateBtn) {
     syncCalibrateBtn.textContent = '🔊 Calibrate';
+    syncCalibrateBtn.disabled = false;
     syncCalibrateBtn.classList.remove('calibrating');
   }
   if (syncVisual) {
@@ -2359,13 +2502,15 @@ function stopCalibration() {
     syncHint.textContent = 'Click Calibrate, then scroll until you hear ONE ping';
   }
 
-  log(`Calibration done - sync delay: ${currentSyncDelay}ms`);
+  if (currentSyncDelay > 0) {
+    log(`Calibration done - sync delay: ${currentSyncDelay}ms`);
+  }
 }
 
 // Calibrate button click handler
 if (syncCalibrateBtn) {
   syncCalibrateBtn.addEventListener('click', () => {
-    if (isCalibrating) {
+    if (isCalibrating || calibrationStarting) {
       stopCalibration();
     } else {
       startCalibration();
