@@ -308,24 +308,30 @@ function getAPOInstalledDevices() {
 }
 
 /**
- * Launch APO Configurator so user can add their audio device
+ * Launch APO Editor so user can configure their audio device
+ * Note: The app is called "Editor.exe" (not "Configurator.exe")
  */
 function launchAPOConfigurator() {
   return new Promise((resolve) => {
+    // APO 1.4+ uses Editor.exe (older versions used Configurator.exe)
+    const editorPath = 'C:\\Program Files\\EqualizerAPO\\Editor.exe';
     const configuratorPath = 'C:\\Program Files\\EqualizerAPO\\Configurator.exe';
 
-    if (fs.existsSync(configuratorPath)) {
-      exec(`"${configuratorPath}"`, { windowsHide: false }, (error) => {
+    // Try Editor.exe first (APO 1.4+), then fall back to Configurator.exe
+    const appPath = fs.existsSync(editorPath) ? editorPath : configuratorPath;
+
+    if (fs.existsSync(appPath)) {
+      exec(`"${appPath}"`, { windowsHide: false }, (error) => {
         if (error) {
-          console.log('[AudioSync] Could not launch Configurator:', error.message);
+          console.log('[AudioSync] Could not launch APO app:', error.message);
           resolve(false);
         } else {
-          console.log('[AudioSync] Launched APO Configurator');
+          console.log('[AudioSync] Launched APO app:', appPath);
           resolve(true);
         }
       });
     } else {
-      console.log('[AudioSync] APO Configurator not found');
+      console.log('[AudioSync] APO Editor/Configurator not found at expected paths');
       resolve(false);
     }
   });

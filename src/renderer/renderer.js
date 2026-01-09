@@ -520,6 +520,23 @@ function setupEventListeners() {
       showLicenseModal();
     });
   }
+
+  // Configure APO button - launches Equalizer APO Configurator
+  if (launchApoBtn) {
+    launchApoBtn.addEventListener('click', async () => {
+      log('Opening APO Configurator...');
+      try {
+        const result = await window.api.launchApoConfigurator();
+        if (result.success) {
+          log('APO Configurator opened. Select your PC speakers, then restart Windows.', 'info');
+        } else {
+          log('Could not launch APO Configurator', 'error');
+        }
+      } catch (error) {
+        log(`APO Configurator error: ${error.message}`, 'error');
+      }
+    });
+  }
 }
 
 // Track if Equalizer APO is installed
@@ -1238,6 +1255,12 @@ async function selectSpeaker(index) {
     item.classList.toggle('selected', i === index);
   });
 
+  // DON'T ping if already streaming - ping quits the Cast app and breaks the stream!
+  if (isStreaming || stereoMode.streaming) {
+    log(`${selectedSpeaker.name} selected (no ping while streaming)`, 'info');
+    return;
+  }
+
   // Ping the speaker to test connection (plays a sound)
   log(`Pinging ${selectedSpeaker.name}...`);
   try {
@@ -1254,26 +1277,18 @@ async function startStreamingToSpeaker(index, clearStereoState = true) {
   const speaker = speakers[index];
   if (!speaker) return;
 
-  // TOGGLE BEHAVIOR: If clicking the SAME speaker that's already streaming, STOP it
+  // If already streaming to this speaker (mono or stereo), do nothing
+  // User confusion: clicking a connected speaker was stopping the stream
+  // Now: clicking a connected speaker just logs and does nothing
   const isSameSpeaker = selectedSpeaker && selectedSpeaker.name === speaker.name;
-  if (isSameSpeaker && isStreaming) {
-    log(`Stopping stream to ${speaker.name}...`, 'info');
-    try {
-      await window.api.stopStreaming(speaker.name);
-      setStreamingState(false);
+  const inStereoWithSpeaker = stereoMode.streaming && (
+    (stereoMode.leftSpeaker !== null && speakers[stereoMode.leftSpeaker]?.name === speaker.name) ||
+    (stereoMode.rightSpeaker !== null && speakers[stereoMode.rightSpeaker]?.name === speaker.name)
+  );
 
-      // Remove streaming mode indicator
-      const speakerCard = speakerList.querySelector('.speaker-item.selected .speaker-info');
-      if (speakerCard) {
-        const existingMode = speakerCard.querySelector('.streaming-mode');
-        if (existingMode) existingMode.remove();
-      }
-
-      log(`Stopped streaming to ${speaker.name}`, 'success');
-    } catch (error) {
-      log(`Stop failed: ${error.message}`, 'error');
-    }
-    return; // Don't start a new stream
+  if ((isSameSpeaker && isStreaming) || inStereoWithSpeaker) {
+    log(`Already streaming to ${speaker.name} - use L/R buttons to change`, 'info');
+    return; // Already connected, do nothing
   }
 
   // Select the speaker first
@@ -2008,28 +2023,6 @@ async function loadApoDevices() {
 }
 
 /**
- * Handle Configure APO button click
- */
-async function handleConfigureApoClick() {
-  log('Opening APO Configurator...');
-  try {
-    const result = await window.api.launchApoConfigurator();
-    if (result.success) {
-      log('APO Configurator opened. Select your PC speakers, then restart Windows.', 'info');
-    } else {
-      log('Could not launch APO Configurator', 'error');
-    }
-  } catch (error) {
-    log(`APO Configurator error: ${error.message}`, 'error');
-  }
-}
-
-// Add event listener for Configure APO button
-if (launchApoBtn) {
-  launchApoBtn.addEventListener('click', handleConfigureApoClick);
-}
-
-/**
  * Handle sync delay slider change
  * - Updates display immediately
  * - Plays dual ping (PC + Nest) if ping mode is enabled
@@ -2082,22 +2075,32 @@ function handleSyncDelayChange(delayMs) {
 /**
  * Play dual sync ping - beep on PC speakers AND ping on Nest speaker
  * This helps user adjust the delay until both sounds are in sync
+ *
+ * IMPORTANT: When streaming is active, DO NOT call pingSpeaker!
+ * The ping quits the Cast app and breaks the WebRTC stream.
+ * Instead, the PC beep goes through the virtual audio device
+ * and is streamed to Nest speakers automatically.
  */
 async function playDualSyncPing() {
-  // Get the currently selected speaker
+  // Always play PC beep first
+  playTestBeep();
+
+  // If streaming is active, the beep will go through the stream to Nest speakers
+  // No need to ping separately (and pinging would break the stream!)
+  if (isStreaming || stereoMode.streaming) {
+    // Beep goes through virtual audio -> FFmpeg -> MediaMTX -> WebRTC -> Nest
+    // User will hear beep on PC first, then on Nest after stream delay
+    return;
+  }
+
+  // Not streaming - ping speaker directly to test connectivity
   const speakerName = selectedSpeaker?.name ||
     (stereoMode.leftSpeaker !== null ? speakers[stereoMode.leftSpeaker]?.name : null);
 
   if (!speakerName) {
-    // No speaker selected - just play PC beep
-    playTestBeep();
     return;
   }
 
-  // Play BOTH simultaneously:
-  // 1. PC beep (instant through Web Audio)
-  // 2. Nest ping (via cast-helper)
-  playTestBeep();
   try {
     await window.api.pingSpeaker(speakerName);
   } catch (e) {
