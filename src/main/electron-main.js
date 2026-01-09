@@ -2472,29 +2472,34 @@ ipcMain.handle('update-settings', (event, updates) => {
 // In "PC + Speakers" mode:
 // - Windows stays on Virtual Desktop Audio for clean capture
 // - Audio is MIRRORED to HDMI via Windows "Stereo Mix" → "Listen to this device"
-// - APO delay only affects HDMI path (configured in APO Configurator)
+// PC + Speakers mode:
+// 1. Switches Windows default output to PC speakers (e.g., ASUS VG32V)
+// 2. virtual-audio-capturer captures system audio (plays on PC speakers)
+// 3. FFmpeg sends to Cast
+// 4. APO delays PC speakers to sync with Cast latency
 //
-// The cast mode toggle now controls:
-// 1. Audio routing (Virtual Desktop Audio → HDMI via "Listen to this device")
-// 2. APO delay settings
-// NO Windows device switching - keeps Cast capture clean!
+// Speakers Only mode:
+// - Restores original Windows default (usually Virtual Desktop Audio)
+// - APO delay cleared (not needed)
 ipcMain.handle('set-cast-mode', async (event, mode) => {
   console.log(`[Main] Cast mode changing to: ${mode}`);
   const audioRouting = require('./audio-routing.js');
   const pcSpeakerDelay = require('./pc-speaker-delay.js');
 
   try {
+    let routeResult = null;
+
     if (mode === 'speakers') {
-      // "Speakers Only" - Disable local speaker routing and APO delay
+      // "Speakers Only" - Restore original audio device, clear APO delay
       console.log(`[Main] Speakers Only mode - audio goes to Cast only`);
 
-      // 1. Disable audio routing to local speakers
+      // 1. Restore original audio output device
       if (audioRouting.isAvailable()) {
-        const routeResult = await audioRouting.disablePCSpeakersMode();
+        routeResult = await audioRouting.disablePCSpeakersMode();
         if (routeResult.success) {
-          sendLog(`Local speaker routing disabled`, 'success');
+          sendLog(`Restored original audio output`, 'success');
         } else {
-          console.log(`[Main] Could not disable routing: ${routeResult.error}`);
+          console.log(`[Main] Could not restore device: ${routeResult.error}`);
         }
       }
 
@@ -2506,27 +2511,22 @@ ipcMain.handle('set-cast-mode', async (event, mode) => {
         console.log(`[Main] Could not clear APO delay: ${apoErr.message}`);
       }
 
-      return { success: true, mode };
+      return { success: true, mode, switched: routeResult?.success || false };
 
     } else if (mode === 'all') {
-      // "PC + Speakers" - Enable local speaker routing with APO delay
-      console.log(`[Main] PC + Speakers mode - audio to Cast + local HDMI`);
+      // "PC + Speakers" - Switch to PC speakers with APO delay for sync
+      console.log(`[Main] PC + Speakers mode - audio to Cast + local speakers`);
 
-      // 1. Enable audio routing: Virtual Desktop Audio → HDMI speakers
-      // Auto-download svcl.exe if not available
-      const ensureResult = await audioRouting.ensureAvailable();
-      if (ensureResult.success) {
-        const routeResult = await audioRouting.enablePCSpeakersMode();
+      // 1. Switch Windows output to PC speakers
+      if (audioRouting.isAvailable()) {
+        routeResult = await audioRouting.enablePCSpeakersMode();
         if (routeResult.success) {
-          sendLog(`Audio routing enabled: Virtual Audio → HDMI`, 'success');
+          sendLog(`Audio output: ${routeResult.device || 'PC Speakers'}`, 'success');
         } else {
-          sendLog(`Audio routing failed: ${routeResult.error}`, 'warning');
-          sendLog(`Please configure Windows Stereo Mix manually`, 'info');
+          sendLog(`Could not switch audio output: ${routeResult.error}`, 'warning');
         }
       } else {
-        // Download failed - guide user to manual setup
-        sendLog(`Could not download svcl.exe: ${ensureResult.error}`, 'warning');
-        sendLog(`For manual routing, enable "Listen to this device" on Virtual Desktop Audio`, 'info');
+        sendLog(`Audio routing not available (svcl.exe missing)`, 'warning');
       }
 
       // 2. Restore saved APO delay
@@ -2543,10 +2543,10 @@ ipcMain.handle('set-cast-mode', async (event, mode) => {
         console.log(`[Main] Could not restore APO delay: ${apoErr.message}`);
       }
 
-      return { success: true, mode };
+      return { success: true, mode, switched: routeResult?.success || false, device: routeResult?.device };
     }
 
-    return { success: true, mode };
+    return { success: true, mode, switched: false };
   } catch (error) {
     console.error(`[Main] Cast mode switch error:`, error);
     sendLog(`Mode switch failed: ${error.message}`, 'error');

@@ -134,7 +134,12 @@
       "Bash(cmd /c \"taskkill /F /IM cloudflared.exe\")",
       "Bash(cmd:*)",
       "Bash(mediamtx.exe --help:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(\"svcl\\\\svcl.exe\" /scomma \"\")",
+      "Bash(\"svcl\\\\svcl.exe\" /stab \"\")",
+      "Bash(\"svcl\\\\svcl.exe\" /scomma \"devices.csv\")",
+      "Bash(Select-Object -First 10)",
+      "Bash(.svclsvcl.exe /scomma \"\")"
     ]
   }
 }

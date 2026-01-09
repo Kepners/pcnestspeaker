@@ -1,171 +1,38 @@
 /**
- * Audio Routing Module - Controls Windows "Listen to this device" feature
+ * Audio Routing Module - Manages Windows audio device switching for PC + Speakers mode
  *
- * Uses NirSoft SoundVolumeCommandLine (svcl.exe) to route audio from
- * Virtual Desktop Audio → HDMI speakers for "PC + Speakers" mode.
+ * PC + Speakers mode works by:
+ * 1. Setting Windows default output to the user's PC speakers (e.g., ASUS VG32V)
+ * 2. virtual-audio-capturer captures system audio (what's playing on default device)
+ * 3. FFmpeg sends that audio to Cast
+ * 4. Equalizer APO delays the PC speakers to sync with Cast latency
  *
- * This keeps Cast capture clean (from Virtual Desktop Audio) while
- * allowing local playback on HDMI with APO delay applied.
+ * Uses NirSoft SoundVolumeCommandLine (svcl.exe) for device switching.
  */
 
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const https = require('https');
 
 // Path to SoundVolumeCommandLine tool
 const SVCL_DIR = path.join(__dirname, '..', '..', 'svcl');
 const SVCL_PATH = path.join(SVCL_DIR, 'svcl.exe');
-const SVCL_DOWNLOAD_URL = 'https://www.nirsoft.net/utils/svcl-x64.zip';
-
-// Track download state
-let isDownloading = false;
-let downloadPromise = null;
+// Store original default device for restoration
+let originalDefaultDevice = null;
 
 /**
- * Check if SoundVolumeCommandLine is available
+ * Check if SoundVolumeCommandLine is available (bundled with app)
  */
 function isAvailable() {
   return fs.existsSync(SVCL_PATH);
 }
 
 /**
- * Download and extract svcl.exe from NirSoft
- * Uses PowerShell for reliable downloading (handles redirects better)
- * @returns {Promise<{success: boolean, error?: string}>}
- */
-async function downloadSvcl() {
-  // Prevent duplicate downloads
-  if (isDownloading && downloadPromise) {
-    console.log('[AudioRouting] Download already in progress, waiting...');
-    return downloadPromise;
-  }
-
-  if (isAvailable()) {
-    return { success: true, message: 'Already installed' };
-  }
-
-  isDownloading = true;
-  downloadPromise = new Promise((resolve) => {
-    console.log('[AudioRouting] Downloading svcl.exe from NirSoft...');
-
-    // Ensure svcl directory exists
-    if (!fs.existsSync(SVCL_DIR)) {
-      fs.mkdirSync(SVCL_DIR, { recursive: true });
-    }
-
-    const zipPath = path.join(SVCL_DIR, 'svcl.zip');
-
-    // Use PowerShell for downloading (handles redirects automatically)
-    const psCommand = `
-      [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-      $url = '${SVCL_DOWNLOAD_URL}'
-      $outPath = '${zipPath.replace(/\\/g, '\\\\')}'
-      try {
-        Invoke-WebRequest -Uri $url -OutFile $outPath -UseBasicParsing
-        Write-Host 'Download complete'
-      } catch {
-        Write-Error $_.Exception.Message
-        exit 1
-      }
-    `;
-
-    exec(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psCommand}"`, { windowsHide: true, timeout: 30000 }, (error, stdout, stderr) => {
-      if (error) {
-        console.error('[AudioRouting] Download failed:', stderr || error.message);
-        isDownloading = false;
-        resolve({ success: false, error: `Download failed: ${stderr || error.message}` });
-        return;
-      }
-
-      console.log('[AudioRouting] Download complete, extracting...');
-      extractZip(zipPath, resolve);
-    });
-  });
-
-  return downloadPromise;
-}
-
-/**
- * Extract svcl.exe from zip file using PowerShell
- */
-function extractZip(zipPath, resolve) {
-  console.log('[AudioRouting] Extracting svcl.exe...');
-
-  // Use Expand-Archive (simpler) then find svcl.exe in extracted folder
-  const tempExtractDir = path.join(SVCL_DIR, 'temp_extract');
-  const psCommand = `
-    $ErrorActionPreference = 'Stop'
-    $zipPath = '${zipPath.replace(/\\/g, '\\\\')}'
-    $extractDir = '${tempExtractDir.replace(/\\/g, '\\\\')}'
-    $destPath = '${SVCL_PATH.replace(/\\/g, '\\\\')}'
-
-    # Remove old temp dir if exists
-    if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
-
-    # Extract entire zip
-    Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
-
-    # Find svcl.exe (might be in root or subfolder)
-    $svclFile = Get-ChildItem -Path $extractDir -Filter 'svcl.exe' -Recurse | Select-Object -First 1
-
-    if ($svclFile) {
-      Copy-Item $svclFile.FullName -Destination $destPath -Force
-      Write-Host "Found and copied: $($svclFile.FullName)"
-    } else {
-      # List what we found for debugging
-      $allFiles = Get-ChildItem -Path $extractDir -Recurse | Select-Object -ExpandProperty Name
-      Write-Host "Files in zip: $($allFiles -join ', ')"
-    }
-
-    # Cleanup temp dir
-    Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
-  `;
-
-  exec(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psCommand}"`, { windowsHide: true }, (error, stdout, stderr) => {
-    // Clean up zip file
-    fs.unlink(zipPath, () => {});
-    isDownloading = false;
-
-    if (stdout) console.log('[AudioRouting]', stdout.trim());
-    if (stderr) console.log('[AudioRouting] stderr:', stderr.trim());
-
-    if (error) {
-      console.error('[AudioRouting] Extract failed:', error.message);
-      resolve({ success: false, error: `Extract failed: ${error.message}` });
-      return;
-    }
-
-    if (fs.existsSync(SVCL_PATH)) {
-      console.log('[AudioRouting] svcl.exe installed successfully!');
-      resolve({ success: true });
-    } else {
-      resolve({ success: false, error: 'Extract completed but svcl.exe not found in zip' });
-    }
-  });
-}
-
-/**
- * Ensure svcl.exe is available, download if needed
- */
-async function ensureAvailable() {
-  if (isAvailable()) {
-    return { success: true };
-  }
-  return await downloadSvcl();
-}
-
-/**
- * Run svcl.exe command (auto-downloads if not available)
+ * Run svcl.exe command
  */
 async function runSvcl(args) {
-  // Auto-download if not available
   if (!isAvailable()) {
-    console.log('[AudioRouting] svcl.exe not found, downloading...');
-    const downloadResult = await ensureAvailable();
-    if (!downloadResult.success) {
-      throw new Error(`Failed to download svcl.exe: ${downloadResult.error}`);
-    }
+    throw new Error('svcl.exe not found. It should be bundled with the app.');
   }
 
   return new Promise((resolve, reject) => {
@@ -185,28 +52,52 @@ async function runSvcl(args) {
 }
 
 /**
+ * Parse a CSV line properly, handling quoted fields with commas
+ */
+function parseCSVLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+/**
  * Get list of audio devices
  */
 async function getDevices() {
   try {
     const output = await runSvcl('/scomma ""');
-    // Parse CSV output
-    // Format: Name,Type,Direction,DeviceName,...
-    // Example: "CABLE Output","Device","Capture","VB-Audio Virtual Cable",...
-    const lines = output.split('\n');
+    // Parse CSV output with proper quote handling
+    // Format: Name,Type,Direction,Device Name,Default,...
+    const lines = output.split('\n').filter(l => l.trim());
     const devices = [];
+
     for (const line of lines) {
-      const parts = line.split(',');
-      if (parts.length >= 4) {
+      const parts = parseCSVLine(line);
+      if (parts.length >= 5 && parts[1] === 'Device') {
         devices.push({
-          name: parts[0].replace(/"/g, ''),
-          type: parts[1].replace(/"/g, ''),        // Always "Device"
-          direction: parts[2].replace(/"/g, ''),   // "Capture" or "Render"
-          deviceName: parts[3].replace(/"/g, '')   // Full device name
+          name: parts[0],
+          type: parts[1],           // "Device" or "Application" etc.
+          direction: parts[2],      // "Capture" or "Render"
+          deviceName: parts[3],     // Full device name (e.g., "NVIDIA High Definition Audio")
+          isDefault: parts[4] === 'Render' // Check if this is the default render device
         });
       }
     }
-    console.log(`[AudioRouting] Parsed ${devices.length} devices`);
+    console.log(`[AudioRouting] Parsed ${devices.length} device entries`);
     return devices;
   } catch (err) {
     console.error('[AudioRouting] Failed to get devices:', err.message);
@@ -215,159 +106,170 @@ async function getDevices() {
 }
 
 /**
- * Enable "Listen to this device" - routes audio from source to target
- *
- * Uses two commands (per NirSoft documentation):
- * 1. /SetListenToThisDevice "DeviceName" 1 - enables listening
- * 2. /SetPlaybackThroughDevice "SourceDevice" "TargetDevice" - sets playback target
- *
- * @param {string} sourceDevice - Capture device to listen FROM (e.g., "Stereo Mix")
- * @param {string} targetDevice - Render device to listen ON (e.g., "Speakers")
+ * Get the current default render (output) device
  */
-async function enableListening(sourceDevice, targetDevice) {
-  try {
-    console.log(`[AudioRouting] Step 1: Enable "Listen to this device" on "${sourceDevice}"`);
-    // Step 1: Enable "Listen to this device" on the source
-    const result1 = await runSvcl(`/SetListenToThisDevice "${sourceDevice}" 1`);
-    console.log(`[AudioRouting] SetListenToThisDevice result: ${result1}`);
-
-    console.log(`[AudioRouting] Step 2: Set playback target "${sourceDevice}" → "${targetDevice}"`);
-    // Step 2: Set the playback target device
-    const result2 = await runSvcl(`/SetPlaybackThroughDevice "${sourceDevice}" "${targetDevice}"`);
-    console.log(`[AudioRouting] SetPlaybackThroughDevice result: ${result2}`);
-
-    console.log(`[AudioRouting] SUCCESS: Audio routing enabled!`);
-    return { success: true };
-  } catch (err) {
-    console.error(`[AudioRouting] FAILED to enable listening:`, err.message);
-    return { success: false, error: err.message };
-  }
-}
-
-/**
- * Disable "Listen to this device" on a source device
- *
- * @param {string} sourceDevice - Capture device to stop listening from
- */
-async function disableListening(sourceDevice) {
-  try {
-    // Disable listening (0 = off)
-    await runSvcl(`/SetListenToThisDevice "${sourceDevice}" 0`);
-    console.log(`[AudioRouting] Disabled listening on: ${sourceDevice}`);
-    return { success: true };
-  } catch (err) {
-    console.error(`[AudioRouting] Failed to disable listening:`, err.message);
-    return { success: false, error: err.message };
-  }
-}
-
-/**
- * Find the virtual audio capture device
- */
-async function findVirtualDevice() {
+async function getCurrentDefaultDevice() {
   const devices = await getDevices();
-  const virtualNames = [
-    'Virtual Desktop Audio',
-    'virtual-audio-capturer',
-    'CABLE Output',
-    'VB-Audio'
-  ];
-
-  for (const device of devices) {
-    // Check direction === 'Capture' (not type!)
-    if (device.direction === 'Capture') {
-      for (const name of virtualNames) {
-        if (device.name.toLowerCase().includes(name.toLowerCase())) {
-          console.log(`[AudioRouting] Found virtual device: ${device.name}`);
-          return device.name;
-        }
-      }
-    }
+  const defaultDevice = devices.find(d => d.direction === 'Render' && d.isDefault);
+  if (defaultDevice) {
+    console.log(`[AudioRouting] Current default device: ${defaultDevice.name}`);
+    return defaultDevice.name;
   }
   return null;
 }
 
 /**
- * Find the user's real speakers (HDMI, Realtek, etc.)
+ * Set the default Windows audio output device
+ * @param {string} deviceName - Name of the device (e.g., "ASUS VG32V")
+ */
+async function setDefaultDevice(deviceName) {
+  try {
+    // svcl uses /SetDefault to set a device as default for all roles
+    await runSvcl(`/SetDefault "${deviceName}" all`);
+    console.log(`[AudioRouting] Set default device to: ${deviceName}`);
+    return { success: true };
+  } catch (err) {
+    console.error(`[AudioRouting] Failed to set default device:`, err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Get all Render (output) devices
+ */
+async function getRenderDevices() {
+  const devices = await getDevices();
+  return devices.filter(d => d.direction === 'Render');
+}
+
+/**
+ * Find the user's real speakers (HDMI, monitor speakers, etc.)
+ * Returns the first matching device by priority
  */
 async function findRealSpeakers() {
-  const devices = await getDevices();
-  const realNames = [
-    'HDMI',
-    'Speakers',
-    'Realtek',
-    'High Definition Audio',
-    'Headphones',
-    'ASUS',        // Common gaming monitors with speakers
-    'NVIDIA'       // NVIDIA HDMI audio
+  const devices = await getRenderDevices();
+
+  // Priority order for finding real speakers
+  const priorityPatterns = [
+    'ASUS',                    // Gaming monitors with speakers (user's device)
+    'HDMI',                    // HDMI audio output
+    'NVIDIA High Definition',  // NVIDIA HDMI
+    'Realtek',                 // Onboard audio
+    'High Definition Audio',   // Generic HD Audio
+    'Speakers',                // Default speakers
+    'Headphones'               // Headphones
   ];
 
-  for (const device of devices) {
-    // Check direction === 'Render' (not type!)
-    if (device.direction === 'Render') {
-      for (const name of realNames) {
-        if (device.name.toLowerCase().includes(name.toLowerCase())) {
-          console.log(`[AudioRouting] Found real speakers: ${device.name}`);
-          return device.name;
-        }
+  // Skip these virtual devices
+  const skipPatterns = [
+    'Virtual Desktop Audio',
+    'VB-Audio',
+    'CABLE',
+    'Steam Streaming',
+    'Oculus',
+    'DroidCam'
+  ];
+
+  for (const pattern of priorityPatterns) {
+    for (const device of devices) {
+      const nameLower = device.name.toLowerCase();
+      const deviceNameLower = device.deviceName.toLowerCase();
+
+      // Skip virtual devices
+      const isVirtual = skipPatterns.some(skip =>
+        nameLower.includes(skip.toLowerCase()) ||
+        deviceNameLower.includes(skip.toLowerCase())
+      );
+      if (isVirtual) continue;
+
+      if (nameLower.includes(pattern.toLowerCase()) ||
+          deviceNameLower.includes(pattern.toLowerCase())) {
+        console.log(`[AudioRouting] Found real speakers: ${device.name} (${device.deviceName})`);
+        return device.name;
       }
     }
   }
+
+  console.log('[AudioRouting] No real speakers found');
   return null;
 }
 
 /**
  * Enable PC + Speakers mode
- * Routes Virtual Desktop Audio → HDMI speakers
+ *
+ * Sets Windows default output to the user's PC speakers (e.g., ASUS VG32V)
+ * so audio plays locally. virtual-audio-capturer will capture this audio
+ * for Cast streaming. APO applies delay to sync with Cast latency.
+ *
+ * @param {string} targetDevice - Optional specific device name to use
  */
-async function enablePCSpeakersMode() {
+async function enablePCSpeakersMode(targetDevice = null) {
   console.log('[AudioRouting] enablePCSpeakersMode called');
 
-  // Get all devices for debugging
-  const allDevices = await getDevices();
-  console.log(`[AudioRouting] Found ${allDevices.length} devices:`);
-  allDevices.forEach(d => console.log(`  - ${d.name} (${d.type})`));
+  try {
+    // Save current default device so we can restore it later
+    originalDefaultDevice = await getCurrentDefaultDevice();
+    console.log(`[AudioRouting] Saved original device: ${originalDefaultDevice}`);
 
-  const virtualDevice = await findVirtualDevice();
-  const realSpeakers = await findRealSpeakers();
+    // Find target device (PC speakers)
+    const pcSpeakers = targetDevice || await findRealSpeakers();
 
-  console.log(`[AudioRouting] Virtual device: ${virtualDevice || 'NOT FOUND'}`);
-  console.log(`[AudioRouting] Real speakers: ${realSpeakers || 'NOT FOUND'}`);
+    if (!pcSpeakers) {
+      return { success: false, error: 'No PC speakers found. Please check your audio devices.' };
+    }
 
-  if (!virtualDevice) {
-    return { success: false, error: 'Virtual audio device not found' };
+    // If already set to this device, nothing to do
+    if (originalDefaultDevice === pcSpeakers) {
+      console.log(`[AudioRouting] Already using ${pcSpeakers} as default`);
+      return { success: true, device: pcSpeakers };
+    }
+
+    // Switch Windows default to PC speakers
+    const result = await setDefaultDevice(pcSpeakers);
+    if (!result.success) {
+      return result;
+    }
+
+    console.log(`[AudioRouting] PC + Speakers mode enabled! Output: ${pcSpeakers}`);
+    return { success: true, device: pcSpeakers };
+  } catch (err) {
+    console.error('[AudioRouting] Failed to enable PC + Speakers mode:', err.message);
+    return { success: false, error: err.message };
   }
-
-  if (!realSpeakers) {
-    return { success: false, error: 'Real speakers not found' };
-  }
-
-  console.log(`[AudioRouting] Setting up: ${virtualDevice} → ${realSpeakers}`);
-  return await enableListening(virtualDevice, realSpeakers);
 }
 
 /**
  * Disable PC + Speakers mode
- * Stops routing audio to local speakers
+ *
+ * Restores the original Windows default audio device.
+ * This is typically called when switching back to "Speakers Only" mode
+ * or when stopping streaming.
  */
 async function disablePCSpeakersMode() {
-  const virtualDevice = await findVirtualDevice();
+  console.log('[AudioRouting] disablePCSpeakersMode called');
 
-  if (!virtualDevice) {
-    return { success: false, error: 'Virtual audio device not found' };
+  try {
+    if (originalDefaultDevice) {
+      console.log(`[AudioRouting] Restoring original device: ${originalDefaultDevice}`);
+      const result = await setDefaultDevice(originalDefaultDevice);
+      originalDefaultDevice = null;
+      return result;
+    }
+
+    console.log('[AudioRouting] No original device to restore');
+    return { success: true };
+  } catch (err) {
+    console.error('[AudioRouting] Failed to disable PC + Speakers mode:', err.message);
+    return { success: false, error: err.message };
   }
-
-  return await disableListening(virtualDevice);
 }
 
 module.exports = {
   isAvailable,
-  ensureAvailable,
-  downloadSvcl,
   getDevices,
-  enableListening,
-  disableListening,
-  findVirtualDevice,
+  getRenderDevices,
+  getCurrentDefaultDevice,
+  setDefaultDevice,
   findRealSpeakers,
   enablePCSpeakersMode,
   disablePCSpeakersMode
