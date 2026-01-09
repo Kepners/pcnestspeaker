@@ -418,14 +418,11 @@ async function checkEqualizerApo() {
 function showEqualizerApoPrompt() {
   const confirmed = confirm(
     '🔊 Sync Delay requires Equalizer APO\n\n' +
-    'This free software adds audio delay so PC speakers sync with Cast speakers.\n\n' +
+    'This adds delay to your PC speakers so they sync with Nest.\n\n' +
     'Click OK to download (30 second install).\n\n' +
-    'DURING INSTALL - Check these Playback devices:\n' +
-    '✓ Your HDMI output (NVIDIA/AMD/Intel)\n' +
-    '✓ Your Realtek/Intel speakers\n' +
-    '✓ Any headphones you use\n\n' +
-    'TIP: Check whatever says "Default device"!\n\n' +
-    'SKIP: VB-Audio, DroidCam, Virtual, Steam\n\n' +
+    'DURING INSTALL:\n' +
+    '✓ Check the ONE device marked "Default device"\n' +
+    '   (Your HDMI or Realtek speakers)\n\n' +
     'After install → Restart Windows'
   );
 
