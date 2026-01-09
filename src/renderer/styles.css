@@ -119,6 +119,11 @@ body::before {
   color: white;
 }
 
+.quit-btn:hover {
+  background: #DC3545;
+  color: white;
+}
+
 /* ==================== HEADER ==================== */
 .header {
   text-align: right;

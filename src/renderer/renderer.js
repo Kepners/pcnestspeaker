@@ -340,6 +340,7 @@ function setupEventListeners() {
   const refreshBtn = document.getElementById('refresh-btn');
   const minimizeBtn = document.getElementById('minimize-btn');
   const closeBtn = document.getElementById('close-btn');
+  const quitBtn = document.getElementById('quit-btn');
 
   if (refreshBtn) {
     refreshBtn.addEventListener('click', async () => {
@@ -352,6 +353,12 @@ function setupEventListeners() {
   }
   if (closeBtn) {
     closeBtn.addEventListener('click', () => window.api.closeWindow());
+  }
+  if (quitBtn) {
+    quitBtn.addEventListener('click', () => {
+      log('Quitting and restoring audio settings...', 'info');
+      window.api.quitApp();
+    });
   }
 
   businessLink.addEventListener('click', (e) => {

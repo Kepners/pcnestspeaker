@@ -121,6 +121,7 @@ contextBridge.exposeInMainWorld('api', {
   // Window controls (frameless window)
   minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
   closeWindow: () => ipcRenderer.invoke('close-window'),
+  quitApp: () => ipcRenderer.invoke('quit-app'),
 });
 
 // Expose WebRTC-specific APIs separately (for low-latency streaming)

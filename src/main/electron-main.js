@@ -1892,6 +1892,14 @@ ipcMain.handle('close-window', () => {
   if (mainWindow) mainWindow.hide();
 });
 
+ipcMain.handle('quit-app', () => {
+  sendLog('Quit requested - restoring audio and exiting...');
+  app.isQuitting = true;
+  cleanup();
+  trayManager.destroyTray();
+  app.quit();
+});
+
 // Check dependencies
 ipcMain.handle('check-dependencies', async () => {
   try {
