@@ -72,54 +72,46 @@
           </div>
         </div>
 
-        <!-- Two-Column Layout: Speakers + Audio Output -->
-        <div class="speakers-layout">
-          <!-- Left Column: Speaker Selection + Options -->
-          <div class="speakers-column">
-            <!-- Speaker Selection -->
-            <div class="section">
-              <h2 class="section-label">SELECT SPEAKER</h2>
-              <div id="speaker-list" class="speaker-list">
-                <p class="loading-text">Discovering speakers...</p>
-              </div>
-            </div>
+        <!-- Speaker Selection -->
+        <div class="section">
+          <h2 class="section-label">CAST TO</h2>
+          <div id="speaker-list" class="speaker-list">
+            <p class="loading-text">Discovering speakers...</p>
+          </div>
+        </div>
 
-            <!-- Options (always visible) -->
-            <div class="section" id="options-card">
-              <h2 class="section-label">OPTIONS</h2>
+        <!-- PC Audio Output -->
+        <div class="section" id="audio-output-section">
+          <h2 class="section-label">PC OUTPUT</h2>
+          <div class="audio-output-grid" id="audio-output-list">
+            <div class="audio-output-loading">Loading...</div>
+          </div>
+        </div>
 
-              <!-- Cast Mode Toggle -->
-              <div class="option-row">
-                <span class="option-label">Cast Mode</span>
-                <div class="cast-mode-toggle">
-                  <button class="cast-mode-btn active" id="cast-speakers-btn" data-mode="speakers">Speakers Only</button>
-                  <button class="cast-mode-btn" id="cast-all-btn" data-mode="all">PC + Speakers</button>
-                </div>
-              </div>
-              <p class="option-hint" id="cast-mode-hint">Audio only goes to Nest speakers</p>
+        <!-- Options -->
+        <div class="section" id="options-card">
+          <h2 class="section-label">OPTIONS</h2>
 
-              <!-- Sync Delay (only shown in PC + Speakers mode) -->
-              <div class="option-row sync-delay-row" id="sync-delay-row" style="display: none;">
-                <span class="option-label">Sync Delay</span>
-                <div class="sync-delay-control">
-                  <input type="range" id="sync-delay-slider" min="0" max="2000" value="0" step="50">
-                  <span class="sync-delay-value" id="sync-delay-value">0ms</span>
-                  <button class="btn btn-small btn-ping-toggle" id="ping-toggle-btn" title="Toggle pings while sliding">🔊</button>
-                </div>
-              </div>
-              <p class="option-hint sync-hint" id="sync-hint" style="display: none;">Toggle 🔊 then slide to hear both - adjust until synced</p>
+          <!-- Cast Mode Toggle -->
+          <div class="option-row">
+            <span class="option-label">Cast Mode</span>
+            <div class="cast-mode-toggle">
+              <button class="cast-mode-btn active" id="cast-speakers-btn" data-mode="speakers">Speakers Only</button>
+              <button class="cast-mode-btn" id="cast-all-btn" data-mode="all">PC + Speakers</button>
             </div>
           </div>
+          <p class="option-hint" id="cast-mode-hint">Audio only goes to Nest speakers</p>
 
-          <!-- Right Column: Quick Audio Output Switcher -->
-          <div class="audio-output-column">
-            <div class="section" id="audio-output-section">
-              <h2 class="section-label">PC OUTPUT</h2>
-              <div class="audio-output-list" id="audio-output-list">
-                <div class="audio-output-loading">Loading...</div>
-              </div>
+          <!-- Sync Delay (only shown in PC + Speakers mode) -->
+          <div class="option-row sync-delay-row" id="sync-delay-row" style="display: none;">
+            <span class="option-label">Sync Delay</span>
+            <div class="sync-delay-control">
+              <input type="range" id="sync-delay-slider" min="0" max="2000" value="0" step="50">
+              <span class="sync-delay-value" id="sync-delay-value">0ms</span>
+              <button class="btn btn-small btn-ping-toggle" id="ping-toggle-btn" title="Toggle pings while sliding">🔊</button>
             </div>
           </div>
+          <p class="option-hint sync-hint" id="sync-hint" style="display: none;">Toggle 🔊 then slide to hear both - adjust until synced</p>
         </div>
       </div>
 
