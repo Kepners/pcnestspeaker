@@ -141,6 +141,13 @@
         <div class="section" id="apo-section-settings">
           <h2 class="section-label">EQUALIZER APO</h2>
           <p class="option-hint">Required for PC + Speakers mode to sync audio delay</p>
+
+          <!-- Warning: APO not on current device -->
+          <div class="apo-warning" id="apo-warning" style="display: none;">
+            <span class="apo-warning-icon">⚠️</span>
+            <span class="apo-warning-text" id="apo-warning-text">APO not enabled on current device</span>
+          </div>
+
           <div class="apo-status" id="apo-status" style="margin-top: 12px;">
             <p class="apo-devices" id="apo-devices-text">APO installed on: Loading...</p>
             <button class="btn btn-small btn-secondary" id="launch-apo-btn">Configure APO</button>

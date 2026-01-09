@@ -2068,12 +2068,16 @@ function updateSyncDelayUI() {
 }
 
 /**
- * Load and display APO installed devices
+ * Load and display APO installed devices + check current device status
  */
 async function loadApoDevices() {
   if (!apoDevicesText) return;
 
+  const apoWarning = document.getElementById('apo-warning');
+  const apoWarningText = document.getElementById('apo-warning-text');
+
   try {
+    // Get list of APO-enabled devices
     const result = await window.api.getApoDevices();
     const devices = result.devices || [];
 
@@ -2090,6 +2094,28 @@ async function loadApoDevices() {
       });
       apoDevicesText.textContent = `APO installed on: ${shortNames.join(', ')}`;
       apoDevicesText.classList.remove('warning');
+    }
+
+    // Check if APO is installed on CURRENT device
+    try {
+      const status = await window.api.checkApoStatus();
+      if (apoWarning && apoWarningText) {
+        if (!status.apoInstalled) {
+          // APO not installed at all
+          apoWarning.style.display = 'flex';
+          apoWarningText.textContent = 'Equalizer APO not installed. Required for PC + Speakers mode.';
+        } else if (!status.apoOnDevice) {
+          // APO installed but not enabled on current device
+          const deviceName = status.currentDevice || 'current device';
+          apoWarning.style.display = 'flex';
+          apoWarningText.textContent = `APO not enabled on "${deviceName}". Click Configure APO to add it.`;
+        } else {
+          // APO installed and enabled on current device - hide warning
+          apoWarning.style.display = 'none';
+        }
+      }
+    } catch (statusErr) {
+      log(`Could not check APO status: ${statusErr.message}`, 'warning');
     }
   } catch (error) {
     apoDevicesText.textContent = 'APO installed on: Error loading devices';
