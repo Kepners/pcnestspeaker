@@ -2110,10 +2110,17 @@ async function loadAudioOutputs() {
     }).join('');
 
     // Add click handlers via event delegation (safer than inline onclick)
-    listEl.querySelectorAll('.audio-output-item').forEach(item => {
-      item.addEventListener('click', async () => {
-        const deviceName = item.dataset.deviceName;
-        console.log('[AudioOutput] Clicked device:', deviceName);
+    const items = listEl.querySelectorAll('.audio-output-item');
+    console.log('[AudioOutput] Found', items.length, 'items to add listeners to');
+
+    items.forEach((item, index) => {
+      const deviceName = item.dataset.deviceName;
+      console.log(`[AudioOutput] Adding listener to item ${index}: ${deviceName}`);
+
+      item.addEventListener('click', async (event) => {
+        console.log('[AudioOutput] CLICK EVENT FIRED!');
+        console.log('[AudioOutput] Event target:', event.target);
+        console.log('[AudioOutput] Device name:', deviceName);
         await switchAudioOutput(deviceName);
       });
     });
