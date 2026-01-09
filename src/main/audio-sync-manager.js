@@ -121,25 +121,29 @@ function setEqualizerAPODelay(delayMs) {
     const tempDir = require('os').tmpdir();
     const tempScript = path.join(tempDir, 'apo-delay-set.ps1');
 
-    const psScript = `
-# APO Delay Set Script
-$syncPath = "${syncConfigPath.replace(/\\/g, '\\\\')}"
-$mainPath = "${mainConfigPath.replace(/\\/g, '\\\\')}"
-
-# Write the sync config file
-@"
-${configLines.join('\r\n')}
-"@ | Set-Content -Path $syncPath -Force -Encoding UTF8
-
-# Check if include exists in main config
-$mainContent = Get-Content $mainPath -Raw -ErrorAction SilentlyContinue
-if ($mainContent -and $mainContent -notmatch 'pcnestspeaker-sync\\.txt') {
-    Add-Content -Path $mainPath -Value "`r`n# PC Nest Speaker sync delay`r`nInclude: pcnestspeaker-sync.txt`r`n" -Encoding UTF8
-    Write-Host "Added include statement to config.txt"
-}
-
-Write-Host "SUCCESS: Delay set to ${delayMs}ms"
-`;
+    // Build PowerShell script - avoid backticks in JS template literals
+    const psScriptLines = [
+      '# APO Delay Set Script',
+      '$syncPath = "' + syncConfigPath.replace(/\\/g, '\\\\') + '"',
+      '$mainPath = "' + mainConfigPath.replace(/\\/g, '\\\\') + '"',
+      '',
+      '# Write the sync config file',
+      '@"',
+      configLines.join('\r\n'),
+      '"@ | Set-Content -Path $syncPath -Force -Encoding UTF8',
+      '',
+      '# Check if include exists in main config',
+      '$mainContent = Get-Content $mainPath -Raw -ErrorAction SilentlyContinue',
+      "if ($mainContent -and $mainContent -notmatch 'pcnestspeaker-sync\\.txt') {",
+      '    $newline = [Environment]::NewLine',
+      '    $includeText = "$newline# PC Nest Speaker sync delay$($newline)Include: pcnestspeaker-sync.txt$newline"',
+      '    Add-Content -Path $mainPath -Value $includeText -Encoding UTF8',
+      '    Write-Host "Added include statement to config.txt"',
+      '}',
+      '',
+      'Write-Host "SUCCESS: Delay set to ' + delayMs + 'ms"'
+    ];
+    const psScript = psScriptLines.join('\r\n');
 
     try {
       fs.writeFileSync(tempScript, psScript, 'utf8');
