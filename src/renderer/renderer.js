@@ -1337,9 +1337,36 @@ async function startStreamingToSpeaker(index, clearStereoState = true) {
     (stereoMode.rightSpeaker !== null && speakers[stereoMode.rightSpeaker]?.name === speaker.name)
   );
 
+  // TOGGLE behavior: If already streaming to this speaker, STOP streaming (disconnect)
   if ((isSameSpeaker && isStreaming) || inStereoWithSpeaker) {
-    log(`Already streaming to ${speaker.name} - use L/R buttons to change`, 'info');
-    return; // Already connected, do nothing
+    log(`Stopping stream to ${speaker.name}...`);
+
+    try {
+      if (inStereoWithSpeaker && stereoMode.streaming) {
+        // Stop stereo streaming
+        const leftSpeaker = stereoMode.leftSpeaker !== null ? speakers[stereoMode.leftSpeaker] : null;
+        const rightSpeaker = stereoMode.rightSpeaker !== null ? speakers[stereoMode.rightSpeaker] : null;
+        await window.api.stopStereoStreaming(leftSpeaker, rightSpeaker);
+        stereoMode.streaming = false;
+        stereoMode.enabled = false;
+        stereoMode.leftSpeaker = null;
+        stereoMode.rightSpeaker = null;
+        log('Stereo streaming stopped', 'success');
+      } else {
+        // Stop mono streaming
+        await window.api.stopStreaming();
+        log('Streaming stopped', 'success');
+      }
+
+      // Clear selection state
+      selectedSpeaker = null;
+      setStreamingState(false);
+      renderSpeakers(); // Re-render to clear selected/streaming states
+
+    } catch (error) {
+      log(`Failed to stop stream: ${error.message}`, 'error');
+    }
+    return; // Done - we disconnected
   }
 
   // Select the speaker first
