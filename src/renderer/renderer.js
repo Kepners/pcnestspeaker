@@ -2404,8 +2404,20 @@ document.addEventListener('wheel', (e) => {
 const testSyncBtn = document.getElementById('test-sync-btn');
 let audioContext = null;
 
-// Clean up audio context when app closes
+// Clean up all audio when app closes
 window.addEventListener('beforeunload', () => {
+  // Stop any calibration in progress
+  if (isCalibrating) {
+    isCalibrating = false;
+  }
+
+  // Stop test beep interval
+  if (testBeepInterval) {
+    clearInterval(testBeepInterval);
+    testBeepInterval = null;
+  }
+
+  // Close audio context
   if (audioContext) {
     audioContext.close();
     audioContext = null;
