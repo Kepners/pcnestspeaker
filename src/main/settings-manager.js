@@ -29,6 +29,11 @@ const DEFAULT_SETTINGS = {
   castMode: 'speakers',        // 'speakers' = Nest only, 'all' = PC + Nest
   version: '1.0.0',
 
+  // First-run setup
+  firstRunComplete: false,     // Has user completed first-run wizard?
+  equalizerApoInstalled: false, // Has user installed Equalizer APO?
+  detectedRealSpeakers: null,  // List of detected real speakers (HDMI, Realtek, etc.)
+
   // Trial & License
   usageSeconds: 0,             // Total streaming seconds used
   firstUsedAt: null,           // Timestamp of first use

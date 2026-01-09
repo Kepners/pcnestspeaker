@@ -137,6 +137,205 @@ function getFFmpegPath() {
   return audioStreamer.getFFmpegPath();
 }
 
+/**
+ * Detect Windows playback devices (speakers) to identify real vs virtual audio
+ * Returns list of devices with 'isVirtual' flag
+ */
+async function detectPlaybackDevices() {
+  return new Promise((resolve) => {
+    const { exec } = require('child_process');
+
+    // PowerShell script to list playback devices using Windows Core Audio API
+    const psScript = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Collections.Generic;
+
+[Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDevice {
+    int Activate(ref Guid id, int clsCtx, int activationParams, out IntPtr ptr);
+    int OpenPropertyStore(int access, out IPropertyStore props);
+    int GetId(out IntPtr id);
+    int GetState(out int state);
+}
+
+[Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDeviceCollection {
+    int GetCount(out int count);
+    int Item(int index, out IMMDevice device);
+}
+
+[Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IPropertyStore {
+    int GetCount(out int count);
+    int GetAt(int index, out PROPERTYKEY key);
+    int GetValue(ref PROPERTYKEY key, out PROPVARIANT propvar);
+    int SetValue(ref PROPERTYKEY key, ref PROPVARIANT propvar);
+    int Commit();
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct PROPERTYKEY {
+    public Guid fmtid;
+    public int pid;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct PROPVARIANT {
+    public short vt;
+    public short r1, r2, r3;
+    public IntPtr val1, val2;
+}
+
+[Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDeviceEnumerator {
+    int EnumAudioEndpoints(int dataFlow, int stateMask, out IMMDeviceCollection devices);
+    int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice endpoint);
+}
+
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+class MMDeviceEnumerator {}
+
+public static class AudioDeviceList {
+    public static List<string> GetPlaybackDevices() {
+        var devices = new List<string>();
+        var enumerator = new MMDeviceEnumerator() as IMMDeviceEnumerator;
+        IMMDeviceCollection collection;
+        enumerator.EnumAudioEndpoints(0, 1, out collection); // 0=render, 1=active
+
+        int count;
+        collection.GetCount(out count);
+
+        PROPERTYKEY nameKey = new PROPERTYKEY();
+        nameKey.fmtid = new Guid("a45c254e-df1c-4efd-8020-67d146a850e0");
+        nameKey.pid = 14;
+
+        for (int i = 0; i < count; i++) {
+            IMMDevice device;
+            collection.Item(i, out device);
+
+            IPropertyStore props;
+            device.OpenPropertyStore(0, out props);
+
+            PROPVARIANT value;
+            props.GetValue(ref nameKey, out value);
+            string name = Marshal.PtrToStringUni(value.val1);
+            if (!string.IsNullOrEmpty(name)) {
+                devices.Add(name);
+            }
+        }
+        return devices;
+    }
+}
+"@
+$devices = [AudioDeviceList]::GetPlaybackDevices()
+$devices | ForEach-Object { Write-Output $_ }
+`;
+
+    const os = require('os');
+    const scriptPath = path.join(os.tmpdir(), 'list-playback-devices.ps1');
+
+    try {
+      fs.writeFileSync(scriptPath, psScript, 'utf8');
+    } catch (e) {
+      console.error('[Main] Failed to write PowerShell script:', e.message);
+      resolve([]);
+      return;
+    }
+
+    exec(
+      `powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}"`,
+      { timeout: 10000, windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error) {
+          console.error('[Main] PowerShell error:', stderr || error.message);
+          resolve([]);
+          return;
+        }
+
+        const deviceNames = stdout.trim().split('\n').filter(d => d.trim());
+        const virtualPatterns = [
+          'virtual', 'cable', 'vb-audio', 'voicemeeter', 'screen capture'
+        ];
+
+        const devices = deviceNames.map(name => {
+          const nameLower = name.toLowerCase();
+          const isVirtual = virtualPatterns.some(p => nameLower.includes(p));
+          return { name: name.trim(), isVirtual };
+        });
+
+        console.log('[Main] Detected playback devices:', devices);
+        resolve(devices);
+      }
+    );
+  });
+}
+
+/**
+ * Check if user has real speakers (not just virtual audio)
+ * Real speakers = HDMI, Realtek, speakers, headphones
+ */
+async function hasRealSpeakers() {
+  const devices = await detectPlaybackDevices();
+  const realDevices = devices.filter(d => !d.isVirtual);
+  return {
+    hasReal: realDevices.length > 0,
+    realDevices: realDevices.map(d => d.name),
+    allDevices: devices
+  };
+}
+
+/**
+ * First-run setup check
+ * - If first run, detect the DEFAULT audio device (the one they actually hear from)
+ * - Prompt for Equalizer APO with personalized instructions
+ */
+async function checkFirstRun() {
+  const settings = settingsManager.getAllSettings();
+
+  if (settings.firstRunComplete) {
+    console.log('[Main] First run already complete, skipping setup');
+    return false; // Not first run
+  }
+
+  console.log('[Main] First run detected - detecting DEFAULT audio device...');
+
+  try {
+    // Get the user's DEFAULT audio device (what they actually hear from)
+    const defaultDevice = await audioDeviceManager.getCurrentAudioDevice();
+    console.log('[Main] Default audio device:', defaultDevice);
+
+    // Check if it's a virtual device (they wouldn't need APO)
+    const virtualPatterns = ['virtual', 'cable', 'vb-audio', 'voicemeeter', 'screen capture'];
+    const isVirtual = virtualPatterns.some(p => defaultDevice.toLowerCase().includes(p));
+
+    // Save detected device to settings
+    settingsManager.setSetting('detectedRealSpeakers', isVirtual ? [] : [defaultDevice]);
+
+    if (!isVirtual) {
+      console.log('[Main] Real audio device detected:', defaultDevice);
+      // Send first-run event to renderer with device info
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('first-run-setup', {
+          hasRealSpeakers: true,
+          realSpeakers: [defaultDevice]
+        });
+      }
+      return true; // First run with real speaker
+    } else {
+      console.log('[Main] Virtual device is default - skipping APO prompt');
+      settingsManager.setSetting('firstRunComplete', true);
+      return false;
+    }
+  } catch (err) {
+    console.error('[Main] Failed to detect audio device:', err.message);
+    // Still complete first-run, just without device detection
+    settingsManager.setSetting('firstRunComplete', true);
+    return false;
+  }
+}
+
 // Kill any leftover processes from previous runs (called on startup)
 function killLeftoverProcesses() {
   console.log('[Main] Killing any leftover processes...');
@@ -2540,6 +2739,41 @@ ipcMain.handle('deactivate-license', async () => {
   return { success: true };
 });
 
+// ===================
+// First-Run Setup IPC Handlers
+// ===================
+
+// Complete first-run setup (called after user finishes wizard)
+ipcMain.handle('complete-first-run', async (event, options) => {
+  console.log('[Main] First-run setup complete:', options);
+
+  // Save Equalizer APO installation status
+  if (options.installedApo) {
+    settingsManager.setSetting('equalizerApoInstalled', true);
+  }
+
+  // Mark first-run as complete
+  settingsManager.setSetting('firstRunComplete', true);
+
+  return { success: true };
+});
+
+// Check if Equalizer APO is installed
+ipcMain.handle('check-equalizer-apo', async () => {
+  const installed = audioSyncManager.isEqualizerAPOInstalled();
+  return { installed };
+});
+
+// Get first-run status
+ipcMain.handle('get-first-run-status', async () => {
+  const settings = settingsManager.getAllSettings();
+  return {
+    firstRunComplete: settings.firstRunComplete,
+    equalizerApoInstalled: settings.equalizerApoInstalled,
+    detectedRealSpeakers: settings.detectedRealSpeakers
+  };
+});
+
 // Single instance lock - prevent multiple app instances
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -2581,6 +2815,15 @@ app.whenReady().then(async () => {
     console.log('[Main] Cast daemon failed to start:', err.message);
     console.log('[Main] Falling back to spawning Python per command (slower)');
   });
+
+  // Check for first-run setup (detects real speakers, offers Equalizer APO)
+  setTimeout(async () => {
+    try {
+      await checkFirstRun();
+    } catch (err) {
+      console.log('[Main] First-run check failed:', err.message);
+    }
+  }, 1000); // Wait 1s for window to load
 
   // Auto-discover speakers and audio devices in background
   // This populates the UI without user having to click "Discover"

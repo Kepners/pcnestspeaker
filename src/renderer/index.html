@@ -215,6 +215,54 @@
     </nav>
   </div>
 
+  <!-- First-Run Setup Modal -->
+  <div class="modal-overlay" id="first-run-modal" style="display: none;">
+    <div class="modal-box first-run-box">
+      <h2 class="modal-title">🎵 Welcome to PC Nest Speaker!</h2>
+      <p class="modal-description" id="first-run-description">
+        Let's set you up for the best experience.
+      </p>
+
+      <!-- Device Detection Section -->
+      <div class="first-run-section" id="device-section">
+        <h3 class="section-title">Your Audio Setup</h3>
+        <div class="detected-device" id="detected-device">
+          <span class="device-icon">🔊</span>
+          <span class="device-name" id="main-device-name">Detecting...</span>
+          <span class="device-badge default">Default Device</span>
+        </div>
+      </div>
+
+      <!-- PC + Speakers Mode Section -->
+      <div class="first-run-section" id="apo-section">
+        <h3 class="section-title">Want to hear audio on BOTH your PC speakers AND Nest?</h3>
+        <p class="section-description">
+          This requires <strong>Equalizer APO</strong> (free, 30 sec install) to sync your PC speakers with Nest.
+        </p>
+        <div class="first-run-options">
+          <button class="btn btn-primary btn-large" id="install-apo-btn">
+            ✓ Yes, install Equalizer APO
+          </button>
+          <button class="btn btn-secondary" id="skip-apo-btn">
+            No, I just want Nest Only mode
+          </button>
+        </div>
+        <p class="section-note" id="apo-note">
+          📍 During install: Check <strong id="device-to-check">your Default device</strong> only
+        </p>
+      </div>
+
+      <!-- Completion Section (shown after choice) -->
+      <div class="first-run-section" id="complete-section" style="display: none;">
+        <div class="success-icon">✅</div>
+        <p class="section-description">
+          <span id="completion-message">You're all set!</span>
+        </p>
+        <button class="btn btn-primary btn-large" id="finish-btn">Start Using PC Nest Speaker</button>
+      </div>
+    </div>
+  </div>
+
   <!-- License Modal -->
   <div class="modal-overlay" id="license-modal" style="display: none;">
     <div class="modal-box">

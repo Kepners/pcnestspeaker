@@ -185,6 +185,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Initialize audio sync (PC speaker delay)
   await initAudioSync();
 
+  // Set up first-run event listener
+  setupFirstRunListener();
+
   // Check current status
   const status = await window.api.getStatus();
   if (status.isStreaming) {
@@ -198,6 +201,124 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Auto-discover speakers on startup
   await discoverDevices();
 });
+
+// ===================
+// First-Run Setup
+// ===================
+
+let firstRunData = null;
+
+function setupFirstRunListener() {
+  // Listen for first-run event from main process
+  window.api.onFirstRunSetup((data) => {
+    console.log('[FirstRun] Received first-run setup event:', data);
+    firstRunData = data;
+    showFirstRunModal(data);
+  });
+
+  // Set up button click handlers
+  const installApoBtn = document.getElementById('install-apo-btn');
+  const skipApoBtn = document.getElementById('skip-apo-btn');
+  const finishBtn = document.getElementById('finish-btn');
+
+  if (installApoBtn) {
+    installApoBtn.addEventListener('click', handleInstallApo);
+  }
+  if (skipApoBtn) {
+    skipApoBtn.addEventListener('click', handleSkipApo);
+  }
+  if (finishBtn) {
+    finishBtn.addEventListener('click', handleFinishFirstRun);
+  }
+}
+
+function showFirstRunModal(data) {
+  const modal = document.getElementById('first-run-modal');
+  const mainDeviceName = document.getElementById('main-device-name');
+  const deviceToCheck = document.getElementById('device-to-check');
+
+  if (!modal) return;
+
+  // Show the detected device name
+  if (data.realSpeakers && data.realSpeakers.length > 0) {
+    const primaryDevice = data.realSpeakers[0];
+    mainDeviceName.textContent = primaryDevice;
+    deviceToCheck.textContent = `"${primaryDevice}"`;
+  } else {
+    mainDeviceName.textContent = 'Default audio device';
+    deviceToCheck.textContent = 'your Default device';
+  }
+
+  // Show the modal
+  modal.style.display = 'flex';
+  log('First-run setup started', 'info');
+}
+
+function hideFirstRunModal() {
+  const modal = document.getElementById('first-run-modal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+}
+
+async function handleInstallApo() {
+  const apoSection = document.getElementById('apo-section');
+  const deviceSection = document.getElementById('device-section');
+  const completeSection = document.getElementById('complete-section');
+  const completionMessage = document.getElementById('completion-message');
+
+  // Open Equalizer APO download
+  await window.api.installEqualizerApo();
+  log('Opening Equalizer APO download page...', 'success');
+
+  // Show completion section
+  if (apoSection) apoSection.style.display = 'none';
+  if (deviceSection) deviceSection.style.display = 'none';
+  if (completeSection) {
+    completeSection.style.display = 'block';
+    if (completionMessage) {
+      const deviceName = firstRunData?.realSpeakers?.[0] || 'Default device';
+      completionMessage.innerHTML = `
+        <strong>After installing Equalizer APO:</strong><br>
+        ✓ Check ONLY "${deviceName}"<br>
+        ✓ Restart Windows<br><br>
+        Then you can use "PC + Speakers" mode!
+      `;
+    }
+  }
+
+  // Mark APO as being installed (user initiated)
+  await window.api.completeFirstRun({ installedApo: true });
+}
+
+async function handleSkipApo() {
+  const apoSection = document.getElementById('apo-section');
+  const deviceSection = document.getElementById('device-section');
+  const completeSection = document.getElementById('complete-section');
+  const completionMessage = document.getElementById('completion-message');
+
+  // Show completion section
+  if (apoSection) apoSection.style.display = 'none';
+  if (deviceSection) deviceSection.style.display = 'none';
+  if (completeSection) {
+    completeSection.style.display = 'block';
+    if (completionMessage) {
+      completionMessage.innerHTML = `
+        You're all set for <strong>Nest Only</strong> mode!<br><br>
+        You can install Equalizer APO later if you want "PC + Speakers" mode.
+      `;
+    }
+  }
+
+  // Complete first-run without APO
+  await window.api.completeFirstRun({ installedApo: false });
+  log('First-run setup complete (Nest Only mode)', 'success');
+}
+
+async function handleFinishFirstRun() {
+  hideFirstRunModal();
+  log('Welcome to PC Nest Speaker!', 'success');
+}
 
 function setupEventListeners() {
   // Window controls (frameless window)
@@ -415,14 +536,31 @@ async function checkEqualizerApo() {
 }
 
 // Show install prompt for Equalizer APO
-function showEqualizerApoPrompt() {
+async function showEqualizerApoPrompt() {
+  // Get the detected device name for personalized instructions
+  let deviceName = 'your Default device';
+
+  // Try to get from firstRunData (if we did first-run detection)
+  if (firstRunData?.realSpeakers?.[0]) {
+    deviceName = `"${firstRunData.realSpeakers[0]}"`;
+  } else {
+    // Fallback: fetch from settings
+    try {
+      const status = await window.api.getFirstRunStatus();
+      if (status?.detectedRealSpeakers?.[0]) {
+        deviceName = `"${status.detectedRealSpeakers[0]}"`;
+      }
+    } catch (e) {
+      console.log('[APO Prompt] Could not get detected speakers');
+    }
+  }
+
   const confirmed = confirm(
     '🔊 Sync Delay requires Equalizer APO\n\n' +
     'This adds delay to your PC speakers so they sync with Nest.\n\n' +
     'Click OK to download (30 second install).\n\n' +
     'DURING INSTALL:\n' +
-    '✓ Check the ONE device marked "Default device"\n' +
-    '   (Your HDMI or Realtek speakers)\n\n' +
+    `✓ Check ONLY ${deviceName}\n\n` +
     'After install → Restart Windows'
   );
 

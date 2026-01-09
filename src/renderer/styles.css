@@ -1021,6 +1021,106 @@ body::before {
   color: var(--pink);
 }
 
+/* ==================== FIRST-RUN SETUP MODAL ==================== */
+.first-run-box {
+  max-width: 480px;
+}
+
+.first-run-section {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: rgba(26, 26, 26, 0.03);
+  border-radius: 12px;
+  border: 1px solid rgba(26, 26, 26, 0.08);
+}
+
+.section-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.1rem;
+  color: var(--white);
+  margin-bottom: 10px;
+  letter-spacing: 1px;
+}
+
+.section-description {
+  font-size: 0.85rem;
+  color: rgba(26, 26, 26, 0.7);
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+
+.section-note {
+  font-size: 0.75rem;
+  color: rgba(26, 26, 26, 0.5);
+  margin-top: 14px;
+  padding: 10px;
+  background: rgba(239, 71, 111, 0.06);
+  border-radius: 8px;
+  border-left: 3px solid var(--pink);
+}
+
+.section-note strong {
+  color: var(--pink);
+  font-weight: 600;
+}
+
+.detected-device {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: rgba(41, 191, 18, 0.08);
+  border: 1px solid rgba(41, 191, 18, 0.2);
+  border-radius: 10px;
+}
+
+.device-icon {
+  font-size: 1.3rem;
+}
+
+.device-name {
+  flex: 1;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--green);
+}
+
+.device-badge {
+  font-size: 0.65rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.device-badge.default {
+  background: var(--green);
+  color: #fff;
+}
+
+.first-run-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.btn-large {
+  padding: 14px 20px !important;
+  font-size: 0.95rem !important;
+}
+
+.success-icon {
+  font-size: 3rem;
+  text-align: center;
+  margin-bottom: 14px;
+}
+
+#complete-section .section-description {
+  text-align: center;
+  font-size: 1rem;
+}
+
 /* ==================== STEREO INFO POPUP ==================== */
 .stereo-info-popup {
   position: fixed;

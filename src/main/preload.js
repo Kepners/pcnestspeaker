@@ -69,6 +69,10 @@ contextBridge.exposeInMainWorld('api', {
   checkEqualizerApo: () => ipcRenderer.invoke('check-equalizer-apo'),
   installEqualizerApo: () => ipcRenderer.invoke('install-equalizer-apo'),
 
+  // First-Run Setup
+  getFirstRunStatus: () => ipcRenderer.invoke('get-first-run-status'),
+  completeFirstRun: (options) => ipcRenderer.invoke('complete-first-run', options),
+
   // Utilities
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
@@ -100,6 +104,11 @@ contextBridge.exposeInMainWorld('api', {
   // Tray events
   onTrayStopStreaming: (callback) => {
     ipcRenderer.on('tray-stop-streaming', () => callback());
+  },
+
+  // First-run setup event (triggered when app detects first run with real speakers)
+  onFirstRunSetup: (callback) => {
+    ipcRenderer.on('first-run-setup', (event, data) => callback(data));
   },
 
   // Window controls (frameless window)
