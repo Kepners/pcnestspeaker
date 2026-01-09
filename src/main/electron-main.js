@@ -2758,12 +2758,6 @@ ipcMain.handle('complete-first-run', async (event, options) => {
   return { success: true };
 });
 
-// Check if Equalizer APO is installed
-ipcMain.handle('check-equalizer-apo', async () => {
-  const installed = audioSyncManager.isEqualizerAPOInstalled();
-  return { installed };
-});
-
 // Get first-run status
 ipcMain.handle('get-first-run-status', async () => {
   const settings = settingsManager.getAllSettings();
