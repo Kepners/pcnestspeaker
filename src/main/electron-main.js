@@ -29,6 +29,7 @@ let localTunnelProcess = null;
 let currentStreamingMode = null;
 let tunnelUrl = null;
 let discoveredSpeakers = []; // Cache speakers with IPs from discovery
+let currentConnectedSpeakers = []; // Track currently connected speakers for proper cleanup
 
 // Dependency download URLs
 // NOTE: We use screen-capture-recorder which installs "virtual-audio-capturer" device
@@ -438,6 +439,37 @@ function cleanup() {
   trayManager.updateTrayState(false); // Update tray to idle state
   usageTracker.stopTracking(); // Stop tracking usage time
   volumeSync.stopMonitoring(); // Stop Windows volume sync
+
+  // CRITICAL: Disconnect Cast devices FIRST (before killing processes)
+  // This ensures Green TV and other Cast devices properly stop playing
+  if (currentConnectedSpeakers.length > 0) {
+    sendLog(`Disconnecting ${currentConnectedSpeakers.length} speaker(s)...`);
+    for (const speaker of currentConnectedSpeakers) {
+      try {
+        sendLog(`Disconnecting "${speaker.name}"...`);
+        if (daemonManager.isDaemonRunning()) {
+          // Use daemon for instant disconnect (don't await - cleanup should be fast)
+          daemonManager.disconnectSpeaker(speaker.name).catch(() => {});
+        } else {
+          // Fallback: spawn Python process to stop (sync call for cleanup)
+          try {
+            const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+            const scriptPath = path.join(__dirname, 'cast-helper.py');
+            execSync(`${pythonPath} "${scriptPath}" stop "${speaker.name}"`, {
+              timeout: 5000,
+              windowsHide: true,
+              stdio: 'ignore'
+            });
+          } catch (e) {
+            // Ignore errors - best effort disconnect
+          }
+        }
+      } catch (e) {
+        sendLog(`Failed to disconnect "${speaker.name}": ${e.message}`, 'warning');
+      }
+    }
+    currentConnectedSpeakers = [];
+  }
 
   // Stop audio streamer (HTTP mode)
   if (audioStreamer) {
@@ -1067,8 +1099,11 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         trayManager.updateTrayState(true); // Update tray to streaming state
         usageTracker.startTracking(); // Start tracking usage time
 
-        // Start Windows volume sync - PC volume keys will control Nest
+        // Track connected speaker for proper cleanup
         const speaker = discoveredSpeakers.find(s => s.name === speakerName);
+        currentConnectedSpeakers = [{ name: speakerName, ip: speaker?.ip }];
+
+        // Start Windows volume sync - PC volume keys will control Nest
         if (speaker) {
           volumeSync.startMonitoring(
             [{ name: speaker.name, ip: speaker.ip }],
@@ -1483,6 +1518,11 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
             })
           : speaker ? [{ name: speaker.name, ip: speaker.ip }] : [];
 
+        // Track connected speaker(s) for proper cleanup
+        currentConnectedSpeakers = speakersToSync.length > 0
+          ? speakersToSync
+          : [{ name: speakerName, ip: speaker?.ip }];
+
         if (speakersToSync.length > 0) {
           volumeSync.startMonitoring(
             speakersToSync,
@@ -1667,18 +1707,27 @@ ipcMain.handle('stop-streaming', async (event, speakerName) => {
   try {
     sendLog('Stopping...');
 
-    // Disconnect speaker (daemon is instant, fallback spawns Python)
-    if (speakerName) {
+    // Disconnect all connected speakers (not just the one passed in)
+    // This ensures Cast devices properly stop playing
+    const speakersToDisconnect = currentConnectedSpeakers.length > 0
+      ? currentConnectedSpeakers
+      : (speakerName ? [{ name: speakerName }] : []);
+
+    for (const speaker of speakersToDisconnect) {
       try {
+        sendLog(`Disconnecting "${speaker.name}"...`);
         if (daemonManager.isDaemonRunning()) {
-          await daemonManager.disconnectSpeaker(speakerName);
+          await daemonManager.disconnectSpeaker(speaker.name);
         } else {
-          await runPython(['stop', speakerName]);
+          await runPython(['stop', speaker.name]);
         }
       } catch (e) {
         // Ignore stop errors
       }
     }
+
+    // Clear connected speakers tracking
+    currentConnectedSpeakers = [];
 
     // Stop FFmpeg stream
     if (audioStreamer) {
@@ -2096,6 +2145,12 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     trayManager.updateTrayState(true); // Update tray to streaming state
     usageTracker.startTracking(); // Start tracking usage time
 
+    // Track connected speakers for proper cleanup
+    currentConnectedSpeakers = [
+      { name: leftSpeaker.name, ip: leftSpeaker.ip },
+      { name: rightSpeaker.name, ip: rightSpeaker.ip }
+    ];
+
     // Start Windows volume sync - PC volume keys will control BOTH Nest speakers
     volumeSync.startMonitoring(
       [
@@ -2175,22 +2230,27 @@ ipcMain.handle('stop-stereo-streaming', async (event, leftSpeaker, rightSpeaker)
       sendLog('RIGHT channel stopped');
     }
 
-    // Disconnect both speakers (daemon is instant)
-    if (daemonManager.isDaemonRunning()) {
-      if (leftSpeaker) {
-        await daemonManager.disconnectSpeaker(leftSpeaker.name).catch(() => {});
-      }
-      if (rightSpeaker) {
-        await daemonManager.disconnectSpeaker(rightSpeaker.name).catch(() => {});
-      }
-    } else {
-      if (leftSpeaker) {
-        await runPython(['stop', leftSpeaker.name]).catch(() => {});
-      }
-      if (rightSpeaker) {
-        await runPython(['stop', rightSpeaker.name]).catch(() => {});
+    // Disconnect all connected speakers (use tracked speakers or passed-in)
+    const speakersToDisconnect = currentConnectedSpeakers.length > 0
+      ? currentConnectedSpeakers
+      : [leftSpeaker, rightSpeaker].filter(Boolean);
+
+    for (const speaker of speakersToDisconnect) {
+      if (!speaker) continue;
+      try {
+        sendLog(`Disconnecting "${speaker.name}"...`);
+        if (daemonManager.isDaemonRunning()) {
+          await daemonManager.disconnectSpeaker(speaker.name).catch(() => {});
+        } else {
+          await runPython(['stop', speaker.name]).catch(() => {});
+        }
+      } catch (e) {
+        // Ignore stop errors
       }
     }
+
+    // Clear connected speakers tracking
+    currentConnectedSpeakers = [];
 
     // Stop stream stats
     if (streamStats) {

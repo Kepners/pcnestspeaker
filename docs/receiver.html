@@ -57,47 +57,29 @@
       backdrop-filter: blur(10px);
     }
 
-    /* App branding - top left */
+    /* App branding - next to logo */
     #branding {
       position: fixed;
-      top: 30px;
-      left: 40px;
-      color: rgba(252, 191, 183, 0.8);
+      top: 50px;
+      left: 115px;
+      color: rgba(252, 191, 183, 0.9);
       font-family: 'Segoe UI', sans-serif;
-      font-size: 18px;
+      font-size: 22px;
       font-weight: 600;
-      letter-spacing: 2px;
+      letter-spacing: 3px;
       z-index: 10;
       text-shadow: 0 2px 10px rgba(0,0,0,0.3);
     }
 
-    /* Audio visualizer dots */
-    #visualizer {
+    /* App logo in corner */
+    #logo {
       position: fixed;
-      bottom: 100px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      gap: 8px;
+      top: 30px;
+      left: 40px;
+      width: 60px;
+      height: 60px;
       z-index: 10;
-    }
-    .viz-dot {
-      width: 8px;
-      height: 8px;
-      background: #FCBFB7;
-      border-radius: 50%;
-      opacity: 0.6;
-      animation: pulse 1.5s ease-in-out infinite;
-    }
-    .viz-dot:nth-child(1) { animation-delay: 0s; }
-    .viz-dot:nth-child(2) { animation-delay: 0.2s; }
-    .viz-dot:nth-child(3) { animation-delay: 0.4s; }
-    .viz-dot:nth-child(4) { animation-delay: 0.6s; }
-    .viz-dot:nth-child(5) { animation-delay: 0.8s; }
-
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); opacity: 0.4; }
-      50% { transform: scale(1.5); opacity: 1; }
+      filter: drop-shadow(0 2px 10px rgba(0,0,0,0.3));
     }
 
     /* Hide default cast player */
@@ -108,18 +90,26 @@
   <cast-media-player id="player"></cast-media-player>
 
   <!-- Ambient video background -->
-  <video id="ambient-video" muted loop playsinline></video>
+  <video id="ambient-video" muted autoplay playsinline crossorigin="anonymous"></video>
   <div id="overlay"></div>
 
   <!-- UI elements -->
+  <!-- Logo in corner - using inline SVG for reliability -->
+  <svg id="logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style="stop-color:#FCBFB7"/>
+        <stop offset="100%" style="stop-color:#A69888"/>
+      </linearGradient>
+    </defs>
+    <!-- Speaker icon -->
+    <rect x="15" y="30" width="25" height="40" rx="4" fill="url(#logoGrad)"/>
+    <path d="M40 30 L60 15 L60 85 L40 70 Z" fill="url(#logoGrad)"/>
+    <!-- Sound waves -->
+    <path d="M68 35 Q80 50 68 65" stroke="#FCBFB7" stroke-width="4" fill="none" opacity="0.8"/>
+    <path d="M76 25 Q95 50 76 75" stroke="#FCBFB7" stroke-width="4" fill="none" opacity="0.5"/>
+  </svg>
   <div id="branding">PC NEST SPEAKER</div>
-  <div id="visualizer">
-    <div class="viz-dot"></div>
-    <div class="viz-dot"></div>
-    <div class="viz-dot"></div>
-    <div class="viz-dot"></div>
-    <div class="viz-dot"></div>
-  </div>
   <div id="status">Waiting for connection...</div>
 
   <!-- WebRTC audio element (invisible) -->
@@ -132,79 +122,103 @@
     // Ambient Video System - Free CC0 videos from Pexels (CORS-enabled)
     // ===================
     const ambientVideos = [
+      // 4K UHD videos for high-quality TV display
       // Ocean & Water
-      'https://videos.pexels.com/video-files/3571264/3571264-uhd_2560_1440_30fps.mp4',  // Ocean waves aerial
-      'https://videos.pexels.com/video-files/1093662/1093662-uhd_2560_1440_30fps.mp4',  // Beach sunset waves
-      'https://videos.pexels.com/video-files/2098989/2098989-uhd_2560_1440_30fps.mp4',  // Waterfall
-      'https://videos.pexels.com/video-files/1409899/1409899-uhd_2560_1440_25fps.mp4',  // Calm ocean
+      'https://videos.pexels.com/video-files/3571264/3571264-uhd_2560_1440_30fps.mp4',
+      'https://videos.pexels.com/video-files/1093662/1093662-uhd_2560_1440_30fps.mp4',
+      'https://videos.pexels.com/video-files/2098989/2098989-uhd_2560_1440_30fps.mp4',
+      'https://videos.pexels.com/video-files/1409899/1409899-uhd_2560_1440_25fps.mp4',
 
       // Clouds & Sky
-      'https://videos.pexels.com/video-files/1918465/1918465-uhd_2560_1440_24fps.mp4',  // Clouds timelapse
-      'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_24fps.mp4',  // Northern lights
-      'https://videos.pexels.com/video-files/857195/857195-hd_1920_1080_25fps.mp4',     // Sunset clouds
+      'https://videos.pexels.com/video-files/1918465/1918465-uhd_2560_1440_24fps.mp4',
+      'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_24fps.mp4',
 
       // Forest & Nature
-      'https://videos.pexels.com/video-files/857251/857251-hd_1920_1080_25fps.mp4',     // Forest mist
-      'https://videos.pexels.com/video-files/3125908/3125908-uhd_2560_1440_30fps.mp4',  // Mountain lake
-      'https://videos.pexels.com/video-files/2871916/2871916-uhd_2560_1440_24fps.mp4',  // Green forest aerial
+      'https://videos.pexels.com/video-files/3125908/3125908-uhd_2560_1440_30fps.mp4',
+      'https://videos.pexels.com/video-files/2871916/2871916-uhd_2560_1440_24fps.mp4',
 
-      // Mountains & Landscapes
-      'https://videos.pexels.com/video-files/1448735/1448735-uhd_2560_1440_24fps.mp4',  // Desert dunes
-      'https://videos.pexels.com/video-files/3015510/3015510-uhd_2560_1440_24fps.mp4',  // Snowy mountains
-      'https://videos.pexels.com/video-files/2169880/2169880-uhd_2560_1440_30fps.mp4',  // Valley mist
-
-      // Space & Stars
-      'https://videos.pexels.com/video-files/1851190/1851190-uhd_2560_1440_30fps.mp4',  // Stars timelapse
-      'https://videos.pexels.com/video-files/5765760/5765760-uhd_2560_1440_25fps.mp4',  // Milky way
-      'https://videos.pexels.com/video-files/4770815/4770815-uhd_2560_1440_30fps.mp4',  // Earth from space
-
-      // Underwater & Sea Life
-      'https://videos.pexels.com/video-files/855049/855049-hd_1920_1080_30fps.mp4',     // Coral reef fish
-      'https://videos.pexels.com/video-files/4812204/4812204-uhd_2560_1440_25fps.mp4',  // Jellyfish
-      'https://videos.pexels.com/video-files/2556126/2556126-uhd_2560_1440_30fps.mp4',  // Ocean underwater
+      // Mountains & Space
+      'https://videos.pexels.com/video-files/1448735/1448735-uhd_2560_1440_24fps.mp4',
+      'https://videos.pexels.com/video-files/3015510/3015510-uhd_2560_1440_24fps.mp4',
+      'https://videos.pexels.com/video-files/1851190/1851190-uhd_2560_1440_30fps.mp4',
 
       // Fire & Abstract
-      'https://videos.pexels.com/video-files/856798/856798-hd_1920_1080_25fps.mp4',     // Campfire flames
-      'https://videos.pexels.com/video-files/2795173/2795173-uhd_2560_1440_25fps.mp4',  // Abstract particles
-      'https://videos.pexels.com/video-files/3129671/3129671-uhd_2560_1440_30fps.mp4',  // City night lights
+      'https://videos.pexels.com/video-files/2795173/2795173-uhd_2560_1440_25fps.mp4',
+      'https://videos.pexels.com/video-files/3129671/3129671-uhd_2560_1440_30fps.mp4',
 
-      // Nature & Flowers
-      'https://videos.pexels.com/video-files/2611168/2611168-uhd_2560_1440_25fps.mp4',  // Flowers field
-      'https://videos.pexels.com/video-files/4763830/4763830-uhd_2560_1440_30fps.mp4',  // Cherry blossoms
-
-      // Rain & Weather
-      'https://videos.pexels.com/video-files/2491280/2491280-uhd_2560_1440_24fps.mp4',  // Rain on window
-      'https://videos.pexels.com/video-files/1906831/1906831-uhd_2560_1440_25fps.mp4',  // Storm clouds
-
-      // Driving & Roads
-      'https://videos.pexels.com/video-files/3015509/3015509-uhd_2560_1440_24fps.mp4',  // Mountain road drive
-      'https://videos.pexels.com/video-files/2795401/2795401-uhd_2560_1440_25fps.mp4',  // Highway night
-
-      // Animals
-      'https://videos.pexels.com/video-files/856973/856973-hd_1920_1080_25fps.mp4',     // Birds flying
-      'https://videos.pexels.com/video-files/4091636/4091636-uhd_2560_1440_25fps.mp4',  // Fish school
+      // Underwater
+      'https://videos.pexels.com/video-files/4812204/4812204-uhd_2560_1440_25fps.mp4',
+      'https://videos.pexels.com/video-files/2556126/2556126-uhd_2560_1440_30fps.mp4',
     ];
 
     let currentVideoIndex = 0;
+    let videoLoadTimeout = null;
+    let videoErrorCount = 0;
+    const MAX_VIDEO_ERRORS = 5;
+    const VIDEO_LOAD_TIMEOUT = 30000; // 30 seconds for 4K videos
     const ambientVideo = document.getElementById('ambient-video');
+    let videosStarted = false;
 
     function loadNextAmbientVideo() {
+      // Clear any existing timeout
+      if (videoLoadTimeout) {
+        clearTimeout(videoLoadTimeout);
+        videoLoadTimeout = null;
+      }
+
       // Fade out current video
       ambientVideo.classList.remove('visible');
 
       setTimeout(() => {
-        // Pick next video (random or sequential)
+        // Pick next video (random)
         currentVideoIndex = Math.floor(Math.random() * ambientVideos.length);
-        ambientVideo.src = ambientVideos[currentVideoIndex];
+        const videoUrl = ambientVideos[currentVideoIndex];
+        console.log('[Ambient] Loading video:', videoUrl);
+
+        ambientVideo.src = videoUrl;
         ambientVideo.load();
+
+        // Set timeout for loading - try next video if this one takes too long
+        videoLoadTimeout = setTimeout(() => {
+          console.log('[Ambient] Video load timeout, trying next...');
+          videoErrorCount++;
+          if (videoErrorCount < MAX_VIDEO_ERRORS) {
+            loadNextAmbientVideo();
+          } else {
+            console.log('[Ambient] Max errors reached, stopping video attempts');
+          }
+        }, VIDEO_LOAD_TIMEOUT);
       }, 1000); // Wait for fade out
     }
 
-    ambientVideo.addEventListener('loadeddata', () => {
-      console.log('[Ambient] Video loaded, playing...');
+    // canplay is more reliable than loadeddata on some devices
+    ambientVideo.addEventListener('canplay', function onCanPlay() {
+      // Clear timeout since video is loading
+      if (videoLoadTimeout) {
+        clearTimeout(videoLoadTimeout);
+        videoLoadTimeout = null;
+      }
+
+      console.log('[Ambient] Video can play, starting...');
+      videoErrorCount = 0; // Reset error count on success
+
       ambientVideo.play().then(() => {
+        console.log('[Ambient] Video playing!');
         ambientVideo.classList.add('visible');
-      }).catch(e => console.log('[Ambient] Autoplay blocked:', e.message));
+      }).catch(e => {
+        console.log('[Ambient] Play blocked:', e.message);
+        // Try again with user interaction simulation
+        setTimeout(() => {
+          ambientVideo.muted = true;
+          ambientVideo.play().then(() => {
+            console.log('[Ambient] Video playing (muted retry)');
+            ambientVideo.classList.add('visible');
+          }).catch(e2 => {
+            console.log('[Ambient] Retry failed:', e2.message);
+            loadNextAmbientVideo();
+          });
+        }, 500);
+      });
     });
 
     ambientVideo.addEventListener('ended', () => {
@@ -213,16 +227,41 @@
     });
 
     ambientVideo.addEventListener('error', (e) => {
-      console.log('[Ambient] Video error, trying next...');
-      loadNextAmbientVideo();
+      console.log('[Ambient] Video error:', e.message || 'unknown error');
+      if (videoLoadTimeout) {
+        clearTimeout(videoLoadTimeout);
+        videoLoadTimeout = null;
+      }
+      videoErrorCount++;
+      if (videoErrorCount < MAX_VIDEO_ERRORS) {
+        loadNextAmbientVideo();
+      }
+    });
+
+    // Also listen for stalled/waiting
+    ambientVideo.addEventListener('stalled', () => {
+      console.log('[Ambient] Video stalled');
     });
 
     // Start first ambient video
     function startAmbientVideos() {
-      console.log('[Ambient] Starting ambient video playlist');
+      if (videosStarted) return; // Only start once
+      videosStarted = true;
+
+      console.log('[Ambient] Starting ambient video playlist (' + ambientVideos.length + ' videos)');
       currentVideoIndex = Math.floor(Math.random() * ambientVideos.length);
-      ambientVideo.src = ambientVideos[currentVideoIndex];
+      const videoUrl = ambientVideos[currentVideoIndex];
+      console.log('[Ambient] First video:', videoUrl);
+
+      ambientVideo.src = videoUrl;
       ambientVideo.load();
+
+      // Set timeout for first video
+      videoLoadTimeout = setTimeout(() => {
+        console.log('[Ambient] First video timeout, trying next...');
+        videoErrorCount++;
+        loadNextAmbientVideo();
+      }, VIDEO_LOAD_TIMEOUT);
     }
 
     // ===================
