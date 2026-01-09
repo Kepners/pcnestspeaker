@@ -74,7 +74,9 @@ const DISABLE_CLOUDFLARE = true;
 // Two receivers registered in Cast SDK Console:
 // - AUDIO_APP_ID: Lean audio-only receiver for Nest speakers and groups (~260 lines)
 // - VISUAL_APP_ID: Full receiver with ambient videos for TVs/Shields
-const AUDIO_APP_ID = '4B876246';   // PC Nest Speaker Audio (lean, no visuals)
+// TEMP: Using VISUAL receiver for ALL devices until AUDIO receiver propagates
+// const AUDIO_APP_ID = '4B876246';   // PC Nest Speaker Audio (lean, no visuals) - FAILING
+const AUDIO_APP_ID = 'FCAA4619';     // TEMP: Use visual receiver for testing
 const VISUAL_APP_ID = 'FCAA4619';  // PC Nest Speaker (visual, ambient videos)
 
 /**
@@ -843,14 +845,20 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
     sendLog(`Starting ${streamingMode} stream to "${speakerName}"...`);
     currentStreamingMode = streamingMode;
 
-    // Switch Windows default audio to virtual device
+    // Switch Windows default audio to virtual device (skips if already correct)
+    let audioDeviceSwitched = false; // Track if we actually switched (for FFmpeg restart decision)
     try {
-      sendLog('Switching Windows audio to virtual device...');
-      await audioDeviceManager.switchToStreamingDevice();
-      sendLog('Audio device switched', 'success');
+      const switchResult = await audioDeviceManager.switchToStreamingDevice();
+      if (switchResult.skipped) {
+        sendLog(`Already on virtual device - no switch needed`, 'success');
+        audioDeviceSwitched = false; // No FFmpeg restart needed!
+      } else {
+        sendLog('Audio device switched', 'success');
+        audioDeviceSwitched = true; // FFmpeg needs restart to capture from new device
+      }
     } catch (err) {
       sendLog(`Audio switch failed: ${err.message}`, 'warning');
-      // Continue anyway - user may have already set it manually
+      audioDeviceSwitched = false; // Continue with existing FFmpeg
     }
 
     if (streamingMode === 'http') {
@@ -923,63 +931,65 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       if (webrtcPipelineReady && mediamtxProcess && ffmpegWebrtcProcess) {
         sendLog('Using pre-started WebRTC pipeline', 'success');
 
-        // CRITICAL FIX: Restart FFmpeg AFTER audio device switch!
-        // The pre-started FFmpeg was capturing from the OLD default output.
-        // Now that we've switched to Virtual Desktop Audio, we need to restart FFmpeg
-        // so it captures from the NEW default output via WASAPI loopback.
-        sendLog('Restarting FFmpeg to capture from new audio device...');
+        // Only restart FFmpeg if we actually switched the audio device!
+        // If we were already on the virtual device, FFmpeg is already capturing correctly.
+        if (audioDeviceSwitched) {
+          sendLog('Restarting FFmpeg to capture from new audio device...');
 
-        // Kill old FFmpeg process
-        if (ffmpegWebrtcProcess) {
-          try {
-            ffmpegWebrtcProcess.kill('SIGTERM');
-          } catch (e) {}
-          ffmpegWebrtcProcess = null;
-        }
-
-        // Wait a moment for WASAPI to recognize the new default device
-        await new Promise(r => setTimeout(r, 500));
-
-        // Determine audio device name for FFmpeg
-        let audioDeviceName = 'virtual-audio-capturer';
-        if (streamingMode === 'webrtc-vbcable') {
-          audioDeviceName = 'CABLE Output (VB-Audio Virtual Cable)';
-        } else {
-          if (!audioStreamer) {
-            audioStreamer = new AudioStreamer();
+          // Kill old FFmpeg process
+          if (ffmpegWebrtcProcess) {
+            try {
+              ffmpegWebrtcProcess.kill('SIGTERM');
+            } catch (e) {}
+            ffmpegWebrtcProcess = null;
           }
-          const devices = await audioStreamer.getAudioDevices();
-          sendLog(`Available DirectShow audio devices: ${devices.join(', ')}`);
 
-          const vacDevice = devices.find(d =>
-            d.toLowerCase().includes('virtual-audio-capturer')
-          );
-          if (vacDevice) {
-            audioDeviceName = vacDevice;
-            sendLog(`Found virtual-audio-capturer: "${audioDeviceName}"`);
+          // Wait a moment for WASAPI to recognize the new default device
+          await new Promise(r => setTimeout(r, 500));
+
+          // Determine audio device name for FFmpeg
+          let audioDeviceName = 'virtual-audio-capturer';
+          if (streamingMode === 'webrtc-vbcable') {
+            audioDeviceName = 'CABLE Output (VB-Audio Virtual Cable)';
           } else {
-            sendLog('[WARNING] virtual-audio-capturer not found! Checking for alternatives...', 'warning');
-            // Try to find any virtual audio device
-            const virtualDevice = devices.find(d =>
-              d.toLowerCase().includes('virtual') ||
-              d.toLowerCase().includes('cable') ||
-              d.toLowerCase().includes('stereo mix')
+            if (!audioStreamer) {
+              audioStreamer = new AudioStreamer();
+            }
+            const devices = await audioStreamer.getAudioDevices();
+            sendLog(`Available DirectShow audio devices: ${devices.join(', ')}`);
+
+            const vacDevice = devices.find(d =>
+              d.toLowerCase().includes('virtual-audio-capturer')
             );
-            if (virtualDevice) {
-              audioDeviceName = virtualDevice;
-              sendLog(`Using alternative device: "${audioDeviceName}"`, 'warning');
+            if (vacDevice) {
+              audioDeviceName = vacDevice;
+              sendLog(`Found virtual-audio-capturer: "${audioDeviceName}"`);
             } else {
-              sendLog('[ERROR] No virtual audio capture device found!', 'error');
-              sendLog('[ERROR] Please install screen-capture-recorder from: https://github.com/rdp/screen-capture-recorder-to-video-windows-free/releases', 'error');
+              sendLog('[WARNING] virtual-audio-capturer not found! Checking for alternatives...', 'warning');
+              // Try to find any virtual audio device
+              const virtualDevice = devices.find(d =>
+                d.toLowerCase().includes('virtual') ||
+                d.toLowerCase().includes('cable') ||
+                d.toLowerCase().includes('stereo mix')
+              );
+              if (virtualDevice) {
+                audioDeviceName = virtualDevice;
+                sendLog(`Using alternative device: "${audioDeviceName}"`, 'warning');
+              } else {
+                sendLog('[ERROR] No virtual audio capture device found!', 'error');
+                sendLog('[ERROR] Please install screen-capture-recorder from: https://github.com/rdp/screen-capture-recorder-to-video-windows-free/releases', 'error');
+              }
             }
           }
+
+          sendLog(`Using audio device: ${audioDeviceName}`);
+
+          // Start new FFmpeg process
+          await startFFmpegWebRTC(audioDeviceName);
+          sendLog('FFmpeg restarted - now capturing from new audio device!', 'success');
+        } else {
+          sendLog('FFmpeg already capturing from correct device - no restart needed', 'success');
         }
-
-        sendLog(`Using audio device: ${audioDeviceName}`);
-
-        // Start new FFmpeg process
-        await startFFmpegWebRTC(audioDeviceName);
-        sendLog('FFmpeg restarted - now capturing from Virtual Desktop Audio!', 'success');
 
         // Start stream stats monitoring
         if (streamStats) {
@@ -1787,11 +1797,14 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
       ffmpegWebrtcProcess = null;
     }
 
-    // Switch Windows default audio to virtual device
+    // Switch Windows default audio to virtual device (skips if already correct)
     try {
-      sendLog('Switching Windows audio to virtual device...');
-      await audioDeviceManager.switchToStreamingDevice();
-      sendLog('Audio device switched', 'success');
+      const switchResult = await audioDeviceManager.switchToStreamingDevice();
+      if (switchResult.skipped) {
+        sendLog(`Already on virtual device - no switch needed`, 'success');
+      } else {
+        sendLog('Audio device switched', 'success');
+      }
     } catch (err) {
       sendLog(`Audio switch failed: ${err.message}`, 'warning');
       // Continue anyway - user may have already set it manually
@@ -2063,11 +2076,14 @@ ipcMain.handle('start-tv-streaming', async (event, deviceName, deviceIp = null) 
 
     sendLog(`Starting TV streaming to "${deviceName}" via HLS...`);
 
-    // Switch Windows default audio to virtual device
+    // Switch Windows default audio to virtual device (skips if already correct)
     try {
-      sendLog('Switching Windows audio to virtual device...');
-      await audioDeviceManager.switchToStreamingDevice();
-      sendLog('Audio device switched', 'success');
+      const switchResult = await audioDeviceManager.switchToStreamingDevice();
+      if (switchResult.skipped) {
+        sendLog(`Already on virtual device - no switch needed`, 'success');
+      } else {
+        sendLog('Audio device switched', 'success');
+      }
     } catch (err) {
       sendLog(`Audio switch failed: ${err.message}`, 'warning');
     }

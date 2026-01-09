@@ -338,15 +338,39 @@ if (\$result) { Write-Output "OK" } else { Write-Output "NOTFOUND" }
 /**
  * Switch to streaming audio device (virtual-audio-capturer)
  * Saves the current device for later restoration
+ *
+ * SMART: Skips switching if already on a virtual device (no FFmpeg restart needed!)
  */
 async function switchToStreamingDevice() {
   try {
-    // Save current device
-    originalAudioDevice = await getCurrentAudioDevice();
-    console.log(`[AudioDeviceManager] Original device: ${originalAudioDevice}`);
+    // Get current device
+    const currentDevice = await getCurrentAudioDevice();
+    console.log(`[AudioDeviceManager] Current device: ${currentDevice}`);
+
+    // List of virtual device name patterns (case-insensitive partial match)
+    const virtualDevicePatterns = [
+      'virtual desktop audio',
+      'virtual-audio-capturer',
+      'virtual audio capturer',
+      'cable input',
+      'vb-audio'
+    ];
+
+    // Check if we're ALREADY on a virtual device - skip switching!
+    const currentLower = currentDevice.toLowerCase();
+    const alreadyOnVirtual = virtualDevicePatterns.some(pattern => currentLower.includes(pattern));
+
+    if (alreadyOnVirtual) {
+      console.log(`[AudioDeviceManager] SKIP: Already on virtual device "${currentDevice}" - no switch needed!`);
+      originalAudioDevice = null; // Nothing to restore later
+      return { success: true, skipped: true, device: currentDevice };
+    }
+
+    // Save original device for later restoration
+    originalAudioDevice = currentDevice;
+    console.log(`[AudioDeviceManager] Original device saved: ${originalAudioDevice}`);
 
     // Switch to virtual audio device
-    // Note: The exact device name might vary - we'll try common names
     // Windows shows devices as "[Name] (Description)" - partial match works
     const virtualDeviceNames = [
       'Virtual Desktop Audio',           // Most common - screen-capture-recorder
@@ -378,7 +402,7 @@ async function switchToStreamingDevice() {
       throw new Error('Could not find virtual audio device. Please ensure screen-capture-recorder or VB-CABLE is installed. Tried: ' + triedNames.join(', '));
     }
 
-    return { success: true, originalDevice: originalAudioDevice };
+    return { success: true, skipped: false, originalDevice: originalAudioDevice };
   } catch (error) {
     console.error('[AudioDeviceManager] Failed to switch to streaming device:', error);
     throw error;
