@@ -31,6 +31,7 @@ function isAvailable() {
 
 /**
  * Download and extract svcl.exe from NirSoft
+ * Uses PowerShell for reliable downloading (handles redirects better)
  * @returns {Promise<{success: boolean, error?: string}>}
  */
 async function downloadSvcl() {
@@ -54,40 +55,31 @@ async function downloadSvcl() {
     }
 
     const zipPath = path.join(SVCL_DIR, 'svcl.zip');
-    const file = fs.createWriteStream(zipPath);
 
-    https.get(SVCL_DOWNLOAD_URL, (response) => {
-      // Handle redirects
-      if (response.statusCode === 301 || response.statusCode === 302) {
-        https.get(response.headers.location, (redirectResponse) => {
-          redirectResponse.pipe(file);
-          file.on('finish', () => {
-            file.close();
-            extractZip(zipPath, resolve);
-          });
-        }).on('error', (err) => {
-          fs.unlink(zipPath, () => {});
-          isDownloading = false;
-          resolve({ success: false, error: `Download failed: ${err.message}` });
-        });
-        return;
+    // Use PowerShell for downloading (handles redirects automatically)
+    const psCommand = `
+      [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+      $url = '${SVCL_DOWNLOAD_URL}'
+      $outPath = '${zipPath.replace(/\\/g, '\\\\')}'
+      try {
+        Invoke-WebRequest -Uri $url -OutFile $outPath -UseBasicParsing
+        Write-Host 'Download complete'
+      } catch {
+        Write-Error $_.Exception.Message
+        exit 1
       }
+    `;
 
-      if (response.statusCode !== 200) {
+    exec(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psCommand}"`, { windowsHide: true, timeout: 30000 }, (error, stdout, stderr) => {
+      if (error) {
+        console.error('[AudioRouting] Download failed:', stderr || error.message);
         isDownloading = false;
-        resolve({ success: false, error: `Download failed: HTTP ${response.statusCode}` });
+        resolve({ success: false, error: `Download failed: ${stderr || error.message}` });
         return;
       }
 
-      response.pipe(file);
-      file.on('finish', () => {
-        file.close();
-        extractZip(zipPath, resolve);
-      });
-    }).on('error', (err) => {
-      fs.unlink(zipPath, () => {});
-      isDownloading = false;
-      resolve({ success: false, error: `Download failed: ${err.message}` });
+      console.log('[AudioRouting] Download complete, extracting...');
+      extractZip(zipPath, resolve);
     });
   });
 
@@ -100,23 +92,43 @@ async function downloadSvcl() {
 function extractZip(zipPath, resolve) {
   console.log('[AudioRouting] Extracting svcl.exe...');
 
-  // Use PowerShell to extract (works on all Windows versions)
+  // Use Expand-Archive (simpler) then find svcl.exe in extracted folder
+  const tempExtractDir = path.join(SVCL_DIR, 'temp_extract');
   const psCommand = `
     $ErrorActionPreference = 'Stop'
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zip = [System.IO.Compression.ZipFile]::OpenRead('${zipPath.replace(/\\/g, '\\\\')}')
-    $entry = $zip.Entries | Where-Object { $_.Name -eq 'svcl.exe' }
-    if ($entry) {
-      $destPath = '${SVCL_PATH.replace(/\\/g, '\\\\')}'
-      [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $destPath, $true)
+    $zipPath = '${zipPath.replace(/\\/g, '\\\\')}'
+    $extractDir = '${tempExtractDir.replace(/\\/g, '\\\\')}'
+    $destPath = '${SVCL_PATH.replace(/\\/g, '\\\\')}'
+
+    # Remove old temp dir if exists
+    if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
+
+    # Extract entire zip
+    Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+
+    # Find svcl.exe (might be in root or subfolder)
+    $svclFile = Get-ChildItem -Path $extractDir -Filter 'svcl.exe' -Recurse | Select-Object -First 1
+
+    if ($svclFile) {
+      Copy-Item $svclFile.FullName -Destination $destPath -Force
+      Write-Host "Found and copied: $($svclFile.FullName)"
+    } else {
+      # List what we found for debugging
+      $allFiles = Get-ChildItem -Path $extractDir -Recurse | Select-Object -ExpandProperty Name
+      Write-Host "Files in zip: $($allFiles -join ', ')"
     }
-    $zip.Dispose()
+
+    # Cleanup temp dir
+    Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
   `;
 
-  exec(`powershell -NoProfile -Command "${psCommand}"`, { windowsHide: true }, (error) => {
+  exec(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psCommand}"`, { windowsHide: true }, (error, stdout, stderr) => {
     // Clean up zip file
     fs.unlink(zipPath, () => {});
     isDownloading = false;
+
+    if (stdout) console.log('[AudioRouting]', stdout.trim());
+    if (stderr) console.log('[AudioRouting] stderr:', stderr.trim());
 
     if (error) {
       console.error('[AudioRouting] Extract failed:', error.message);
@@ -128,7 +140,7 @@ function extractZip(zipPath, resolve) {
       console.log('[AudioRouting] svcl.exe installed successfully!');
       resolve({ success: true });
     } else {
-      resolve({ success: false, error: 'Extract completed but svcl.exe not found' });
+      resolve({ success: false, error: 'Extract completed but svcl.exe not found in zip' });
     }
   });
 }
