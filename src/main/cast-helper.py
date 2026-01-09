@@ -1220,164 +1220,187 @@ def webrtc_launch_multicast(speaker_names, https_url, speaker_ips=None, stream_n
 
 
 # =============================================================================
-# AUDIO ROUTING FUNCTIONS - Core Audio API for "Listen to this device"
+# AUDIO DEVICE SWITCHING - IPolicyConfig COM Interface for Default Device
 # =============================================================================
 
-def enable_audio_routing(source_device_name, target_device_name):
-    """Enable "Listen to this device" using Windows Core Audio API.
+def get_audio_outputs():
+    """Get list of all audio output (render) devices.
 
-    This routes audio from a capture device (e.g., Stereo Mix) to a render device
-    (e.g., HDMI speakers) using the proper Windows API instead of registry hacks.
-
-    Requires: pip install pycaw comtypes
-
-    Args:
-        source_device_name: Name of capture device (e.g., "Stereo Mix", "Virtual Desktop Audio")
-        target_device_name: Name of render device (e.g., "Speakers", "HDMI")
+    Uses pycaw to enumerate Windows audio devices.
 
     Returns:
-        { success: true } or { success: false, error: "..." }
-    """
-    try:
-        from ctypes import POINTER, cast as ctypes_cast
-        from comtypes import CLSCTX_ALL, GUID, COMMETHOD, CoClass
-        import comtypes
-        from pycaw.pycaw import AudioUtilities, IMMDeviceEnumerator, EDataFlow, DEVICE_STATE
-
-        # Property keys for "Listen to this device"
-        # {24DBB0FC-9311-4B3D-9CF0-18FF155639D4},0 = Listen enabled (VT_BOOL)
-        # {24DBB0FC-9311-4B3D-9CF0-18FF155639D4},1 = Playback device ID (VT_LPWSTR)
-        PKEY_AudioEndpoint_Listen = GUID('{24DBB0FC-9311-4B3D-9CF0-18FF155639D4}')
-
-        print(f"[AudioRoute] Enabling: {source_device_name} → {target_device_name}", file=sys.stderr)
-
-        # Get all devices
-        devices = AudioUtilities.GetAllDevices()
-
-        # Find source device (capture)
-        source_device = None
-        target_device = None
-
-        for device in devices:
-            device_name = device.FriendlyName if device.FriendlyName else ""
-            if source_device_name.lower() in device_name.lower():
-                # Check if it's a capture device
-                try:
-                    flow = device._dev.GetId()  # Will have flow in the ID
-                    source_device = device
-                    print(f"[AudioRoute] Found source: {device_name}", file=sys.stderr)
-                except:
-                    pass
-            if target_device_name.lower() in device_name.lower():
-                target_device = device
-                print(f"[AudioRoute] Found target: {device_name}", file=sys.stderr)
-
-        if not source_device:
-            return {"success": False, "error": f"Source device '{source_device_name}' not found"}
-        if not target_device:
-            return {"success": False, "error": f"Target device '{target_device_name}' not found"}
-
-        # Get device IDs
-        target_id = target_device.id
-
-        # Open property store for source device
-        # This is the part that requires the Core Audio API properly
-        from pycaw.pycaw import IMMDevice
-        import ctypes
-        from ctypes import wintypes
-
-        # We need to access IPropertyStore which pycaw doesn't fully expose
-        # Fall back to SoundVolumeView if available
-        print(f"[AudioRoute] Core Audio property store access requires elevated pycaw", file=sys.stderr)
-        print(f"[AudioRoute] Use SoundVolumeView (svcl.exe) for reliable routing", file=sys.stderr)
-
-        return {
-            "success": False,
-            "error": "Core Audio property store access not fully implemented - use svcl.exe",
-            "source": source_device_name,
-            "target": target_device_name
-        }
-
-    except ImportError as ie:
-        print(f"[AudioRoute] Missing dependency: {ie}", file=sys.stderr)
-        return {
-            "success": False,
-            "error": f"Missing dependency: {str(ie)}. Run: pip install pycaw comtypes"
-        }
-    except Exception as e:
-        import traceback
-        print(f"[AudioRoute] ERROR: {e}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-        return {"success": False, "error": str(e)}
-
-
-def disable_audio_routing(source_device_name):
-    """Disable "Listen to this device" on a capture device.
-
-    Args:
-        source_device_name: Name of capture device to disable listening on
-
-    Returns:
-        { success: true } or { success: false, error: "..." }
-    """
-    try:
-        print(f"[AudioRoute] Disabling listening on: {source_device_name}", file=sys.stderr)
-
-        # Same limitation as enable - needs full Core Audio property store access
-        return {
-            "success": False,
-            "error": "Core Audio property store access not fully implemented - use svcl.exe",
-            "source": source_device_name
-        }
-
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-
-def list_audio_devices():
-    """List all audio devices (capture and render).
-
-    Returns:
-        { success: true, capture: [...], render: [...] }
+        { success: true, devices: [{ name, id, isDefault }, ...] }
     """
     try:
         from pycaw.pycaw import AudioUtilities
 
+        print(f"[AudioOutput] Enumerating audio devices...", file=sys.stderr)
+
         devices = AudioUtilities.GetAllDevices()
 
-        capture_devices = []
-        render_devices = []
+        # Get current default device ID for comparison
+        # AudioUtilities.GetSpeakers() returns the IMMDevice COM object (not AudioDevice wrapper)
+        default_id = None
+        try:
+            default_speaker = AudioUtilities.GetSpeakers()
+            if default_speaker:
+                # This is a raw IMMDevice, not wrapped AudioDevice
+                default_id = default_speaker.GetId()
+                print(f"[AudioOutput] Current default ID: {default_id}", file=sys.stderr)
+        except Exception as e:
+            print(f"[AudioOutput] Could not get default ID: {e}", file=sys.stderr)
+
+        output_devices = []
+        for device in devices:
+            # Device ID format: {0.0.0.xxxxxxxx}.{guid} for render, {0.0.1.xxxxxxxx}.{guid} for capture
+            if device.id and device.id.startswith("{0.0.0."):
+                device_info = {
+                    "name": device.FriendlyName or "Unknown Device",
+                    "id": device.id,
+                    "isDefault": device.id == default_id if default_id else False
+                }
+                output_devices.append(device_info)
+                print(f"[AudioOutput] Found: {device_info['name']} {'(DEFAULT)' if device_info['isDefault'] else ''}", file=sys.stderr)
+
+        print(f"[AudioOutput] Total: {len(output_devices)} render devices", file=sys.stderr)
+        return {"success": True, "devices": output_devices}
+
+    except ImportError as ie:
+        print(f"[AudioOutput] Missing dependency: {ie}", file=sys.stderr)
+        return {"success": False, "error": f"Missing dependency: {str(ie)}. Run: pip install pycaw comtypes"}
+    except Exception as e:
+        import traceback
+        print(f"[AudioOutput] ERROR: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        return {"success": False, "error": str(e)}
+
+
+def set_default_audio_output(device_name):
+    """Set the default Windows audio output device using IPolicyConfig.
+
+    This is the proper way to change the default audio device programmatically.
+    Uses the same COM interface that Windows Sound Settings uses.
+
+    Requires: pip install pycaw comtypes
+
+    Args:
+        device_name: Full or partial name of the audio device to set as default
+
+    Returns:
+        { success: true, device: "Device Name" } or { success: false, error: "..." }
+    """
+    try:
+        from pycaw.pycaw import AudioUtilities
+        from comtypes import CLSCTX_ALL, GUID
+        import comtypes
+        from ctypes import HRESULT, POINTER
+        from ctypes.wintypes import DWORD, LPCWSTR
+
+        print(f"[AudioSwitch] Setting default device to: {device_name}", file=sys.stderr)
+
+        # IPolicyConfig interface - the proper Windows API for changing default device
+        IID_IPolicyConfig = GUID('{f8679f50-850a-41cf-9c72-430f290290c8}')
+        CLSID_PolicyConfigClient = GUID('{870af99c-171d-4f9e-af0d-e63df40c2bc9}')
+
+        # Define the IPolicyConfig interface
+        class IPolicyConfig(comtypes.IUnknown):
+            _iid_ = IID_IPolicyConfig
+            _methods_ = [
+                comtypes.COMMETHOD([], HRESULT, 'GetMixFormat',
+                    (['in'], LPCWSTR, 'pszDeviceName'),
+                    (['out'], POINTER(POINTER(comtypes.c_void_p)), 'ppFormat')),
+                comtypes.COMMETHOD([], HRESULT, 'GetDeviceFormat',
+                    (['in'], LPCWSTR, 'pszDeviceName'),
+                    (['in'], DWORD, 'bDefault'),
+                    (['out'], POINTER(POINTER(comtypes.c_void_p)), 'ppFormat')),
+                comtypes.COMMETHOD([], HRESULT, 'ResetDeviceFormat',
+                    (['in'], LPCWSTR, 'pszDeviceName')),
+                comtypes.COMMETHOD([], HRESULT, 'SetDeviceFormat',
+                    (['in'], LPCWSTR, 'pszDeviceName'),
+                    (['in'], POINTER(comtypes.c_void_p), 'pEndpointFormat'),
+                    (['in'], POINTER(comtypes.c_void_p), 'pMixFormat')),
+                comtypes.COMMETHOD([], HRESULT, 'GetProcessingPeriod',
+                    (['in'], LPCWSTR, 'pszDeviceName'),
+                    (['in'], DWORD, 'bDefault'),
+                    (['out'], POINTER(comtypes.c_longlong), 'pmftDefaultPeriod'),
+                    (['out'], POINTER(comtypes.c_longlong), 'pmftMinimumPeriod')),
+                comtypes.COMMETHOD([], HRESULT, 'SetProcessingPeriod',
+                    (['in'], LPCWSTR, 'pszDeviceName'),
+                    (['in'], POINTER(comtypes.c_longlong), 'pmftPeriod')),
+                comtypes.COMMETHOD([], HRESULT, 'GetShareMode',
+                    (['in'], LPCWSTR, 'pszDeviceName'),
+                    (['out'], POINTER(DWORD), 'pMode')),
+                comtypes.COMMETHOD([], HRESULT, 'SetShareMode',
+                    (['in'], LPCWSTR, 'pszDeviceName'),
+                    (['in'], DWORD, 'mode')),
+                comtypes.COMMETHOD([], HRESULT, 'GetPropertyValue',
+                    (['in'], LPCWSTR, 'pszDeviceName'),
+                    (['in'], DWORD, 'bFxStore'),
+                    (['in'], POINTER(GUID), 'pKey'),
+                    (['out'], POINTER(comtypes.c_void_p), 'pv')),
+                comtypes.COMMETHOD([], HRESULT, 'SetPropertyValue',
+                    (['in'], LPCWSTR, 'pszDeviceName'),
+                    (['in'], DWORD, 'bFxStore'),
+                    (['in'], POINTER(GUID), 'pKey'),
+                    (['in'], POINTER(comtypes.c_void_p), 'pv')),
+                comtypes.COMMETHOD([], HRESULT, 'SetDefaultEndpoint',
+                    (['in'], LPCWSTR, 'pszDeviceName'),
+                    (['in'], DWORD, 'eRole')),
+                comtypes.COMMETHOD([], HRESULT, 'SetEndpointVisibility',
+                    (['in'], LPCWSTR, 'pszDeviceName'),
+                    (['in'], DWORD, 'bVisible')),
+            ]
+
+        # Find the device by name
+        devices = AudioUtilities.GetAllDevices()
+        target_device = None
 
         for device in devices:
-            device_info = {
-                "name": device.FriendlyName,
-                "id": device.id,
-                "state": str(device.state) if hasattr(device, 'state') else "unknown"
-            }
+            if device.FriendlyName and device.id:
+                # Only consider render devices (output)
+                # Device ID format: {0.0.0.xxxxxxxx}.{guid} for render, {0.0.1.xxxxxxxx}.{guid} for capture
+                if not device.id.startswith("{0.0.0."):
+                    continue
+                # Match by name (case-insensitive, partial match)
+                if device_name.lower() in device.FriendlyName.lower():
+                    target_device = device
+                    print(f"[AudioSwitch] Found matching device: {device.FriendlyName}", file=sys.stderr)
+                    break
 
-            # pycaw doesn't easily expose flow direction, so we check the ID pattern
-            if device.id and "Capture" in device.id:
-                capture_devices.append(device_info)
-            elif device.id and "Render" in device.id:
-                render_devices.append(device_info)
-            else:
-                # Default to render if unknown
-                render_devices.append(device_info)
+        if not target_device:
+            print(f"[AudioSwitch] Device not found: {device_name}", file=sys.stderr)
+            return {"success": False, "error": f"Audio device '{device_name}' not found"}
 
-        print(f"[AudioDevices] Found {len(capture_devices)} capture, {len(render_devices)} render", file=sys.stderr)
+        device_id = target_device.id
+        device_full_name = target_device.FriendlyName
 
-        return {
-            "success": True,
-            "capture": capture_devices,
-            "render": render_devices
-        }
+        print(f"[AudioSwitch] Device ID: {device_id}", file=sys.stderr)
 
-    except ImportError:
-        return {
-            "success": False,
-            "error": "pycaw not installed. Run: pip install pycaw"
-        }
+        # Create the PolicyConfig COM object
+        policyConfig = comtypes.CoCreateInstance(
+            CLSID_PolicyConfigClient,
+            IPolicyConfig,
+            CLSCTX_ALL
+        )
+
+        # Set as default for all roles:
+        # eConsole = 0 (games, system sounds)
+        # eMultimedia = 1 (music, video)
+        # eCommunications = 2 (calls)
+        for role in [0, 1, 2]:
+            hr = policyConfig.SetDefaultEndpoint(device_id, role)
+            print(f"[AudioSwitch] SetDefaultEndpoint role {role}: hr={hr}", file=sys.stderr)
+
+        print(f"[AudioSwitch] SUCCESS - Default device set to: {device_full_name}", file=sys.stderr)
+        return {"success": True, "device": device_full_name, "id": device_id}
+
+    except ImportError as ie:
+        print(f"[AudioSwitch] Missing dependency: {ie}", file=sys.stderr)
+        return {"success": False, "error": f"Missing dependency: {str(ie)}. Run: pip install pycaw comtypes"}
     except Exception as e:
+        import traceback
+        print(f"[AudioSwitch] ERROR: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
         return {"success": False, "error": str(e)}
 
 
@@ -1600,26 +1623,18 @@ if __name__ == "__main__":
         result = hls_cast_to_tv(device_name, hls_url, device_ip, device_model)
         print(json.dumps(result))
 
-    elif command == "audio-route-enable" and len(sys.argv) >= 4:
-        # Enable "Listen to this device" using Core Audio API
-        # Args: audio-route-enable <source_device> <target_device>
-        source_device = sys.argv[2]
-        target_device = sys.argv[3]
-        result = enable_audio_routing(source_device, target_device)
+    elif command == "get-audio-outputs":
+        # Get list of all audio output devices
+        result = get_audio_outputs()
         print(json.dumps(result))
 
-    elif command == "audio-route-disable" and len(sys.argv) >= 3:
-        # Disable "Listen to this device" using Core Audio API
-        # Args: audio-route-disable <source_device>
-        source_device = sys.argv[2]
-        result = disable_audio_routing(source_device)
-        print(json.dumps(result))
-
-    elif command == "list-audio-devices":
-        # List all audio devices (capture and render)
-        result = list_audio_devices()
+    elif command == "set-audio-output" and len(sys.argv) >= 3:
+        # Set default Windows audio output device using IPolicyConfig
+        # Args: set-audio-output <device_name>
+        device_name = sys.argv[2]
+        result = set_default_audio_output(device_name)
         print(json.dumps(result))
 
     else:
-        print(json.dumps({"success": False, "error": "Invalid command. Use: discover, ping, cast, webrtc-launch, set-volume, audio-route-enable, audio-route-disable, or stop"}))
+        print(json.dumps({"success": False, "error": "Invalid command. Use: discover, ping, cast, webrtc-launch, set-volume, get-audio-outputs, set-audio-output, or stop"}))
         sys.exit(1)

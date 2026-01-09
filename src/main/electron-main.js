@@ -2694,27 +2694,38 @@ ipcMain.handle('check-apo-status', async () => {
 });
 
 // ═══════════════════════════════════════════════════════════
-// QUICK AUDIO OUTPUT SWITCHER
+// QUICK AUDIO OUTPUT SWITCHER (via Python pycaw + IPolicyConfig)
 // ═══════════════════════════════════════════════════════════
 
-// Get list of all audio output devices
+// Get list of all audio output devices using Python pycaw
 ipcMain.handle('get-audio-outputs', async () => {
   try {
-    const devices = await audioDeviceManager.getAllAudioOutputDevices();
-    return { success: true, devices };
+    sendLog('Getting audio output devices via Python...', 'info');
+    const result = await runPython(['get-audio-outputs']);
+    if (result.success) {
+      return { success: true, devices: result.devices || [] };
+    } else {
+      sendLog(`Failed to list audio outputs: ${result.error}`, 'error');
+      return { success: false, error: result.error, devices: [] };
+    }
   } catch (error) {
     sendLog(`Failed to list audio outputs: ${error.message}`, 'error');
     return { success: false, error: error.message, devices: [] };
   }
 });
 
-// Switch to a specific audio output device
+// Switch to a specific audio output device using Python IPolicyConfig
 ipcMain.handle('switch-audio-output', async (event, deviceName) => {
   try {
-    sendLog(`Switching audio output to: ${deviceName}`, 'info');
-    await audioDeviceManager.setDefaultAudioDevice(deviceName);
-    sendLog(`Audio output switched to: ${deviceName}`, 'success');
-    return { success: true, device: deviceName };
+    sendLog(`Switching audio output to: ${deviceName} (via Python)`, 'info');
+    const result = await runPython(['set-audio-output', deviceName]);
+    if (result.success) {
+      sendLog(`Audio output switched to: ${result.device}`, 'success');
+      return { success: true, device: result.device };
+    } else {
+      sendLog(`Failed to switch audio: ${result.error}`, 'error');
+      return { success: false, error: result.error };
+    }
   } catch (error) {
     sendLog(`Failed to switch audio: ${error.message}`, 'error');
     return { success: false, error: error.message };
