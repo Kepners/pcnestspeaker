@@ -195,43 +195,87 @@ async function findRealSpeakers() {
 }
 
 /**
+ * Enable "Listen to this device" - routes audio from source to target device
+ *
+ * @param {string} sourceDevice - Device to listen FROM (e.g., "Virtual Desktop Audio")
+ * @param {string} targetDevice - Device to play TO (e.g., "ASUS VG32V")
+ */
+async function enableListenToDevice(sourceDevice, targetDevice) {
+  try {
+    // svcl /SetListenToThisDevice <device> <target> 1
+    // The "1" at the end enables listening
+    await runSvcl(`/SetListenToThisDevice "${sourceDevice}" "${targetDevice}" 1`);
+    console.log(`[AudioRouting] Enabled Listen: ${sourceDevice} → ${targetDevice}`);
+    return { success: true };
+  } catch (err) {
+    console.error(`[AudioRouting] Failed to enable Listen:`, err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Disable "Listen to this device"
+ *
+ * @param {string} sourceDevice - Device to stop listening from
+ */
+async function disableListenToDevice(sourceDevice) {
+  try {
+    // svcl /SetListenToThisDevice <device> "" 0
+    // The "0" disables listening
+    await runSvcl(`/SetListenToThisDevice "${sourceDevice}" "" 0`);
+    console.log(`[AudioRouting] Disabled Listen on: ${sourceDevice}`);
+    return { success: true };
+  } catch (err) {
+    console.error(`[AudioRouting] Failed to disable Listen:`, err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
  * Enable PC + Speakers mode
  *
- * Sets Windows default output to the user's PC speakers (e.g., ASUS VG32V)
- * so audio plays locally. virtual-audio-capturer will capture this audio
- * for Cast streaming. APO applies delay to sync with Cast latency.
+ * CORRECT ARCHITECTURE:
+ * 1. Keep Windows default on Virtual Desktop Audio (so FFmpeg captures PRE-APO)
+ * 2. Enable "Listen to this device" on Virtual Desktop Audio → PC speakers
+ * 3. APO delay is applied ONLY on PC speakers pipeline
+ * 4. Cast gets PRE-APO audio, PC speakers get POST-APO audio
  *
- * @param {string} targetDevice - Optional specific device name to use
+ * @param {string} targetDevice - Optional specific PC speaker device name
  */
 async function enablePCSpeakersMode(targetDevice = null) {
   console.log('[AudioRouting] enablePCSpeakersMode called');
 
   try {
-    // Save current default device so we can restore it later
-    originalDefaultDevice = await getCurrentDefaultDevice();
-    console.log(`[AudioRouting] Saved original device: ${originalDefaultDevice}`);
+    // Step 1: Find virtual device (keep this as Windows default)
+    const virtualDevice = await findVirtualDevice();
+    if (!virtualDevice) {
+      return { success: false, error: 'No virtual audio device found. Install Virtual Desktop Audio.' };
+    }
 
-    // Find target device (PC speakers)
+    // Step 2: Find PC speakers (target for Listen)
     const pcSpeakers = targetDevice || await findRealSpeakers();
-
     if (!pcSpeakers) {
       return { success: false, error: 'No PC speakers found. Please check your audio devices.' };
     }
 
-    // If already set to this device, nothing to do
-    if (originalDefaultDevice === pcSpeakers) {
-      console.log(`[AudioRouting] Already using ${pcSpeakers} as default`);
-      return { success: true, device: pcSpeakers };
+    // Step 3: Ensure Windows default is on virtual device (for PRE-APO capture)
+    const currentDefault = await getCurrentDefaultDevice();
+    if (currentDefault !== virtualDevice) {
+      console.log(`[AudioRouting] Switching default to virtual device: ${virtualDevice}`);
+      await setDefaultDevice(virtualDevice);
     }
 
-    // Switch Windows default to PC speakers
-    const result = await setDefaultDevice(pcSpeakers);
-    if (!result.success) {
-      return result;
+    // Step 4: Enable "Listen to this device" - route virtual audio to PC speakers
+    // This creates a SEPARATE pipeline where APO delay is applied
+    const listenResult = await enableListenToDevice(virtualDevice, pcSpeakers);
+    if (!listenResult.success) {
+      return listenResult;
     }
 
-    console.log(`[AudioRouting] PC + Speakers mode enabled! Output: ${pcSpeakers}`);
-    return { success: true, device: pcSpeakers };
+    console.log(`[AudioRouting] PC + Speakers mode enabled!`);
+    console.log(`[AudioRouting]   Default: ${virtualDevice} (PRE-APO, captured by FFmpeg)`);
+    console.log(`[AudioRouting]   Listen → ${pcSpeakers} (POST-APO, delayed for sync)`);
+    return { success: true, virtualDevice, pcSpeakers };
   } catch (err) {
     console.error('[AudioRouting] Failed to enable PC + Speakers mode:', err.message);
     return { success: false, error: err.message };
@@ -270,35 +314,32 @@ async function findVirtualDevice() {
 /**
  * Disable PC + Speakers mode (switch to "Speakers Only")
  *
- * Switches Windows default to a virtual audio device so audio
- * ONLY goes to Cast speakers (not PC speakers).
+ * 1. Disable "Listen to this device" so PC speakers stop playing
+ * 2. Keep Windows default on virtual device (FFmpeg keeps capturing)
+ * 3. Only Cast gets audio now
  */
 async function disablePCSpeakersMode() {
   console.log('[AudioRouting] disablePCSpeakersMode called (Speakers Only mode)');
 
   try {
-    // Find a virtual audio device to switch to
+    // Find virtual device
     const virtualDevice = await findVirtualDevice();
 
     if (virtualDevice) {
-      console.log(`[AudioRouting] Switching to virtual device: ${virtualDevice}`);
-      const result = await setDefaultDevice(virtualDevice);
-      if (result.success) {
-        console.log(`[AudioRouting] Speakers Only mode: audio goes to ${virtualDevice}`);
-        return { success: true, device: virtualDevice };
+      // Disable Listen - PC speakers stop playing
+      await disableListenToDevice(virtualDevice);
+
+      // Ensure default is still virtual device
+      const currentDefault = await getCurrentDefaultDevice();
+      if (currentDefault !== virtualDevice) {
+        await setDefaultDevice(virtualDevice);
       }
-      return result;
+
+      console.log(`[AudioRouting] Speakers Only mode: ${virtualDevice} → Cast only (no PC speakers)`);
+      return { success: true, device: virtualDevice };
     }
 
-    // Fallback: try to restore original if we have it
-    if (originalDefaultDevice) {
-      console.log(`[AudioRouting] No virtual device, restoring: ${originalDefaultDevice}`);
-      const result = await setDefaultDevice(originalDefaultDevice);
-      originalDefaultDevice = null;
-      return result;
-    }
-
-    console.log('[AudioRouting] No virtual device found and no original to restore');
+    console.log('[AudioRouting] No virtual device found');
     return { success: false, error: 'No virtual audio device found. Install Virtual Desktop Audio or VB-Cable.' };
   } catch (err) {
     console.error('[AudioRouting] Failed to switch to Speakers Only mode:', err.message);
@@ -313,6 +354,9 @@ module.exports = {
   getCurrentDefaultDevice,
   setDefaultDevice,
   findRealSpeakers,
+  findVirtualDevice,
+  enableListenToDevice,
+  disableListenToDevice,
   enablePCSpeakersMode,
   disablePCSpeakersMode
 };

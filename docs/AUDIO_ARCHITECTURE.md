@@ -1,180 +1,185 @@
 # PC Nest Speaker - Audio Architecture
 
-## The Problem: PC + Speakers Mode
+## The Two Pipelines
 
 For PC + Speakers mode to work correctly, we need **TWO SEPARATE audio paths**:
 
-1. **PC Speakers**: Delayed to sync with Nest (using APO)
-2. **Nest Speakers**: NOT delayed (just network latency)
+1. **Cast Pipeline**: PRE-APO audio → FFmpeg → MediaMTX → WebRTC → Nest speakers
+2. **HDMI Pipeline**: PRE-APO audio → "Listen to this device" → HDMI speakers → APO delay
 
-## Current Architecture (BROKEN)
+## FIXED Architecture (Implemented January 9, 2026)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                        CURRENT FLOW (BROKEN!)                                │
+│                        PC + SPEAKERS MODE (FIXED!)                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │   App plays audio                                                            │
 │        │                                                                     │
 │        ▼                                                                     │
+│   ┌─────────────────────────────────────────┐                               │
+│   │  Windows Default: Virtual Desktop Audio │  ◀── NO APO on this device   │
+│   │  (The capture source - PRE-APO)         │                               │
+│   └────────────────────┬────────────────────┘                               │
+│                        │                                                     │
+│           ┌────────────┴────────────┐                                       │
+│           │                         │                                        │
+│           ▼                         ▼                                        │
+│   ┌───────────────────┐   ┌───────────────────────────────────┐             │
+│   │ CAST PIPELINE     │   │ HDMI PIPELINE                     │             │
+│   │                   │   │ ("Listen to this device")         │             │
+│   │ virtual-audio-    │   │                                   │             │
+│   │ capturer captures │   │ Virtual Desktop Audio             │             │
+│   │ PRE-APO audio     │   │       │                           │             │
+│   │       │           │   │       ▼                           │             │
+│   │       ▼           │   │ Windows routes via                │             │
+│   │   FFmpeg          │   │ "Listen to this device"           │             │
+│   │   (Opus encode)   │   │       │                           │             │
+│   │       │           │   │       ▼                           │             │
+│   │       ▼           │   │ ASUS VG32V (HDMI speakers)        │             │
+│   │   MediaMTX        │   │       │                           │             │
+│   │   (WebRTC)        │   │       ▼                           │             │
+│   │       │           │   │   APO Delay (e.g., 700ms)         │             │
+│   │       ▼           │   │   Applied ONLY here!              │             │
+│   └───────────────────┘   └───────────────────────────────────┘             │
+│           │                         │                                        │
+│           ▼                         ▼                                        │
+│   ┌───────────────────┐   ┌───────────────────┐                             │
+│   │  Nest Speakers    │   │  HDMI Speakers    │                             │
+│   │  (PRE-APO audio)  │   │  (POST-APO audio) │                             │
+│   │  + network latency│   │  Delayed to sync  │                             │
+│   └───────────────────┘   └───────────────────┘                             │
+│                                                                              │
+│   RESULT: Adjust APO delay to sync HDMI with Nest latency!                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## How It Works
+
+### Cast Pipeline (Nest Speakers)
+1. Windows default device = **Virtual Desktop Audio** (NO APO installed)
+2. virtual-audio-capturer captures from default device = **PRE-APO audio**
+3. FFmpeg encodes to Opus → MediaMTX → WebRTC → Nest speakers
+4. Nest hears audio with only network latency (~0.5-1s)
+
+### HDMI Pipeline (PC Speakers)
+1. Windows default device = **Virtual Desktop Audio** (same source)
+2. "Listen to this device" enabled on Virtual Desktop Audio
+3. Listen target = **HDMI speakers** (e.g., ASUS VG32V)
+4. APO is installed on HDMI speakers → applies delay (e.g., 700ms)
+5. HDMI speakers hear audio delayed to sync with Nest
+
+### Key Insight
+**APO delay is ONLY on the HDMI speakers endpoint, NOT on the capture source!**
+
+- Cast gets: PRE-APO audio (no delay)
+- HDMI gets: POST-APO audio (delayed)
+- User adjusts APO delay to match Nest latency = PERFECT SYNC
+
+## Speakers Only Mode
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        SPEAKERS ONLY MODE                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   App plays audio                                                            │
+│        │                                                                     │
+│        ▼                                                                     │
+│   ┌─────────────────────────────────────────┐                               │
+│   │  Windows Default: Virtual Desktop Audio │                               │
+│   │  (Listen to this device = DISABLED)     │                               │
+│   └────────────────────┬────────────────────┘                               │
+│                        │                                                     │
+│                        ▼                                                     │
+│   ┌───────────────────────────────────────────┐                             │
+│   │ CAST PIPELINE ONLY                        │                             │
+│   │                                           │                             │
+│   │ virtual-audio-capturer → FFmpeg → MediaMTX│                             │
+│   │                                           │                             │
+│   └───────────────────┬───────────────────────┘                             │
+│                       │                                                      │
+│                       ▼                                                      │
+│   ┌───────────────────────────────────────────┐                             │
+│   │  Nest Speakers ONLY                       │                             │
+│   │  (No HDMI audio - Listen disabled)        │                             │
+│   └───────────────────────────────────────────┘                             │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## OLD Broken Architecture (DO NOT USE)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        OLD BROKEN FLOW                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   Windows Default = HDMI Speakers (WITH APO!)                               │
+│        │                                                                     │
+│        ▼                                                                     │
 │   ┌─────────────────┐                                                       │
-│   │  Windows Mixer  │                                                       │
-│   └────────┬────────┘                                                       │
-│            │                                                                 │
-│            ▼                                                                 │
-│   ┌─────────────────┐     ┌─────────────────────────────┐                   │
-│   │    APO Delay    │────▶│   ASUS VG32V (PC Speakers)  │ = DELAYED         │
-│   │   (700ms)       │     └─────────────────────────────┘                   │
+│   │    APO Delay    │  ◀── APO applied BEFORE capture!                      │
+│   │   (700ms)       │                                                       │
 │   └────────┬────────┘                                                       │
 │            │                                                                 │
 │            │ (WASAPI Loopback captures POST-APO!)                           │
 │            ▼                                                                 │
 │   ┌─────────────────────┐                                                   │
 │   │ virtual-audio-      │                                                   │
-│   │ capturer            │                                                   │
+│   │ capturer            │ ◀── Captures DELAYED audio!                       │
 │   └─────────┬───────────┘                                                   │
 │             │                                                                │
-│             ▼                                                                │
-│   ┌─────────────────┐     ┌─────────────────────────────┐                   │
-│   │     FFmpeg      │────▶│   Nest Speakers (Cast)      │ = DELAYED + LATENCY│
-│   └─────────────────┘     └─────────────────────────────┘                   │
+│   BOTH PIPELINES GET DELAYED AUDIO = CANNOT SYNC!                           │
 │                                                                              │
-│   RESULT: Both outputs are delayed! No way to sync them!                    │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Why This Doesn't Work
+## Why The Old Architecture Was Broken
 
-1. **APO (Equalizer APO)** applies delay at the audio endpoint level
-2. **virtual-audio-capturer** uses WASAPI loopback which captures POST-APO audio
-3. Both PC speakers AND Nest speakers receive the APO-delayed audio
-4. Changing the delay affects BOTH outputs equally - can't sync them!
+1. Windows default was set to HDMI speakers (which had APO installed)
+2. APO applied delay at the endpoint level
+3. virtual-audio-capturer uses WASAPI loopback = captures POST-APO audio
+4. **Both Cast AND HDMI got the same delayed audio**
+5. Changing APO delay affected BOTH outputs equally - impossible to sync!
 
-## Required Architecture (CORRECT)
+## Implementation Details
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        CORRECT FLOW (NEEDED)                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│   App plays audio                                                            │
-│        │                                                                     │
-│        ▼                                                                     │
-│   ┌─────────────────┐                                                       │
-│   │  Windows Mixer  │                                                       │
-│   └────────┬────────┘                                                       │
-│            │                                                                 │
-│            ├────────────────────────────────────────┐                       │
-│            │                                        │                       │
-│            ▼                                        ▼                       │
-│   ┌─────────────────┐                    ┌─────────────────────┐            │
-│   │ Virtual Device  │                    │   APO Delay (700ms) │            │
-│   │ (No APO)        │                    │                     │            │
-│   └────────┬────────┘                    └─────────┬───────────┘            │
-│            │                                       │                        │
-│            ▼                                       ▼                        │
-│   ┌─────────────────┐                    ┌─────────────────────┐            │
-│   │ virtual-audio-  │                    │ ASUS VG32V          │            │
-│   │ capturer        │                    │ (PC Speakers)       │            │
-│   └────────┬────────┘                    └─────────────────────┘            │
-│            │                                       │                        │
-│            ▼                                       │                        │
-│   ┌─────────────────┐                              │                        │
-│   │     FFmpeg      │                              │                        │
-│   └────────┬────────┘                              │                        │
-│            │                                       │                        │
-│            ▼                                       │                        │
-│   ┌─────────────────────┐              ┌───────────┴───────────┐            │
-│   │ Nest Speakers       │              │ PC Speakers           │            │
-│   │ (no APO delay)      │              │ (APO delayed)         │            │
-│   │ + network latency   │              │                       │            │
-│   └─────────────────────┘              └───────────────────────┘            │
-│                                                                              │
-│   RESULT: Can adjust APO delay to sync PC with Nest!                        │
-└─────────────────────────────────────────────────────────────────────────────┘
+### File Responsibilities
+
+| File | Purpose |
+|------|---------|
+| `audio-routing.js` | Windows audio device switching, "Listen to this device" control |
+| `audio-sync-manager.js` | APO delay configuration |
+| `audio-streamer.js` | FFmpeg capture and streaming |
+
+### Key Functions in audio-routing.js
+
+```javascript
+// PC + Speakers mode - TWO PIPELINES
+enablePCSpeakersMode()
+  1. Keep Windows default on Virtual Desktop Audio (PRE-APO capture)
+  2. Enable "Listen to this device" → HDMI speakers (POST-APO output)
+
+// Speakers Only mode - ONE PIPELINE
+disablePCSpeakersMode()
+  1. Disable "Listen to this device" (HDMI goes silent)
+  2. Keep Windows default on Virtual Desktop Audio (Cast only)
+
+// Low-level functions
+enableListenToDevice(source, target)  // svcl /SetListenToThisDevice
+disableListenToDevice(source)         // svcl /SetListenToThisDevice off
 ```
 
-## Solution Options
+### Requirements
 
-### Option 1: Voicemeeter (Complex but Powerful)
+1. **Virtual Desktop Audio** - Must be installed as Windows audio device
+2. **Equalizer APO** - Must be installed on HDMI speakers (NOT on virtual device)
+3. **svcl.exe** - NirSoft SoundVolumeCommandLine bundled with app
 
-```
-App → Voicemeeter → Split to:
-  ├── Virtual Output (captured by FFmpeg → Cast, no delay)
-  └── Hardware Out A1 (ASUS VG32V with APO delay)
-```
+### The Golden Rule
 
-- Pros: Full control, professional solution
-- Cons: User needs to install Voicemeeter, complex setup
+**APO delay must ONLY be on the HDMI speakers endpoint, NEVER on the capture source!**
 
-### Option 2: VB-CABLE + Windows Audio Router
-
-```
-App → VB-CABLE (default device) → Split using Windows "Listen" feature:
-  ├── Captured by FFmpeg → Cast (no delay)
-  └── Monitored to ASUS VG32V (with APO delay)
-```
-
-- Pros: Free tools
-- Cons: "Listen" feature adds latency, may not work with APO
-
-### Option 3: Application-Specific Audio Routing (Best UX)
-
-```
-Our App → Detects playing audio source
-       → FFmpeg captures from SOURCE app directly (not system audio)
-       → Separately routes to PC speakers with delay
-```
-
-- Pros: Best user experience, no extra software needed
-- Cons: Complex implementation, needs per-app audio capture
-
-### Option 4: Custom Virtual Audio Driver
-
-Build our own virtual audio driver that:
-1. Receives all system audio
-2. Outputs to Cast (no delay)
-3. Mirrors to selected device with APO delay
-
-- Pros: Perfect control
-- Cons: Major development effort, driver signing issues
-
-## Recommended Implementation
-
-**For v1.0, use Option 2 with clear setup wizard:**
-
-1. Install VB-CABLE as the virtual audio device
-2. Set Windows default to VB-CABLE
-3. Configure VB-CABLE to "Listen" to ASUS VG32V
-4. APO delay only affects ASUS VG32V
-5. FFmpeg captures from VB-CABLE (pre-delay)
-
-**Setup Wizard Steps:**
-1. Detect if VB-CABLE installed → Download/install if not
-2. Detect user's real speakers (HDMI/Monitor)
-3. Check if APO installed on real speakers
-4. Configure Windows audio routing
-5. Test with ping to verify sync capability
-
-## File Responsibilities
-
-- `audio-routing.js` - Windows audio device switching
-- `audio-sync-manager.js` - APO delay configuration
-- `audio-device-manager.js` - Device detection and NirCmd control
-- `audio-streamer.js` - FFmpeg capture and streaming
-
-## Key Insight
-
-**virtual-audio-capturer MUST capture PRE-APO audio** for sync calibration to work!
-
-The current architecture where:
-- Default device = Real speakers (ASUS VG32V)
-- APO delay on real speakers
-- Capture from real speakers
-
-Will NOT work because capture happens POST-APO.
-
-We need:
-- Default device = Virtual device (no APO)
-- Capture from virtual device (no delay)
-- Mirror/route to real speakers (with APO delay)
+- Virtual Desktop Audio = NO APO = PRE-APO capture
+- HDMI Speakers = APO installed = POST-APO playback
