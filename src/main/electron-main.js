@@ -2233,15 +2233,94 @@ ipcMain.handle('update-settings', (event, updates) => {
   return { success: true };
 });
 
-// Cast Mode handler - DEPRECATED: Volume muting removed because virtual-audio-capturer
-// captures AFTER Windows volume is applied. Device switching already handles PC silence.
-// Keeping handler for backwards compatibility but it's now a no-op.
+// Cast Mode handler - Switches Windows audio device when toggling while streaming
+// "Speakers Only" = Virtual Desktop Audio (no local sound, audio only to Cast)
+// "PC + Speakers" = User's real speakers (local sound + Cast via loopback)
 ipcMain.handle('set-cast-mode', async (event, mode) => {
-  console.log(`[Main] Cast mode set to: ${mode} (no volume change - handled by device switch)`);
-  // No volume muting needed - the device switch in start-streaming handles PC silence
-  // "Speakers Only" = default behavior (virtual-audio-capturer has no physical output)
-  // "PC + Speakers" = future feature (would need loopback from real speakers + sync delay)
-  return { success: true, mode };
+  console.log(`[Main] Cast mode changing to: ${mode}`);
+
+  // Only switch devices if we're actively streaming
+  const isStreaming = ffmpegWebrtcProcess || (stereoFFmpegProcesses && stereoFFmpegProcesses.left);
+
+  if (!isStreaming) {
+    console.log(`[Main] Not streaming - mode saved, device switch will happen on stream start`);
+    return { success: true, mode, switched: false };
+  }
+
+  try {
+    if (mode === 'speakers') {
+      // "Speakers Only" - Switch to Virtual Desktop Audio (no local sound)
+      console.log(`[Main] Switching to virtual audio device for Speakers Only mode...`);
+      const switchResult = await audioDeviceManager.switchToStreamingDevice();
+      if (switchResult.skipped) {
+        sendLog(`Already on virtual device - no change needed`, 'success');
+      } else {
+        sendLog(`Switched to virtual audio - PC speakers now silent`, 'success');
+      }
+      return { success: true, mode, switched: !switchResult.skipped };
+
+    } else if (mode === 'all') {
+      // "PC + Speakers" - Restore user's real speakers (local sound + Cast)
+      console.log(`[Main] Restoring original audio device for PC + Speakers mode...`);
+      const restoreResult = await audioDeviceManager.restoreOriginalDevice();
+      if (restoreResult.success) {
+        sendLog(`Restored to original speakers - you should hear audio locally now`, 'success');
+        return { success: true, mode, switched: true };
+      } else {
+        // No original device saved (user was already on virtual device)
+        // Need to detect and switch to a real device
+        sendLog(`No original device saved - detecting real audio devices...`, 'info');
+
+        // Try to get current device and find a real one
+        try {
+          const currentDevice = await audioDeviceManager.getCurrentAudioDevice();
+          console.log(`[Main] Current device: ${currentDevice}`);
+
+          // If already on a real device (not virtual), we're good
+          const virtualPatterns = ['virtual desktop audio', 'virtual-audio-capturer', 'cable input', 'vb-audio'];
+          const isVirtual = virtualPatterns.some(p => currentDevice.toLowerCase().includes(p));
+
+          if (!isVirtual) {
+            sendLog(`Already on real device: ${currentDevice}`, 'success');
+            return { success: true, mode, switched: false };
+          }
+
+          // Try common real device names
+          const realDeviceNames = [
+            'Speakers',           // Generic speakers
+            'Headphones',         // Headphones
+            'HDMI',               // HDMI output
+            'Realtek',            // Realtek audio
+            'High Definition Audio' // HD Audio
+          ];
+
+          for (const deviceName of realDeviceNames) {
+            try {
+              console.log(`[Main] Trying device: ${deviceName}`);
+              await audioDeviceManager.setDefaultAudioDevice(deviceName);
+              sendLog(`Switched to: ${deviceName}`, 'success');
+              return { success: true, mode, switched: true, device: deviceName };
+            } catch (e) {
+              continue;
+            }
+          }
+
+          sendLog(`Could not find real audio device - check Windows Sound settings`, 'warning');
+          return { success: false, mode, error: 'No real audio device found' };
+
+        } catch (detectErr) {
+          sendLog(`Device detection failed: ${detectErr.message}`, 'error');
+          return { success: false, mode, error: detectErr.message };
+        }
+      }
+    }
+
+    return { success: true, mode };
+  } catch (error) {
+    console.error(`[Main] Cast mode switch error:`, error);
+    sendLog(`Mode switch failed: ${error.message}`, 'error');
+    return { success: false, mode, error: error.message };
+  }
 });
 
 ipcMain.handle('save-last-speaker', (event, speaker) => {

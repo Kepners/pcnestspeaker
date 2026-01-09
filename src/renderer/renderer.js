@@ -399,10 +399,9 @@ function setupEventListeners() {
 }
 
 // Set cast mode and update UI
-// NOTE: "Speakers Only" is the DEFAULT when streaming - virtual-audio-capturer has no physical output
-// The device switch in start-streaming already handles making PC speakers silent
-// We do NOT mute Windows volume because virtual-audio-capturer captures AFTER volume is applied
-function setCastMode(mode) {
+// "Speakers Only" = Virtual Desktop Audio (no local sound, audio only to Cast)
+// "PC + Speakers" = User's real speakers (local sound + Cast via loopback)
+async function setCastMode(mode) {
   castMode = mode;
   const modeLabel = mode === 'speakers' ? 'Speakers Only' : 'PC + Speakers';
   log(`Cast mode: ${modeLabel}`);
@@ -427,8 +426,18 @@ function setCastMode(mode) {
     syncDelayRow.style.display = mode === 'all' ? 'flex' : 'none';
   }
 
-  // Save setting (no volume muting needed - device switch handles it)
+  // Save setting AND switch audio device if streaming
   window.api.updateSettings({ castMode: mode });
+
+  // Call IPC handler to switch Windows audio device while streaming
+  try {
+    const result = await window.api.setCastMode(mode);
+    if (result.switched) {
+      log(`Audio device switched for ${modeLabel} mode`, 'success');
+    }
+  } catch (err) {
+    log(`Mode switch error: ${err.message}`, 'error');
+  }
 }
 
 // Check all dependencies
