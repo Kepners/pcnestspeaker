@@ -81,6 +81,28 @@
           "mediamtx.exe",
           "mediamtx-audio.yml"
         ]
+      },
+      {
+        "from": "audioctl/",
+        "to": "audioctl",
+        "filter": [
+          "audioctl.exe"
+        ]
+      },
+      {
+        "from": "svcl/",
+        "to": "svcl",
+        "filter": [
+          "svcl.exe"
+        ]
+      },
+      {
+        "from": "nircmd/",
+        "to": "nircmd",
+        "filter": [
+          "nircmd.exe",
+          "nircmdc.exe"
+        ]
       }
     ],
     "files": [
