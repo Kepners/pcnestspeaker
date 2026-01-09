@@ -1430,33 +1430,56 @@ body::before {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   SPEAKERS TAB TWO-COLUMN LAYOUT
+   ═══════════════════════════════════════════════════════════ */
+
+.speakers-layout {
+  display: flex;
+  gap: 16px;
+}
+
+.speakers-column {
+  flex: 1;
+  min-width: 0;
+}
+
+.audio-output-column {
+  width: 140px;
+  flex-shrink: 0;
+}
+
+.audio-output-column .section-label {
+  font-size: 0.6rem;
+  margin-bottom: 8px;
+}
+
+/* ═══════════════════════════════════════════════════════════
    QUICK AUDIO OUTPUT SWITCHER
    ═══════════════════════════════════════════════════════════ */
 
 .audio-output-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 10px;
-  max-height: 200px;
+  gap: 4px;
+  max-height: 280px;
   overflow-y: auto;
 }
 
 .audio-output-loading {
   color: rgba(26, 26, 26, 0.5);
-  font-size: 0.8rem;
-  padding: 12px;
+  font-size: 0.7rem;
+  padding: 8px;
   text-align: center;
 }
 
 .audio-output-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 6px;
+  padding: 8px 10px;
   background: rgba(26, 26, 26, 0.03);
   border: 1px solid rgba(26, 26, 26, 0.1);
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -1467,9 +1490,9 @@ body::before {
 }
 
 .audio-output-item.active {
-  background: rgba(41, 191, 18, 0.1);
+  background: rgba(41, 191, 18, 0.12);
   border-color: var(--green);
-  box-shadow: 0 0 10px rgba(41, 191, 18, 0.2);
+  box-shadow: 0 0 8px rgba(41, 191, 18, 0.25);
 }
 
 .audio-output-item.switching {
@@ -1478,31 +1501,28 @@ body::before {
 }
 
 .audio-output-icon {
-  font-size: 1.2rem;
-  width: 24px;
+  font-size: 1rem;
+  width: 20px;
   text-align: center;
+  flex-shrink: 0;
 }
 
 .audio-output-name {
   flex: 1;
-  font-size: 0.85rem;
+  font-size: 0.7rem;
   font-weight: 500;
-  white-space: nowrap;
+  line-height: 1.2;
   overflow: hidden;
-  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .audio-output-status {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  border-radius: 4px;
-  background: var(--green);
-  color: white;
+  display: none;
 }
 
-.audio-output-item:not(.active) .audio-output-status {
-  display: none;
+.audio-output-item.active .audio-output-icon {
+  color: var(--green);
 }
 
