@@ -2607,6 +2607,26 @@ ipcMain.handle('install-equalizer-apo', async () => {
   }
 });
 
+// Get list of devices that have APO installed
+ipcMain.handle('get-apo-devices', () => {
+  const devices = audioSyncManager.getAPOInstalledDevices();
+  sendLog(`APO installed on ${devices.length} device(s): ${devices.join(', ') || 'none'}`, 'info');
+  return { devices };
+});
+
+// Launch APO Configurator
+ipcMain.handle('launch-apo-configurator', async () => {
+  try {
+    const launched = await audioSyncManager.launchAPOConfigurator();
+    if (launched) {
+      sendLog('Launched APO Configurator - add your PC speakers and restart Windows', 'info');
+    }
+    return { success: launched };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // ═══════════════════════════════════════════════════════════
 // LICENSE KEY VALIDATION
 // ═══════════════════════════════════════════════════════════

@@ -283,6 +283,55 @@ function isAvailable() {
 }
 
 /**
+ * Get list of devices that have APO installed (from backup .reg files)
+ */
+function getAPOInstalledDevices() {
+  const apoFolder = 'C:\\Program Files\\EqualizerAPO';
+  const devices = [];
+
+  try {
+    const files = fs.readdirSync(apoFolder);
+    for (const file of files) {
+      if (file.startsWith('backup_') && file.endsWith('.reg')) {
+        // Extract device name from filename like: backup_DeviceName_Output.reg
+        const match = file.match(/^backup_(.+)\.reg$/);
+        if (match) {
+          devices.push(match[1].replace(/_/g, ' '));
+        }
+      }
+    }
+  } catch (err) {
+    console.log('[AudioSync] Could not read APO folder:', err.message);
+  }
+
+  return devices;
+}
+
+/**
+ * Launch APO Configurator so user can add their audio device
+ */
+function launchAPOConfigurator() {
+  return new Promise((resolve) => {
+    const configuratorPath = 'C:\\Program Files\\EqualizerAPO\\Configurator.exe';
+
+    if (fs.existsSync(configuratorPath)) {
+      exec(`"${configuratorPath}"`, { windowsHide: false }, (error) => {
+        if (error) {
+          console.log('[AudioSync] Could not launch Configurator:', error.message);
+          resolve(false);
+        } else {
+          console.log('[AudioSync] Launched APO Configurator');
+          resolve(true);
+        }
+      });
+    } else {
+      console.log('[AudioSync] APO Configurator not found');
+      resolve(false);
+    }
+  });
+}
+
+/**
  * Download and prompt user to install Equalizer APO
  */
 function promptInstallEqualizerAPO() {
@@ -318,6 +367,8 @@ module.exports = {
   getMethod,
   isAvailable,
   isEqualizerAPOInstalled,
+  getAPOInstalledDevices,
+  launchAPOConfigurator,
   promptInstallEqualizerAPO,
   cleanup
 };

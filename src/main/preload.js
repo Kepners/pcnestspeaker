@@ -68,6 +68,8 @@ contextBridge.exposeInMainWorld('api', {
   getSyncDelay: () => ipcRenderer.invoke('get-sync-delay'),
   checkEqualizerApo: () => ipcRenderer.invoke('check-equalizer-apo'),
   installEqualizerApo: () => ipcRenderer.invoke('install-equalizer-apo'),
+  getApoDevices: () => ipcRenderer.invoke('get-apo-devices'),
+  launchApoConfigurator: () => ipcRenderer.invoke('launch-apo-configurator'),
 
   // First-Run Setup
   getFirstRunStatus: () => ipcRenderer.invoke('get-first-run-status'),

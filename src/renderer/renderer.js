@@ -24,6 +24,9 @@ const castSpeakersBtn = document.getElementById('cast-speakers-btn');
 const castAllBtn = document.getElementById('cast-all-btn');
 const castModeHint = document.getElementById('cast-mode-hint');
 const syncDelayRow = document.getElementById('sync-delay-row');
+const apoStatus = document.getElementById('apo-status');
+const apoDevicesText = document.getElementById('apo-devices-text');
+const launchApoBtn = document.getElementById('launch-apo-btn');
 
 // Sync delay elements
 const syncDelaySlider = document.getElementById('sync-delay-slider');
@@ -603,6 +606,12 @@ async function setCastMode(mode) {
     if (mode === 'all') {
       syncDelayRow.style.display = 'flex';
 
+      // Show APO status section and load devices
+      if (apoStatus) {
+        apoStatus.style.display = 'block';
+        loadApoDevices();
+      }
+
       // If Equalizer APO not installed, show prompt on first enable
       if (!equalizerApoInstalled) {
         // Disable slider and show install hint
@@ -619,6 +628,10 @@ async function setCastMode(mode) {
       }
     } else {
       syncDelayRow.style.display = 'none';
+      // Hide APO status section when not in PC + Speakers mode
+      if (apoStatus) {
+        apoStatus.style.display = 'none';
+      }
     }
   }
 
@@ -1961,6 +1974,59 @@ function updateSyncDelayUI() {
       syncDelaySlider.disabled = false;
     }
   }
+}
+
+/**
+ * Load and display APO installed devices
+ */
+async function loadApoDevices() {
+  if (!apoDevicesText) return;
+
+  try {
+    const result = await window.api.getApoDevices();
+    const devices = result.devices || [];
+
+    if (devices.length === 0) {
+      apoDevicesText.textContent = 'APO installed on: No devices (click Configure to add your speakers)';
+      apoDevicesText.classList.add('warning');
+    } else {
+      // Shorten device names for display
+      const shortNames = devices.map(d => {
+        // Remove common prefixes/suffixes
+        return d.replace(/ Speakers?$/i, '')
+                .replace(/^Speakers? \(/, '(')
+                .replace(/ High Definition Audio$/i, '');
+      });
+      apoDevicesText.textContent = `APO installed on: ${shortNames.join(', ')}`;
+      apoDevicesText.classList.remove('warning');
+    }
+  } catch (error) {
+    apoDevicesText.textContent = 'APO installed on: Error loading devices';
+    apoDevicesText.classList.add('warning');
+    log(`Failed to load APO devices: ${error.message}`, 'error');
+  }
+}
+
+/**
+ * Handle Configure APO button click
+ */
+async function handleConfigureApoClick() {
+  log('Opening APO Configurator...');
+  try {
+    const result = await window.api.launchApoConfigurator();
+    if (result.success) {
+      log('APO Configurator opened. Select your PC speakers, then restart Windows.', 'info');
+    } else {
+      log('Could not launch APO Configurator', 'error');
+    }
+  } catch (error) {
+    log(`APO Configurator error: ${error.message}`, 'error');
+  }
+}
+
+// Add event listener for Configure APO button
+if (launchApoBtn) {
+  launchApoBtn.addEventListener('click', handleConfigureApoClick);
 }
 
 /**

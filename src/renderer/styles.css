@@ -748,6 +748,25 @@ body::before {
   color: var(--cyan);
 }
 
+/* APO Status Section */
+.apo-status {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  border-left: 3px solid var(--color-beige);
+}
+
+.apo-devices {
+  margin: 0 0 8px 0;
+  font-size: 0.75rem;
+  color: var(--color-grey);
+}
+
+.apo-devices.warning {
+  color: #ff9800;
+}
+
 /* ==================== BUTTONS ==================== */
 .btn {
   display: inline-flex;
