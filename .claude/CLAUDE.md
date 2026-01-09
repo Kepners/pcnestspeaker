@@ -235,6 +235,47 @@ for device in devices:
             target_id = device.id  # e.g. "{0.0.0.00000000}.{guid}"
 ```
 
+### 🚨 CRITICAL: AudioDeviceState (January 9, 2026)
+
+**Windows shows MULTIPLE devices with the SAME NAME but different states!**
+
+Example: User's PC shows 5 "ASUS VG32V" devices, but only ONE is actually connected:
+```
+ASUS VG32V (NVIDIA High Definition Audio) - State: NotPresent   ← WRONG
+ASUS VG32V (AMD High Definition Audio)    - State: NotPresent   ← WRONG
+ASUS VG32V (NVIDIA High Definition Audio) - State: Active       ← CORRECT!
+ASUS VG32V (NVIDIA High Definition Audio) - State: NotPresent   ← WRONG
+ASUS VG32V (NVIDIA High Definition Audio) - State: NotPresent   ← WRONG
+```
+
+**The Bug:** IPolicyConfig.SetDefaultEndpoint() returns SUCCESS (HRESULT=0) even when targeting
+a NotPresent device, but **silently ignores the switch**. The audio stays on the previous device.
+
+**The Fix:** Always check `device.state` and only use ACTIVE devices:
+```python
+from pycaw.pycaw import AudioUtilities
+
+devices = AudioUtilities.GetAllDevices()
+for device in devices:
+    if not device.id or not device.id.startswith("{0.0.0."):
+        continue
+
+    # CRITICAL: Only match ACTIVE devices!
+    state_str = str(device.state) if device.state else ""
+    if "Active" not in state_str:
+        continue  # Skip NotPresent, Disabled, Unplugged
+
+    if "asus" in device.FriendlyName.lower():
+        target_id = device.id  # This is the CORRECT active device
+        break
+```
+
+**AudioDeviceState values:**
+- `Active` (1) - Device is plugged in and working ✅
+- `Disabled` (2) - Device disabled in Sound settings
+- `NotPresent` (4) - Phantom device (GPU output not connected)
+- `Unplugged` (8) - Physical device was disconnected
+
 ### PC + Speakers Mode Routing Logic
 
 **In `electron-main.js`, the `switch-audio-output` handler now checks the mode:**
@@ -2614,6 +2655,54 @@ Device Selection Flow:
 - Some old firmware devices reject custom receivers
 - Error: `RequestFailed: Failed to execute start app`
 - Fallback: Use HTTP/MP3 streaming instead
+
+---
+
+### January 9, 2026 (Session 22) - 🔥 AudioDeviceState Discovery
+
+**Session Goal:** Debug "no audio on monitor" in PC + Speakers mode
+
+#### The Problem
+- Audio device switching via IPolicyConfig returned SUCCESS (HRESULT=0)
+- But Windows default device DIDN'T ACTUALLY CHANGE
+- Same issue with nircmd and SoundVolumeView - all appeared to succeed but did nothing
+
+#### Root Cause Discovery
+**Windows shows MULTIPLE devices with the SAME NAME but different AudioDeviceState values!**
+
+User's PC had 5 "ASUS VG32V" devices:
+- 4 were `AudioDeviceState.NotPresent` (phantom GPU outputs)
+- Only 1 was `AudioDeviceState.Active` (the actual connected monitor)
+
+**Critical Bug:** IPolicyConfig.SetDefaultEndpoint() returns SUCCESS even when targeting
+a NotPresent device, but silently ignores the switch. No error, just... nothing happens.
+
+#### The Fix
+Updated `cast-helper.py` to filter by device state:
+
+```python
+# CRITICAL: Only match ACTIVE devices!
+state_str = str(device.state) if device.state else ""
+if "Active" not in state_str:
+    continue  # Skip NotPresent, Disabled, Unplugged
+```
+
+Applied to both:
+- `get_audio_outputs()` - Only show active devices in UI
+- `set_default_audio_output()` - Only switch to active devices
+
+#### Files Modified
+- `src/main/cast-helper.py` - Added AudioDeviceState filtering
+- `.claude/CLAUDE.md` - Documented the discovery
+
+#### Git Commit
+- `bd46ea1` - 🔧 fix: Only target ACTIVE audio devices for switching
+
+#### Key Learnings
+1. **Multiple GPUs = Multiple phantom audio devices** - NVIDIA, AMD, Intel GPUs each create audio outputs for each possible display connection
+2. **Same name ≠ Same device** - Must check device.state, not just FriendlyName
+3. **IPolicyConfig lies** - Returns success even when switch fails on NotPresent devices
+4. **Always filter by Active state** - This is now a mandatory check for any Windows audio device operation
 
 ---
 
