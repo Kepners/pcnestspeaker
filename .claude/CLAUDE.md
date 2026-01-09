@@ -2241,4 +2241,189 @@ else:  # audio/group
 
 ---
 
-*Last Updated: January 8, 2026*
+### January 9, 2026 (Session 21) - Dual Receiver Architecture
+
+**Session Goal:** Implement separate Cast receivers for audio devices vs TVs
+
+#### Architecture Decision: Two Receivers Instead of One Smart Receiver
+
+**Pros of Two Receivers:**
+1. **Lean audio receiver** (~260 lines) - No ambient videos = faster load, less memory
+2. **Full visual receiver** - Ambient videos for TVs where users actually SEE the screen
+3. **Cleaner code** - Each receiver focused on one use case
+4. **Smaller payload** - Audio receiver doesn't load video assets
+
+**Receiver Details:**
+
+| Receiver | App ID | File | Purpose |
+|----------|--------|------|---------|
+| **Audio** | `4B876246` | `docs/receiver-audio.html` | Lean, no visuals - Nest speakers & groups |
+| **Visual** | `FCAA4619` | `docs/receiver-visual.html` | Full experience with ambient videos - TVs |
+
+#### Routing Logic
+
+```javascript
+// In electron-main.js
+
+// App ID Constants
+const AUDIO_APP_ID = '4B876246';   // Lean audio-only receiver
+const VISUAL_APP_ID = 'FCAA4619';  // Full visual receiver
+
+// Routing Function
+function getReceiverAppId(speaker, forceAudio = false) {
+  if (!speaker || !speaker.cast_type) {
+    return AUDIO_APP_ID; // Default to audio
+  }
+
+  // Groups and audio devices → Audio receiver
+  if (speaker.cast_type === 'audio' || speaker.cast_type === 'group') {
+    return AUDIO_APP_ID;
+  }
+
+  // TVs/displays (cast_type='cast') → Visual receiver
+  if (speaker.cast_type === 'cast' && !forceAudio) {
+    return VISUAL_APP_ID;
+  }
+
+  return AUDIO_APP_ID;
+}
+```
+
+#### Device Type Mapping
+
+| Device Type | `cast_type` | Receiver | Reason |
+|-------------|-------------|----------|--------|
+| Nest Mini | `audio` | Audio | No screen - visuals wasted |
+| Nest Hub | `audio` | Audio | Has screen but mainly for audio |
+| Google Home | `audio` | Audio | No screen |
+| Cast Group | `group` | Audio | Groups are always audio-focused |
+| NVIDIA Shield | `cast` | Visual | Has TV - show ambient videos |
+| Chromecast | `cast` | Visual | Connected to TV - show visuals |
+| Android TV | `cast` | Visual | Has screen - show visuals |
+
+#### Python cast-helper.py Changes
+
+```python
+# Constants
+VISUAL_APP_ID = "FCAA4619"  # PC Nest Speaker (Visual)
+AUDIO_APP_ID = "4B876246"   # PC Nest Speaker Audio (lean)
+
+# Functions updated to accept app_id parameter:
+def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pcaudio", app_id=None):
+    receiver_app_id = app_id if app_id else AUDIO_APP_ID
+    # ... uses receiver_app_id for cast.start_app()
+
+def webrtc_proxy_connect(speaker_name, mediamtx_url, speaker_ip=None, stream_name="pcaudio", app_id=None):
+    receiver_app_id = app_id if app_id else AUDIO_APP_ID
+    # ... uses receiver_app_id for cast.start_app()
+
+def webrtc_launch_multicast(speaker_names, https_url, speaker_ips=None, stream_name="pcaudio", app_id=None):
+    # ... passes app_id to webrtc_launch()
+
+# CLI Arguments updated:
+# webrtc-launch <speaker_name> [https_url] [speaker_ip] [stream_name] [app_id]
+# webrtc-proxy-connect <speaker_name> <mediamtx_url> [speaker_ip] [stream_name] [app_id]
+# webrtc-multicast <speaker_names_json> <https_url> [speaker_ips_json] [stream_name] [app_id]
+```
+
+#### Files Changed
+
+| File | Changes |
+|------|---------|
+| `docs/receiver-audio.html` | NEW: Lean audio-only receiver (~260 lines) |
+| `docs/receiver-visual.html` | NEW: Copy of original receiver.html |
+| `src/main/cast-helper.py` | Updated all functions to accept app_id parameter |
+| `src/main/electron-main.js` | Added constants, routing function, updated ALL webrtc-launch calls |
+
+#### Git Commits
+
+- `ec79f21` - feat: Add dual receiver App ID support in cast-helper.py
+- `7c34100` - feat: Route correct Cast receiver based on device type
+
+#### Testing Checklist
+
+- [ ] Nest Mini → Should use Audio receiver (4B876246)
+- [ ] Nest Hub → Should use Audio receiver (4B876246)
+- [ ] Cast Group → Should use Audio receiver (4B876246)
+- [ ] Stereo Pair → Should use Audio receiver (4B876246)
+- [ ] NVIDIA Shield → Should use Visual receiver (FCAA4619)
+- [ ] Chromecast → Should use Visual receiver (FCAA4619)
+
+#### Log Output
+
+When streaming, you should see which receiver is being used:
+```
+Connecting to DENNIS (192.168.50.241) [Receiver: Audio]...
+Connecting to Green TV (192.168.50.100) [Receiver: Visual]...
+```
+
+---
+
+## ARCHITECTURE REFERENCE: Cast Receiver Routing
+
+### Quick Reference
+
+```
+Device Selection Flow:
+┌─────────────────────────────────────────────────────┐
+│                User clicks speaker                   │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│           getReceiverAppId(speaker)                  │
+│                                                      │
+│   speaker.cast_type === 'audio'  → AUDIO_APP_ID     │
+│   speaker.cast_type === 'group'  → AUDIO_APP_ID     │
+│   speaker.cast_type === 'cast'   → VISUAL_APP_ID    │
+│   unknown/null                   → AUDIO_APP_ID     │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│    runPython(['webrtc-launch', ..., app_id])        │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│    cast-helper.py: cast.start_app(receiver_app_id)  │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│    Cast device loads receiver from GitHub Pages:     │
+│                                                      │
+│    AUDIO: kepners.github.io/pcnestspeaker/receiver-audio.html  │
+│    VISUAL: kepners.github.io/pcnestspeaker/receiver.html       │
+└─────────────────────────────────────────────────────┘
+```
+
+### Code Locations
+
+| What | Where |
+|------|-------|
+| App ID constants | `electron-main.js` lines 77-78 |
+| Routing function | `electron-main.js` lines 90-106 |
+| Python constants | `cast-helper.py` lines 19-26 |
+| Python functions | `cast-helper.py` webrtc_launch(), webrtc_proxy_connect(), webrtc_launch_multicast() |
+
+### Troubleshooting
+
+**Wrong receiver used?**
+1. Check speaker's `cast_type` in discovery logs
+2. Verify `getReceiverAppId()` logic matches device type
+3. Check logs for `[Receiver: Audio]` or `[Receiver: Visual]`
+
+**Receiver won't load?**
+1. Verify App IDs in Cast SDK Console: https://cast.google.com/publish/
+2. Both apps must be Published (not Unpublished)
+3. Check GitHub Pages is serving receivers at correct URLs
+
+**Custom receiver not supported?**
+- Some old firmware devices reject custom receivers
+- Error: `RequestFailed: Failed to execute start app`
+- Fallback: Use HTTP/MP3 streaming instead
+
+---
+
+*Last Updated: January 9, 2026*
