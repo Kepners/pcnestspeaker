@@ -2086,22 +2086,30 @@ function getAudioDeviceIcon(name) {
 }
 
 /**
- * Switch to a specific audio output device
+ * Switch to a specific audio output device (toggle on/off)
  */
 async function switchAudioOutput(deviceName) {
   const listEl = document.getElementById('audio-output-list');
   if (!listEl) return;
 
-  // Find the clicked item and add switching state
+  // Find the clicked item
   const items = listEl.querySelectorAll('.audio-output-item');
   let clickedItem = null;
   items.forEach(item => {
     if (item.dataset.deviceName === deviceName) {
       clickedItem = item;
-      item.classList.add('switching');
     }
   });
 
+  // TOGGLE: If already active, deselect it (remove active from all)
+  if (clickedItem && clickedItem.classList.contains('active')) {
+    items.forEach(item => item.classList.remove('active'));
+    log(`Deselected audio output: ${deviceName}`, 'info');
+    return;
+  }
+
+  // Otherwise, switch to this device
+  if (clickedItem) clickedItem.classList.add('switching');
   log(`Switching audio to: ${deviceName}`, 'info');
 
   try {
