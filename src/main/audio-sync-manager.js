@@ -78,7 +78,7 @@ function setWindowsDelay(delayMs) {
 
 /**
  * Set delay using Equalizer APO config file
- * Uses PowerShell with elevation to write to Program Files (requires UAC once)
+ * Uses a batch file approach for reliable admin writes
  */
 function setEqualizerAPODelay(delayMs) {
   return new Promise((resolve, reject) => {
@@ -88,11 +88,23 @@ function setEqualizerAPODelay(delayMs) {
     }
 
     const syncConfigPath = 'C:\\Program Files\\EqualizerAPO\\config\\pcnestspeaker-sync.txt';
+    const mainConfigPath = 'C:\\Program Files\\EqualizerAPO\\config\\config.txt';
+
+    // Config content
+    const configLines = [
+      '# PC Nest Speaker Audio Sync',
+      '# Auto-generated - do not edit manually',
+      '',
+      '# Delay PC speakers to sync with Nest speakers',
+      `Delay: ${delayMs} ms`
+    ];
+
+    console.log(`[AudioSync] Setting delay to ${delayMs}ms...`);
+    console.log(`[AudioSync] Target file: ${syncConfigPath}`);
 
     // Try direct write first (works if app has admin rights or folder has write permission)
     try {
-      const config = `# PC Nest Speaker Audio Sync\n# Auto-generated - do not edit manually\n\n# Delay PC speakers to sync with Nest speakers\nDelay: ${delayMs} ms\n`;
-      fs.writeFileSync(syncConfigPath, config);
+      fs.writeFileSync(syncConfigPath, configLines.join('\r\n') + '\r\n');
       console.log(`[AudioSync] Direct write succeeded - delay set to ${delayMs}ms`);
 
       // Add include if needed
@@ -100,59 +112,77 @@ function setEqualizerAPODelay(delayMs) {
       resolve(true);
       return;
     } catch (directErr) {
-      console.log('[AudioSync] Direct write failed (permission denied), trying PowerShell...');
+      console.log('[AudioSync] Direct write failed:', directErr.message);
+      console.log('[AudioSync] Trying PowerShell with admin elevation...');
     }
 
-    // Fallback: Use PowerShell to write (handles UAC elevation)
-    const config = `# PC Nest Speaker Audio Sync
-# Auto-generated - do not edit manually
+    // Fallback: Use PowerShell with proper escaping
+    // Create a temp PS1 script file to avoid escaping issues
+    const tempDir = require('os').tmpdir();
+    const tempScript = path.join(tempDir, 'apo-delay-set.ps1');
 
-# Delay PC speakers to sync with Nest speakers
-Delay: ${delayMs} ms`;
+    const psScript = `
+# APO Delay Set Script
+$syncPath = "${syncConfigPath.replace(/\\/g, '\\\\')}"
+$mainPath = "${mainConfigPath.replace(/\\/g, '\\\\')}"
 
-    // Escape for PowerShell
-    const escapedConfig = config.replace(/"/g, '`"').replace(/\n/g, '`n');
-    const escapedPath = syncConfigPath.replace(/\\/g, '\\\\');
+# Write the sync config file
+@"
+${configLines.join('\r\n')}
+"@ | Set-Content -Path $syncPath -Force -Encoding UTF8
 
-    // PowerShell command to write file (will prompt UAC if needed)
-    const psCommand = `
-      $configContent = "${escapedConfig}"
-      $configPath = "${escapedPath}"
-      $mainConfigPath = "C:\\Program Files\\EqualizerAPO\\config\\config.txt"
+# Check if include exists in main config
+$mainContent = Get-Content $mainPath -Raw -ErrorAction SilentlyContinue
+if ($mainContent -and $mainContent -notmatch 'pcnestspeaker-sync\\.txt') {
+    Add-Content -Path $mainPath -Value "`r`n# PC Nest Speaker sync delay`r`nInclude: pcnestspeaker-sync.txt`r`n" -Encoding UTF8
+    Write-Host "Added include statement to config.txt"
+}
 
-      # Write sync config
-      Set-Content -Path $configPath -Value $configContent -Force
+Write-Host "SUCCESS: Delay set to ${delayMs}ms"
+`;
 
-      # Add include to main config if not present
-      $mainConfig = Get-Content $mainConfigPath -Raw -ErrorAction SilentlyContinue
-      if ($mainConfig -notmatch 'pcnestspeaker-sync.txt') {
-        Add-Content -Path $mainConfigPath -Value "\`n# PC Nest Speaker sync delay\`nInclude: pcnestspeaker-sync.txt\`n"
-        Write-Output "Added include statement"
-      }
-      Write-Output "Delay set to ${delayMs}ms"
-    `;
+    try {
+      fs.writeFileSync(tempScript, psScript, 'utf8');
+      console.log(`[AudioSync] Created temp script: ${tempScript}`);
+    } catch (tmpErr) {
+      console.error('[AudioSync] Failed to create temp script:', tmpErr.message);
+      reject(new Error('Failed to create temp script'));
+      return;
+    }
 
-    exec(`powershell -NoProfile -Command "${psCommand.replace(/"/g, '\\"')}"`,
-      { windowsHide: true, timeout: 10000 },
-      (error, stdout, stderr) => {
-        if (error) {
-          console.error('[AudioSync] PowerShell write failed:', stderr || error.message);
-          // Last resort: try with Start-Process elevation
-          const elevatedCmd = `powershell -Command "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -Command Set-Content -Path \\\"${escapedPath}\\\" -Value \\\"${escapedConfig}\\\" -Force'"`;
-          exec(elevatedCmd, { windowsHide: true }, (err2) => {
-            if (err2) {
-              reject(new Error('Failed to write APO config - need admin rights'));
-            } else {
-              console.log(`[AudioSync] Elevated write succeeded - delay set to ${delayMs}ms`);
-              resolve(true);
-            }
-          });
-        } else {
-          console.log(`[AudioSync] PowerShell write succeeded - ${stdout.trim()}`);
+    // Run with elevated privileges
+    const elevatedCmd = `powershell -ExecutionPolicy Bypass -Command "Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -NoProfile -File \\"${tempScript}\\"' -Wait"`;
+
+    console.log('[AudioSync] Running elevated PowerShell...');
+
+    exec(elevatedCmd, { windowsHide: true, timeout: 30000 }, (error, stdout, stderr) => {
+      // Clean up temp script
+      try { fs.unlinkSync(tempScript); } catch (e) {}
+
+      if (error) {
+        console.error('[AudioSync] Elevated PowerShell failed:', error.message);
+        console.error('[AudioSync] stderr:', stderr);
+
+        // Check if file was created despite error
+        if (fs.existsSync(syncConfigPath)) {
+          console.log('[AudioSync] File exists despite error - success!');
           resolve(true);
+        } else {
+          reject(new Error('Failed to write APO config - need to run app as Administrator once'));
+        }
+      } else {
+        console.log('[AudioSync] PowerShell output:', stdout.trim());
+
+        // Verify file was created
+        if (fs.existsSync(syncConfigPath)) {
+          console.log(`[AudioSync] SUCCESS - delay file created: ${syncConfigPath}`);
+          resolve(true);
+        } else {
+          console.log('[AudioSync] WARNING - command succeeded but file not found');
+          reject(new Error('Config file not created - check UAC prompt'));
         }
       }
-    );
+    });
   });
 }
 
@@ -184,28 +214,30 @@ function clearEqualizerAPODelay() {
 
 /**
  * Initialize audio sync - detect best method
+ * PRIORITY: Equalizer APO (reliable) > Windows native (unreliable)
  */
 async function initialize() {
   console.log('[AudioSync] Initializing...');
 
-  // Check Windows native delay support first
+  // PRIORITY 1: Check if Equalizer APO is installed - this is the reliable method
+  // Windows native delay detection gives false positives and doesn't actually work
+  if (isEqualizerAPOInstalled()) {
+    delayMethod = 'equalizerapo';
+    console.log('[AudioSync] Using Equalizer APO delay (recommended)');
+    return { method: 'equalizerapo', supported: true };
+  }
+
+  // PRIORITY 2: Windows native delay (rarely works, kept as fallback)
   const windowsSupport = await checkWindowsDelaySupport();
   if (windowsSupport) {
     delayMethod = 'windows';
-    console.log('[AudioSync] Using Windows native delay');
+    console.log('[AudioSync] Using Windows native delay (may not work on all systems)');
     return { method: 'windows', supported: true };
-  }
-
-  // Check if Equalizer APO is installed
-  if (isEqualizerAPOInstalled()) {
-    delayMethod = 'equalizerapo';
-    console.log('[AudioSync] Using Equalizer APO delay');
-    return { method: 'equalizerapo', supported: true };
   }
 
   // Neither available
   delayMethod = null;
-  console.log('[AudioSync] No delay method available');
+  console.log('[AudioSync] No delay method available - install Equalizer APO');
   return { method: null, supported: false, needsInstall: true };
 }
 
