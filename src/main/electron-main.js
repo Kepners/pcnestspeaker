@@ -68,6 +68,43 @@ let webrtcPipelineError = null;
 // Cast receivers CAN fetch from local network HTTP - tested and confirmed
 const DISABLE_CLOUDFLARE = true;
 
+// ===================
+// Cast Receiver App IDs
+// ===================
+// Two receivers registered in Cast SDK Console:
+// - AUDIO_APP_ID: Lean audio-only receiver for Nest speakers and groups (~260 lines)
+// - VISUAL_APP_ID: Full receiver with ambient videos for TVs/Shields
+const AUDIO_APP_ID = '4B876246';   // PC Nest Speaker Audio (lean, no visuals)
+const VISUAL_APP_ID = 'FCAA4619';  // PC Nest Speaker (visual, ambient videos)
+
+/**
+ * Determine which Cast receiver App ID to use based on device type.
+ * - Audio devices (cast_type='audio'): Always use audio receiver
+ * - Groups (cast_type='group'): Always use audio receiver
+ * - TVs/displays (cast_type='cast'): Use visual receiver (with ambient videos)
+ *
+ * @param {Object} speaker - Speaker object from discovery
+ * @param {boolean} forceAudio - Force audio receiver even for TVs
+ * @returns {string} App ID to use
+ */
+function getReceiverAppId(speaker, forceAudio = false) {
+  if (!speaker || !speaker.cast_type) {
+    return AUDIO_APP_ID; // Default to audio receiver
+  }
+
+  // Groups and audio devices always use the lean audio receiver
+  if (speaker.cast_type === 'audio' || speaker.cast_type === 'group') {
+    return AUDIO_APP_ID;
+  }
+
+  // TVs/displays (cast_type='cast') use visual receiver unless forced
+  if (speaker.cast_type === 'cast' && !forceAudio) {
+    return VISUAL_APP_ID;
+  }
+
+  return AUDIO_APP_ID;
+}
+
 // Helper: Get local IP address
 function getLocalIp() {
   const os = require('os');
@@ -1081,10 +1118,12 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         if (!membersResult.success || !membersResult.members || membersResult.members.length === 0) {
           sendLog(`Could not get group members: ${membersResult.error || 'No members found'}`, 'warning');
           sendLog('Falling back to single cast (will only play on leader)...', 'warning');
-          // Fall back to regular launch
+          // Fall back to regular launch - use audio receiver for groups
+          const appId = getReceiverAppId(speaker);
           const args = ['webrtc-launch', speakerName, webrtcUrl];
           if (speakerIp) args.push(speakerIp);
           args.push('pcaudio');
+          args.push(appId);
           result = await runPython(args);
         } else if (membersResult.count === 2) {
           // 2-member group = STEREO PAIR! Left channel → speaker 1, Right channel → speaker 2
@@ -1145,13 +1184,15 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           sendLog(`Stereo URL: ${stereoUrl} (local HTTP - no tunnel)`);
 
           // Connect speakers directly (no retry needed with local HTTP)
+          // Stereo pairs are always audio devices, so use audio receiver
           sendLog(`Connecting LEFT speaker: "${leftMember.name}"...`);
           const leftResult = await runPython([
             'webrtc-launch',
             leftMember.name,
             stereoUrl,
             leftMember.ip || '',
-            'left'
+            'left',
+            AUDIO_APP_ID  // Stereo pairs always use audio receiver
           ]);
           if (!leftResult.success) {
             throw new Error(`Left speaker failed: ${leftResult.error}`);
@@ -1164,7 +1205,8 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
             rightMember.name,
             stereoUrl,
             rightMember.ip || '',
-            'right'
+            'right',
+            AUDIO_APP_ID  // Stereo pairs always use audio receiver
           ]);
           if (!rightResult.success) {
             throw new Error(`Right speaker failed: ${rightResult.error}`);
@@ -1187,12 +1229,14 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           const memberIps = membersResult.members.map(m => m.ip);
           sendLog(`Group has ${membersResult.count} members - using multicast: ${memberNames.join(', ')}`);
 
+          // Multicast to groups always uses audio receiver
           const multicastArgs = [
             'webrtc-multicast',
             JSON.stringify(memberNames),
             webrtcUrl,
             JSON.stringify(memberIps),
-            'pcaudio'
+            'pcaudio',
+            AUDIO_APP_ID  // Groups always use audio receiver
           ];
           result = await runPython(multicastArgs);
 
@@ -1205,10 +1249,13 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         }
       } else {
         // Single speaker - use regular launch
-        sendLog(`Connecting to ${speakerName}${speakerIp ? ` (${speakerIp})` : ''}...`);
+        // Determine which receiver to use based on device type
+        const appId = getReceiverAppId(speaker);
+        sendLog(`Connecting to ${speakerName}${speakerIp ? ` (${speakerIp})` : ''} [Receiver: ${appId === VISUAL_APP_ID ? 'Visual' : 'Audio'}]...`);
         const args = ['webrtc-launch', speakerName, webrtcUrl];
         if (speakerIp) args.push(speakerIp);
         args.push('pcaudio'); // stream name
+        args.push(appId);     // receiver app id
         result = await runPython(args);
       }
 
@@ -1348,10 +1395,13 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           sendLog(`Tunnel URL: ${httpsUrl}`, 'success');
 
           // Use webrtc-launch with the HTTPS URL (receiver fetches directly)
-          sendLog(`Connecting via tunnel to ${speakerName}...`);
+          // Determine which receiver to use based on device type
+          const appId = getReceiverAppId(speaker);
+          sendLog(`Connecting via tunnel to ${speakerName} [Receiver: ${appId === VISUAL_APP_ID ? 'Visual' : 'Audio'}]...`);
           const tunnelArgs = ['webrtc-launch', speakerName, httpsUrl];
           if (speakerIp) tunnelArgs.push(speakerIp);
           tunnelArgs.push('pcaudio'); // stream name
+          tunnelArgs.push(appId);     // receiver app id
           const tunnelResult = await runPython(tunnelArgs);
 
           if (tunnelResult.success) {
@@ -1668,8 +1718,18 @@ ipcMain.handle('install-dependency', async (event, dep) => {
 // Launch custom receiver for WebRTC
 ipcMain.handle('webrtc-launch', async (event, speakerName) => {
   try {
-    sendLog(`[WebRTC] Launching receiver on "${speakerName}"...`);
-    const result = await runPython(['webrtc-launch', speakerName]);
+    // Look up speaker to determine which receiver to use
+    const speaker = discoveredSpeakers.find(s => s.name === speakerName);
+    const appId = getReceiverAppId(speaker);
+    sendLog(`[WebRTC] Launching receiver on "${speakerName}" [Receiver: ${appId === VISUAL_APP_ID ? 'Visual' : 'Audio'}]...`);
+
+    const args = ['webrtc-launch', speakerName];
+    args.push('');  // https_url (empty)
+    args.push('');  // speaker_ip (empty)
+    args.push('pcaudio');  // stream_name
+    args.push(appId);  // app_id
+
+    const result = await runPython(args);
 
     if (result.success) {
       sendLog('[WebRTC] Custom receiver launched', 'success');
@@ -1792,13 +1852,15 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     const webrtcUrl = `http://${localIp}:8889`;
 
     // 5. Cast to LEFT speaker (NO PROXY - direct WebRTC)
+    // Stereo mode always uses audio receiver
     sendLog(`Connecting to LEFT speaker: "${leftSpeaker.name}"...`);
     const leftResult = await runPython([
       'webrtc-launch',
       leftSpeaker.name,
       webrtcUrl,
       leftSpeaker.ip || '', // Use cached IP if available
-      'left' // Stream name
+      'left', // Stream name
+      AUDIO_APP_ID  // Stereo always uses audio receiver
     ]);
 
     if (!leftResult.success) {
@@ -1816,13 +1878,15 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     }
 
     // 6. Cast to RIGHT speaker (NO PROXY - direct WebRTC)
+    // Stereo mode always uses audio receiver
     sendLog(`Connecting to RIGHT speaker: "${rightSpeaker.name}"...`);
     const rightResult = await runPython([
       'webrtc-launch',
       rightSpeaker.name,
       webrtcUrl,
       rightSpeaker.ip || '', // Use cached IP if available
-      'right' // Stream name
+      'right', // Stream name
+      AUDIO_APP_ID  // Stereo always uses audio receiver
     ]);
 
     if (!rightResult.success) {
