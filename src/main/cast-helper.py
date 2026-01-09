@@ -10,6 +10,8 @@ Supports:
 - stop: Stop casting
 """
 import sys
+import os
+import subprocess
 import json
 import time
 import threading
@@ -1224,9 +1226,10 @@ def webrtc_launch_multicast(speaker_names, https_url, speaker_ips=None, stream_n
 # =============================================================================
 
 def get_audio_outputs():
-    """Get list of all audio output (render) devices.
+    """Get list of filtered audio output (render) devices.
 
     Uses pycaw to enumerate Windows audio devices.
+    Filters out virtual devices, digital outputs, and duplicates.
 
     Returns:
         { success: true, devices: [{ name, id, isDefault }, ...] }
@@ -1239,30 +1242,64 @@ def get_audio_outputs():
         devices = AudioUtilities.GetAllDevices()
 
         # Get current default device ID for comparison
-        # AudioUtilities.GetSpeakers() returns the IMMDevice COM object (not AudioDevice wrapper)
         default_id = None
         try:
             default_speaker = AudioUtilities.GetSpeakers()
             if default_speaker:
-                # This is a raw IMMDevice, not wrapped AudioDevice
-                default_id = default_speaker.GetId()
+                # GetSpeakers() returns IMMDevice COM - try GetId() method
+                # If that fails, it might be wrapped AudioDevice - use .id property
+                try:
+                    default_id = default_speaker.GetId()
+                except AttributeError:
+                    default_id = getattr(default_speaker, 'id', None)
                 print(f"[AudioOutput] Current default ID: {default_id}", file=sys.stderr)
         except Exception as e:
             print(f"[AudioOutput] Could not get default ID: {e}", file=sys.stderr)
 
+        # Patterns to EXCLUDE (virtual devices, digital outputs, etc.)
+        exclude_patterns = [
+            'virtual desktop audio',
+            'vb-audio',
+            'cable ',
+            'steam streaming',
+            'droidcam',
+            'oculus',
+            'digital output',
+            'digital audio',
+            'nvidia output',
+            'internal aux',
+        ]
+
         output_devices = []
+        seen_names = set()  # Track seen device names to avoid duplicates
+
         for device in devices:
             # Device ID format: {0.0.0.xxxxxxxx}.{guid} for render, {0.0.1.xxxxxxxx}.{guid} for capture
             if device.id and device.id.startswith("{0.0.0."):
+                name = device.FriendlyName or "Unknown Device"
+                name_lower = name.lower()
+
+                # Skip excluded devices
+                is_excluded = any(pattern in name_lower for pattern in exclude_patterns)
+                if is_excluded:
+                    print(f"[AudioOutput] Skipping (virtual/digital): {name}", file=sys.stderr)
+                    continue
+
+                # Skip duplicates (keep first occurrence)
+                if name in seen_names:
+                    print(f"[AudioOutput] Skipping (duplicate): {name}", file=sys.stderr)
+                    continue
+                seen_names.add(name)
+
                 device_info = {
-                    "name": device.FriendlyName or "Unknown Device",
+                    "name": name,
                     "id": device.id,
                     "isDefault": device.id == default_id if default_id else False
                 }
                 output_devices.append(device_info)
                 print(f"[AudioOutput] Found: {device_info['name']} {'(DEFAULT)' if device_info['isDefault'] else ''}", file=sys.stderr)
 
-        print(f"[AudioOutput] Total: {len(output_devices)} render devices", file=sys.stderr)
+        print(f"[AudioOutput] Total: {len(output_devices)} usable devices (filtered)", file=sys.stderr)
         return {"success": True, "devices": output_devices}
 
     except ImportError as ie:
@@ -1276,12 +1313,10 @@ def get_audio_outputs():
 
 
 def set_default_audio_output(device_name):
-    """Set the default Windows audio output device using IPolicyConfig.
+    """Set the default Windows audio output device using SoundVolumeView.
 
-    This is the proper way to change the default audio device programmatically.
-    Uses the same COM interface that Windows Sound Settings uses.
-
-    Requires: pip install pycaw comtypes
+    Uses NirSoft SoundVolumeView for reliable audio device switching.
+    This actually works, unlike IPolicyConfig COM which reports success but doesn't change.
 
     Args:
         device_name: Full or partial name of the audio device to set as default
@@ -1290,113 +1325,100 @@ def set_default_audio_output(device_name):
         { success: true, device: "Device Name" } or { success: false, error: "..." }
     """
     try:
-        from pycaw.pycaw import AudioUtilities
-        from comtypes import CLSCTX_ALL, GUID
-        import comtypes
-        from ctypes import HRESULT, POINTER
-        from ctypes.wintypes import DWORD, LPCWSTR
+        import csv
 
         print(f"[AudioSwitch] Setting default device to: {device_name}", file=sys.stderr)
 
-        # IPolicyConfig interface - the proper Windows API for changing default device
-        IID_IPolicyConfig = GUID('{f8679f50-850a-41cf-9c72-430f290290c8}')
-        CLSID_PolicyConfigClient = GUID('{870af99c-171d-4f9e-af0d-e63df40c2bc9}')
+        # Find SoundVolumeView.exe
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        svv_paths = [
+            os.path.join(script_dir, '..', '..', 'soundvolumeview', 'SoundVolumeView.exe'),
+            os.path.join(script_dir, 'soundvolumeview', 'SoundVolumeView.exe'),
+            r'C:\Users\kepne\OneDrive\Documents\GitHub\pcnestspeaker\soundvolumeview\SoundVolumeView.exe',
+        ]
 
-        # Define the IPolicyConfig interface
-        class IPolicyConfig(comtypes.IUnknown):
-            _iid_ = IID_IPolicyConfig
-            _methods_ = [
-                comtypes.COMMETHOD([], HRESULT, 'GetMixFormat',
-                    (['in'], LPCWSTR, 'pszDeviceName'),
-                    (['out'], POINTER(POINTER(comtypes.c_void_p)), 'ppFormat')),
-                comtypes.COMMETHOD([], HRESULT, 'GetDeviceFormat',
-                    (['in'], LPCWSTR, 'pszDeviceName'),
-                    (['in'], DWORD, 'bDefault'),
-                    (['out'], POINTER(POINTER(comtypes.c_void_p)), 'ppFormat')),
-                comtypes.COMMETHOD([], HRESULT, 'ResetDeviceFormat',
-                    (['in'], LPCWSTR, 'pszDeviceName')),
-                comtypes.COMMETHOD([], HRESULT, 'SetDeviceFormat',
-                    (['in'], LPCWSTR, 'pszDeviceName'),
-                    (['in'], POINTER(comtypes.c_void_p), 'pEndpointFormat'),
-                    (['in'], POINTER(comtypes.c_void_p), 'pMixFormat')),
-                comtypes.COMMETHOD([], HRESULT, 'GetProcessingPeriod',
-                    (['in'], LPCWSTR, 'pszDeviceName'),
-                    (['in'], DWORD, 'bDefault'),
-                    (['out'], POINTER(comtypes.c_longlong), 'pmftDefaultPeriod'),
-                    (['out'], POINTER(comtypes.c_longlong), 'pmftMinimumPeriod')),
-                comtypes.COMMETHOD([], HRESULT, 'SetProcessingPeriod',
-                    (['in'], LPCWSTR, 'pszDeviceName'),
-                    (['in'], POINTER(comtypes.c_longlong), 'pmftPeriod')),
-                comtypes.COMMETHOD([], HRESULT, 'GetShareMode',
-                    (['in'], LPCWSTR, 'pszDeviceName'),
-                    (['out'], POINTER(DWORD), 'pMode')),
-                comtypes.COMMETHOD([], HRESULT, 'SetShareMode',
-                    (['in'], LPCWSTR, 'pszDeviceName'),
-                    (['in'], DWORD, 'mode')),
-                comtypes.COMMETHOD([], HRESULT, 'GetPropertyValue',
-                    (['in'], LPCWSTR, 'pszDeviceName'),
-                    (['in'], DWORD, 'bFxStore'),
-                    (['in'], POINTER(GUID), 'pKey'),
-                    (['out'], POINTER(comtypes.c_void_p), 'pv')),
-                comtypes.COMMETHOD([], HRESULT, 'SetPropertyValue',
-                    (['in'], LPCWSTR, 'pszDeviceName'),
-                    (['in'], DWORD, 'bFxStore'),
-                    (['in'], POINTER(GUID), 'pKey'),
-                    (['in'], POINTER(comtypes.c_void_p), 'pv')),
-                comtypes.COMMETHOD([], HRESULT, 'SetDefaultEndpoint',
-                    (['in'], LPCWSTR, 'pszDeviceName'),
-                    (['in'], DWORD, 'eRole')),
-                comtypes.COMMETHOD([], HRESULT, 'SetEndpointVisibility',
-                    (['in'], LPCWSTR, 'pszDeviceName'),
-                    (['in'], DWORD, 'bVisible')),
-            ]
+        svv_path = None
+        for p in svv_paths:
+            normalized = os.path.normpath(p)
+            if os.path.exists(normalized):
+                svv_path = normalized
+                break
 
-        # Find the device by name
-        devices = AudioUtilities.GetAllDevices()
+        if not svv_path:
+            return {"success": False, "error": "SoundVolumeView.exe not found"}
+
+        print(f"[AudioSwitch] Using SoundVolumeView: {svv_path}", file=sys.stderr)
+
+        # Export device list to find the Command-Line Friendly ID
+        # Use a fixed temp path - tempfile can have permission issues
+        tmp_path = os.path.join(os.environ.get('TEMP', 'C:\\Windows\\Temp'), 'svv_devices.csv')
+
+        # Export all sound devices to CSV using PowerShell for reliability
+        export_cmd = f'powershell -Command "& \'{svv_path}\' /scomma \'{tmp_path}\'; Start-Sleep -Milliseconds 500"'
+        print(f"[AudioSwitch] Export command: {export_cmd}", file=sys.stderr)
+        result = subprocess.run(export_cmd, shell=True, capture_output=True, text=True, timeout=15)
+
+        if not os.path.exists(tmp_path):
+            print(f"[AudioSwitch] CSV not created at: {tmp_path}", file=sys.stderr)
+            return {"success": False, "error": f"Failed to export device list to {tmp_path}"}
+
+        # Read the CSV and find matching device
         target_device = None
+        device_name_lower = device_name.lower()
 
-        for device in devices:
-            if device.FriendlyName and device.id:
-                # Only consider render devices (output)
-                # Device ID format: {0.0.0.xxxxxxxx}.{guid} for render, {0.0.1.xxxxxxxx}.{guid} for capture
-                if not device.id.startswith("{0.0.0."):
+        with open(tmp_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
+            reader = csv.DictReader(f)
+
+            for row in reader:
+                name = row.get('Name', '')
+                direction = row.get('Direction', '')
+                cmd_id = row.get('Command-Line Friendly ID', '')
+
+                # Only consider Render (output) devices
+                if direction != 'Render':
                     continue
+
                 # Match by name (case-insensitive, partial match)
-                if device_name.lower() in device.FriendlyName.lower():
-                    target_device = device
-                    print(f"[AudioSwitch] Found matching device: {device.FriendlyName}", file=sys.stderr)
+                if device_name_lower in name.lower():
+                    target_device = {
+                        'name': name,
+                        'cmd_id': cmd_id,
+                        'direction': direction
+                    }
+                    print(f"[AudioSwitch] Found device: {name}", file=sys.stderr)
                     break
+
+        # Clean up temp file
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
 
         if not target_device:
             print(f"[AudioSwitch] Device not found: {device_name}", file=sys.stderr)
             return {"success": False, "error": f"Audio device '{device_name}' not found"}
 
-        device_id = target_device.id
-        device_full_name = target_device.FriendlyName
+        # Set as default using the Command-Line Friendly ID
+        cmd_id = target_device['cmd_id']
+        if not cmd_id:
+            return {"success": False, "error": "Device has no Command-Line Friendly ID"}
 
-        print(f"[AudioSwitch] Device ID: {device_id}", file=sys.stderr)
+        # Use PowerShell to run SoundVolumeView with proper escaping
+        set_cmd = f'powershell -Command "& \'{svv_path}\' /SetDefault \'{cmd_id}\' all"'
+        print(f"[AudioSwitch] Running: {set_cmd}", file=sys.stderr)
 
-        # Create the PolicyConfig COM object
-        policyConfig = comtypes.CoCreateInstance(
-            CLSID_PolicyConfigClient,
-            IPolicyConfig,
-            CLSCTX_ALL
-        )
+        result = subprocess.run(set_cmd, shell=True, capture_output=True, text=True, timeout=10)
 
-        # Set as default for all roles:
-        # eConsole = 0 (games, system sounds)
-        # eMultimedia = 1 (music, video)
-        # eCommunications = 2 (calls)
-        for role in [0, 1, 2]:
-            hr = policyConfig.SetDefaultEndpoint(device_id, role)
-            print(f"[AudioSwitch] SetDefaultEndpoint role {role}: hr={hr}", file=sys.stderr)
+        if result.returncode != 0:
+            error_msg = result.stderr.strip() if result.stderr else "Unknown error"
+            print(f"[AudioSwitch] Command failed: {error_msg}", file=sys.stderr)
+            return {"success": False, "error": error_msg}
 
-        print(f"[AudioSwitch] SUCCESS - Default device set to: {device_full_name}", file=sys.stderr)
-        return {"success": True, "device": device_full_name, "id": device_id}
+        print(f"[AudioSwitch] SUCCESS - Default device set to: {target_device['name']}", file=sys.stderr)
+        return {"success": True, "device": target_device['name'], "cmd_id": cmd_id}
 
-    except ImportError as ie:
-        print(f"[AudioSwitch] Missing dependency: {ie}", file=sys.stderr)
-        return {"success": False, "error": f"Missing dependency: {str(ie)}. Run: pip install pycaw comtypes"}
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error": "SoundVolumeView command timed out"}
     except Exception as e:
         import traceback
         print(f"[AudioSwitch] ERROR: {e}", file=sys.stderr)
