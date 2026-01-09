@@ -168,6 +168,103 @@ SoundVolumeView.exe /SetListenToThisDevice "Virtual Desktop Audio\Device\Virtual
 
 ---
 
+## 🔧 Windows Audio Device Switching (IPolicyConfig COM)
+
+### Why SoundVolumeView CSV Approach Failed
+
+**Attempted approach:**
+1. Export all devices to CSV using `SoundVolumeView.exe /scomma devices.csv`
+2. Parse CSV to find device by name
+3. Use `SoundVolumeView.exe /SetDefault "Command-Line ID" all` to switch
+
+**Problems encountered:**
+- CSV export was empty or incomplete on some systems
+- Device names in CSV didn't match pycaw device names
+- Inconsistent behavior across different Windows configurations
+
+### IPolicyConfig COM - The Working Solution
+
+**Windows provides an undocumented COM interface `IPolicyConfig` for audio device management.**
+
+**Key discovery:** The interface is at index 10 (after 9 skip methods), not documented anywhere.
+
+```python
+# GUIDs for IPolicyConfig
+CLSID_PolicyConfig = GUID('{870af99c-171d-4f9e-af0d-e63df40c2bc9}')
+IID_IPolicyConfig = GUID('{f8679f50-850a-41cf-9c72-430f290290c8}')
+
+# Interface definition (undocumented - reverse engineered)
+class IPolicyConfig(comtypes.IUnknown):
+    _iid_ = IID_IPolicyConfig
+    _methods_ = [
+        # Skip first 10 methods (GetMixFormat, GetDeviceFormat, etc.)
+        comtypes.COMMETHOD([], comtypes.HRESULT, 'GetMixFormat', ...),
+        # ... 8 more skip methods ...
+        comtypes.COMMETHOD([], comtypes.HRESULT, 'SetDefaultEndpoint',
+                          (['in'], comtypes.c_wchar_p, 'deviceId'),
+                          (['in'], comtypes.c_uint, 'role')),
+    ]
+
+# Usage
+policy_config = comtypes.CoCreateInstance(
+    CLSID_PolicyConfig,
+    IPolicyConfig,
+    comtypes.CLSCTX_INPROC_SERVER
+)
+
+# Set for all 3 audio roles:
+# 0 = eConsole (games, system sounds)
+# 1 = eMultimedia (music, movies)
+# 2 = eCommunications (voice chat)
+for role in [0, 1, 2]:
+    policy_config.SetDefaultEndpoint(device_id, role)
+```
+
+### Device Discovery (pycaw)
+
+**Get device ID from name using pycaw:**
+```python
+from pycaw.pycaw import AudioUtilities
+
+devices = AudioUtilities.GetAllDevices()
+for device in devices:
+    # Render devices have ID starting with {0.0.0.
+    # Capture devices have ID starting with {0.0.1.
+    if device.id.startswith("{0.0.0."):
+        if "razer" in device.FriendlyName.lower():
+            target_id = device.id  # e.g. "{0.0.0.00000000}.{guid}"
+```
+
+### PC + Speakers Mode Routing Logic
+
+**In `electron-main.js`, the `switch-audio-output` handler now checks the mode:**
+
+```javascript
+if (currentCastMode === 'all' && virtualCaptureCmdId) {
+  // PC + Speakers mode: Change Listen TARGET, not Windows default
+  // Windows default stays on Virtual Desktop Audio (for FFmpeg capture)
+  const result = await audioRouting.enableListenToDeviceWithCmdId(
+    virtualCaptureCmdId,  // Source: VDA CAPTURE device
+    deviceName            // Target: User-selected speakers
+  );
+} else {
+  // Speakers Only mode: Change Windows default device
+  const result = await runPython(['set-audio-output', deviceName]);
+}
+```
+
+**Key insight:** In PC + Speakers mode, we DON'T change Windows default because FFmpeg needs to capture from Virtual Desktop Audio. Instead, we change where the "Listen to this device" routes audio.
+
+### Files Involved
+
+| File | Function | Purpose |
+|------|----------|---------|
+| `cast-helper.py` | `set_default_audio_output()` | IPolicyConfig COM to change Windows default |
+| `audio-routing.js` | `enableListenToDeviceWithCmdId()` | SoundVolumeView to change Listen target |
+| `electron-main.js` | `switch-audio-output` handler | Routes based on cast mode |
+
+---
+
 ## Key Technical Details
 
 ### Audio Pipeline (Updated - No External Software)
