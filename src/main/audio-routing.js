@@ -197,7 +197,7 @@ async function getRenderDevices() {
 
 /**
  * Find the user's real speakers (HDMI, monitor speakers, etc.)
- * Returns the first matching device by priority
+ * Returns the UNIQUE deviceName (not ambiguous name)
  */
 async function findRealSpeakers() {
   const devices = await getRenderDevices();
@@ -237,8 +237,9 @@ async function findRealSpeakers() {
 
       if (nameLower.includes(pattern.toLowerCase()) ||
           deviceNameLower.includes(pattern.toLowerCase())) {
-        console.log(`[AudioRouting] Found real speakers: ${device.name} (${device.deviceName})`);
-        return device.name;
+        // CRITICAL: Return deviceName (unique) not name (ambiguous)
+        console.log(`[AudioRouting] Found real speakers: ${device.deviceName} (display: ${device.name})`);
+        return device.deviceName;
       }
     }
   }
@@ -261,17 +262,16 @@ async function enableListenToDevice(sourceDevice, targetDevice = null) {
 
   try {
     // Build the audioctl command
-    // audioctl listen --name "Virtual Desktop Audio" --flow Capture --enable [--playback-target-id ""]
-    let args = `listen --name "${sourceDevice}" --flow Capture --enable`;
+    // audioctl listen --name "Virtual Desktop Audio" --enable --playback-target-name "ASUS VG32V"
+    // Note: NO --flow parameter - audioctl doesn't have that option!
+    let args = `listen --name "${sourceDevice}" --enable`;
 
-    // If targetDevice is specified, we need to get its endpoint ID first
-    // For now, use "" which means default playback device
-    // TODO: If targetDevice specified, look up its endpoint ID
+    // If targetDevice is specified, use --playback-target-name for the output device
     if (targetDevice) {
-      // Use default playback for now - audioctl will route to current default
-      args += ` --playback-target-id ""`;
+      args += ` --playback-target-name "${targetDevice}"`;
     } else {
-      args += ` --playback-target-id ""`;
+      // Empty string means default playback device
+      args += ` --playback-target-name ""`;
     }
 
     const result = await runAudioctl(args);
@@ -296,8 +296,9 @@ async function disableListenToDevice(sourceDevice) {
   console.log(`[AudioRouting] Disabling Listen on: ${sourceDevice}`);
 
   try {
-    // audioctl listen --name "Virtual Desktop Audio" --flow Capture --disable
-    const args = `listen --name "${sourceDevice}" --flow Capture --disable`;
+    // audioctl listen --name "Virtual Desktop Audio" --disable
+    // Note: NO --flow parameter - audioctl doesn't have that option!
+    const args = `listen --name "${sourceDevice}" --disable`;
 
     const result = await runAudioctl(args);
 
@@ -362,7 +363,7 @@ async function enablePCSpeakersMode(targetDevice = null) {
 
 /**
  * Find a virtual audio device for "Speakers Only" mode
- * Returns the first virtual device found
+ * Returns the UNIQUE deviceName (e.g., "Virtual Desktop Audio") not ambiguous name ("Speakers")
  */
 async function findVirtualDevice() {
   const devices = await getRenderDevices();
@@ -379,8 +380,10 @@ async function findVirtualDevice() {
     for (const device of devices) {
       if (device.name.toLowerCase().includes(pattern.toLowerCase()) ||
           device.deviceName.toLowerCase().includes(pattern.toLowerCase())) {
-        console.log(`[AudioRouting] Found virtual device: ${device.name}`);
-        return device.name;
+        // CRITICAL: Return deviceName (unique) not name (ambiguous "Speakers")
+        // Multiple devices can have name="Speakers" but deviceName is unique
+        console.log(`[AudioRouting] Found virtual device: ${device.deviceName} (display: ${device.name})`);
+        return device.deviceName;
       }
     }
   }

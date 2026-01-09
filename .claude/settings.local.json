@@ -141,7 +141,9 @@
       "Bash(Select-Object -First 10)",
       "Bash(.svclsvcl.exe /scomma \"\")",
       "Bash(svcl.exe:*)",
-      "Bash(\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\svcl\\\\svcl.exe\" /?)"
+      "Bash(\"c:\\\\Users\\\\kepne\\\\OneDrive\\\\Documents\\\\GitHub\\\\pcnestspeaker\\\\svcl\\\\svcl.exe\" /?)",
+      "Bash(audioctlaudioctl.exe listen --help)",
+      "Bash(\"./audioctl/audioctl.exe\" listen --help)"
     ]
   }
 }
