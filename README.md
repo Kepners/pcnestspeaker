@@ -56,8 +56,16 @@ For older devices that don't support custom receivers, the app falls back to HTT
 | Click speaker | Start/stop streaming to that speaker |
 | Volume slider | Adjust speaker volume |
 | Volume keys | PC volume keys control Nest (when streaming) |
-| X button | Minimize to system tray |
 | Tray icon | Double-click to show, right-click for menu |
+
+### Window Controls
+
+| Button | Symbol | Action |
+|--------|--------|--------|
+| Refresh | ↻ | Rediscover speakers on network |
+| Minimize | − | Minimize window |
+| Close | × | Hide to system tray (app keeps running) |
+| Quit | ⏻ | Full exit - stops streaming, restores audio settings |
 
 ## Settings
 

@@ -46,6 +46,21 @@
 | **Auto-Connect** | Connect to last speaker on startup |
 | **System Tray** | Minimize to tray, tray menu controls |
 
+### Window Controls (Frameless Window)
+
+| Button | Symbol | Action |
+|--------|--------|--------|
+| **Refresh** | ↻ | Rediscover speakers on network |
+| **Minimize** | − | Minimize window to taskbar |
+| **Close** | × | Hide to system tray (app keeps running in background) |
+| **Quit** | ⏻ | Full exit - stops streaming, restores audio device, quits app |
+
+**Quit Button Behavior:**
+1. Sets `app.isQuitting = true`
+2. Calls `cleanup()` - stops FFmpeg, disconnects speakers, restores audio
+3. Destroys system tray icon
+4. Exits application completely
+
 ### Stream Monitor
 
 | Feature | Description |
@@ -264,6 +279,9 @@ paths:
 | `update-settings` | `{settings}` | Save settings |
 | `get-settings` | - | Load settings |
 | `toggle-auto-start` | - | Toggle Windows startup |
+| `minimize-window` | - | Minimize to taskbar |
+| `close-window` | - | Hide to tray |
+| `quit-app` | - | Full exit with cleanup |
 
 ---
 
