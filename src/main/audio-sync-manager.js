@@ -78,7 +78,7 @@ function setWindowsDelay(delayMs) {
 
 /**
  * Set delay using Equalizer APO config file
- * This is the reliable fallback that works on all systems
+ * Uses PowerShell with elevation to write to Program Files (requires UAC once)
  */
 function setEqualizerAPODelay(delayMs) {
   return new Promise((resolve, reject) => {
@@ -87,40 +87,92 @@ function setEqualizerAPODelay(delayMs) {
       return;
     }
 
+    const syncConfigPath = 'C:\\Program Files\\EqualizerAPO\\config\\pcnestspeaker-sync.txt';
+
+    // Try direct write first (works if app has admin rights or folder has write permission)
     try {
-      // Create/update Equalizer APO config with delay
-      // Delay filter format: Delay: <ms> ms
-      const config = `# PC Nest Speaker Audio Sync
+      const config = `# PC Nest Speaker Audio Sync\n# Auto-generated - do not edit manually\n\n# Delay PC speakers to sync with Nest speakers\nDelay: ${delayMs} ms\n`;
+      fs.writeFileSync(syncConfigPath, config);
+      console.log(`[AudioSync] Direct write succeeded - delay set to ${delayMs}ms`);
+
+      // Add include if needed
+      ensureIncludeInConfig();
+      resolve(true);
+      return;
+    } catch (directErr) {
+      console.log('[AudioSync] Direct write failed (permission denied), trying PowerShell...');
+    }
+
+    // Fallback: Use PowerShell to write (handles UAC elevation)
+    const config = `# PC Nest Speaker Audio Sync
 # Auto-generated - do not edit manually
 
 # Delay PC speakers to sync with Nest speakers
-Delay: ${delayMs} ms
-`;
+Delay: ${delayMs} ms`;
 
-      // Write to a separate include file to not mess with user's main config
-      const syncConfigPath = 'C:\\Program Files\\EqualizerAPO\\config\\pcnestspeaker-sync.txt';
-      fs.writeFileSync(syncConfigPath, config);
+    // Escape for PowerShell
+    const escapedConfig = config.replace(/"/g, '`"').replace(/\n/g, '`n');
+    const escapedPath = syncConfigPath.replace(/\\/g, '\\\\');
 
-      // Check if main config includes our sync file
-      let mainConfig = '';
-      if (fs.existsSync(APO_CONFIG_PATH)) {
-        mainConfig = fs.readFileSync(APO_CONFIG_PATH, 'utf8');
+    // PowerShell command to write file (will prompt UAC if needed)
+    const psCommand = `
+      $configContent = "${escapedConfig}"
+      $configPath = "${escapedPath}"
+      $mainConfigPath = "C:\\Program Files\\EqualizerAPO\\config\\config.txt"
+
+      # Write sync config
+      Set-Content -Path $configPath -Value $configContent -Force
+
+      # Add include to main config if not present
+      $mainConfig = Get-Content $mainConfigPath -Raw -ErrorAction SilentlyContinue
+      if ($mainConfig -notmatch 'pcnestspeaker-sync.txt') {
+        Add-Content -Path $mainConfigPath -Value "\`n# PC Nest Speaker sync delay\`nInclude: pcnestspeaker-sync.txt\`n"
+        Write-Output "Added include statement"
       }
+      Write-Output "Delay set to ${delayMs}ms"
+    `;
 
-      if (!mainConfig.includes('pcnestspeaker-sync.txt')) {
-        // Add include to main config
-        const includeStatement = '\n# PC Nest Speaker sync delay\nInclude: pcnestspeaker-sync.txt\n';
-        fs.appendFileSync(APO_CONFIG_PATH, includeStatement);
-        console.log('[AudioSync] Added include to Equalizer APO config');
+    exec(`powershell -NoProfile -Command "${psCommand.replace(/"/g, '\\"')}"`,
+      { windowsHide: true, timeout: 10000 },
+      (error, stdout, stderr) => {
+        if (error) {
+          console.error('[AudioSync] PowerShell write failed:', stderr || error.message);
+          // Last resort: try with Start-Process elevation
+          const elevatedCmd = `powershell -Command "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -Command Set-Content -Path \\\"${escapedPath}\\\" -Value \\\"${escapedConfig}\\\" -Force'"`;
+          exec(elevatedCmd, { windowsHide: true }, (err2) => {
+            if (err2) {
+              reject(new Error('Failed to write APO config - need admin rights'));
+            } else {
+              console.log(`[AudioSync] Elevated write succeeded - delay set to ${delayMs}ms`);
+              resolve(true);
+            }
+          });
+        } else {
+          console.log(`[AudioSync] PowerShell write succeeded - ${stdout.trim()}`);
+          resolve(true);
+        }
       }
-
-      console.log(`[AudioSync] Equalizer APO delay set to ${delayMs}ms`);
-      resolve(true);
-    } catch (err) {
-      console.error('[AudioSync] Failed to set Equalizer APO delay:', err);
-      reject(err);
-    }
+    );
   });
+}
+
+/**
+ * Ensure our include statement is in the main APO config
+ */
+function ensureIncludeInConfig() {
+  try {
+    let mainConfig = '';
+    if (fs.existsSync(APO_CONFIG_PATH)) {
+      mainConfig = fs.readFileSync(APO_CONFIG_PATH, 'utf8');
+    }
+    if (!mainConfig.includes('pcnestspeaker-sync.txt')) {
+      const includeStatement = '\n# PC Nest Speaker sync delay\nInclude: pcnestspeaker-sync.txt\n';
+      fs.appendFileSync(APO_CONFIG_PATH, includeStatement);
+      console.log('[AudioSync] Added include to Equalizer APO config');
+    }
+  } catch (err) {
+    console.log('[AudioSync] Could not update main config (will try PowerShell):', err.message);
+  }
 }
 
 /**
