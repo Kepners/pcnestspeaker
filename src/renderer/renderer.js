@@ -398,6 +398,40 @@ function setupEventListeners() {
   }
 }
 
+// Track if Equalizer APO is installed
+let equalizerApoInstalled = false;
+
+// Check Equalizer APO on startup
+async function checkEqualizerApo() {
+  try {
+    const result = await window.api.checkEqualizerApo();
+    equalizerApoInstalled = result.installed;
+    log(`Equalizer APO: ${equalizerApoInstalled ? 'Installed' : 'Not installed'}`);
+    return equalizerApoInstalled;
+  } catch (err) {
+    log(`Equalizer APO check failed: ${err.message}`, 'warning');
+    return false;
+  }
+}
+
+// Show install prompt for Equalizer APO
+function showEqualizerApoPrompt() {
+  const confirmed = confirm(
+    '🔊 Sync Delay requires Equalizer APO\n\n' +
+    'This free software adds audio delay to your PC speakers so they sync with Cast speakers.\n\n' +
+    'Click OK to download Equalizer APO (30 second install).\n\n' +
+    'After installing:\n' +
+    '1. Select your HDMI/speaker device during setup\n' +
+    '2. Restart Windows\n' +
+    '3. The sync delay slider will work!'
+  );
+
+  if (confirmed) {
+    window.api.installEqualizerApo();
+    log('Opening Equalizer APO download page...', 'success');
+  }
+}
+
 // Set cast mode and update UI
 // "Speakers Only" = Virtual Desktop Audio (no local sound, audio only to Cast)
 // "PC + Speakers" = User's real speakers (local sound + Cast via loopback)
@@ -417,13 +451,37 @@ async function setCastMode(mode) {
     if (mode === 'speakers') {
       castModeHint.textContent = 'Audio only goes to Nest speakers';
     } else {
-      castModeHint.textContent = 'PC speakers + Nest (use delay to sync)';
+      // Check if Equalizer APO is installed for sync delay
+      if (!equalizerApoInstalled) {
+        castModeHint.innerHTML = 'PC speakers + Nest <span style="color: var(--color-warning);">(install Equalizer APO for sync)</span>';
+      } else {
+        castModeHint.textContent = 'PC speakers + Nest (use delay to sync)';
+      }
     }
   }
 
-  // Show/hide sync delay row
+  // Show/hide sync delay row based on mode AND Equalizer APO status
   if (syncDelayRow) {
-    syncDelayRow.style.display = mode === 'all' ? 'flex' : 'none';
+    if (mode === 'all') {
+      syncDelayRow.style.display = 'flex';
+
+      // If Equalizer APO not installed, show prompt on first enable
+      if (!equalizerApoInstalled) {
+        // Disable slider and show install hint
+        if (syncDelaySlider) {
+          syncDelaySlider.disabled = true;
+        }
+        // Check again in case user just installed it
+        const freshCheck = await checkEqualizerApo();
+        if (!freshCheck) {
+          showEqualizerApoPrompt();
+        } else {
+          if (syncDelaySlider) syncDelaySlider.disabled = false;
+        }
+      }
+    } else {
+      syncDelayRow.style.display = 'none';
+    }
   }
 
   // Save setting AND switch audio device if streaming
@@ -1709,10 +1767,14 @@ async function initAudioSync() {
     audioSyncAvailable = result.supported;
     audioSyncMethod = result.method;
 
+    // Also update equalizerApoInstalled for setCastMode()
+    equalizerApoInstalled = result.method === 'equalizerapo' || result.supported;
+
     if (result.supported) {
       log(`Audio sync available (${result.method})`, 'success');
     } else if (result.needsInstall) {
       log('Audio sync: Equalizer APO not installed', 'warning');
+      equalizerApoInstalled = false;
       // User can install from UI if they want sync feature
     } else {
       log('Audio sync: No delay method available', 'info');
@@ -1723,6 +1785,7 @@ async function initAudioSync() {
   } catch (error) {
     log(`Audio sync init failed: ${error.message}`, 'error');
     audioSyncAvailable = false;
+    equalizerApoInstalled = false;
   }
 }
 
@@ -1801,6 +1864,124 @@ if (syncDelaySlider) {
   syncDelaySlider.addEventListener('input', (e) => {
     handleSyncDelayChange(parseInt(e.target.value, 10));
   });
+}
+
+// ===================
+// Test Sync Button - Plays beep to help user sync audio
+// ===================
+const testSyncBtn = document.getElementById('test-sync-btn');
+const syncHint = document.getElementById('sync-hint');
+let audioContext = null;
+
+/**
+ * Play a test beep sound using Web Audio API
+ * This plays through the system default audio device (PC speakers)
+ * Cast speakers will receive it via the FFmpeg stream with ~1s delay
+ */
+function playTestBeep() {
+  try {
+    // Create audio context on demand (browser requires user interaction first)
+    if (!audioContext) {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    // Resume if suspended
+    if (audioContext.state === 'suspended') {
+      audioContext.resume();
+    }
+
+    // Create a short beep (click sound)
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    // Configure beep - 880Hz (A5 note), short duration
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
+
+    // Sharp attack, quick decay for a "click" sound
+    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.5, audioContext.currentTime + 0.01);
+    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.15);
+
+    // Play for 150ms
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.15);
+
+    log('🔊 Test beep played - listen for sync!');
+  } catch (err) {
+    log(`Test beep failed: ${err.message}`, 'error');
+  }
+}
+
+/**
+ * Play repeating test beeps for easier sync calibration
+ * Plays 5 beeps, 1 second apart
+ */
+let testBeepInterval = null;
+let testBeepCount = 0;
+
+function startTestSync() {
+  if (testBeepInterval) {
+    // Already playing - stop it
+    stopTestSync();
+    return;
+  }
+
+  // Show hint
+  if (syncHint) {
+    syncHint.style.display = 'block';
+  }
+
+  // Add playing class to button
+  if (testSyncBtn) {
+    testSyncBtn.classList.add('playing');
+    testSyncBtn.textContent = '⏹️ Stop';
+  }
+
+  testBeepCount = 0;
+  log('Starting sync test - 5 beeps coming...');
+
+  // Play first beep immediately
+  playTestBeep();
+  testBeepCount++;
+
+  // Then play 4 more beeps, 1 second apart
+  testBeepInterval = setInterval(() => {
+    playTestBeep();
+    testBeepCount++;
+
+    if (testBeepCount >= 5) {
+      stopTestSync();
+    }
+  }, 1000);
+}
+
+function stopTestSync() {
+  if (testBeepInterval) {
+    clearInterval(testBeepInterval);
+    testBeepInterval = null;
+  }
+
+  // Remove playing class
+  if (testSyncBtn) {
+    testSyncBtn.classList.remove('playing');
+    testSyncBtn.textContent = '🔊 Test';
+  }
+
+  // Hide hint after a delay
+  setTimeout(() => {
+    if (syncHint && !testBeepInterval) {
+      syncHint.style.display = 'none';
+    }
+  }, 3000);
+}
+
+// Test sync button event listener
+if (testSyncBtn) {
+  testSyncBtn.addEventListener('click', startTestSync);
 }
 
 // ===================

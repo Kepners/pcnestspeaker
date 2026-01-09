@@ -711,6 +711,43 @@ body::before {
   text-align: right;
 }
 
+/* Test Sync Button */
+.btn-test-sync {
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  background: linear-gradient(135deg, var(--cyan), #3d6269);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-test-sync:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 12px rgba(85, 130, 139, 0.5);
+}
+
+.btn-test-sync:active {
+  transform: scale(0.98);
+}
+
+.btn-test-sync.playing {
+  animation: pulse-test 0.5s ease-in-out infinite;
+}
+
+@keyframes pulse-test {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); box-shadow: 0 0 20px rgba(85, 130, 139, 0.8); }
+}
+
+.sync-hint {
+  margin-top: -5px;
+  font-size: 0.75rem;
+  color: var(--cyan);
+}
+
 /* ==================== BUTTONS ==================== */
 .btn {
   display: inline-flex;
