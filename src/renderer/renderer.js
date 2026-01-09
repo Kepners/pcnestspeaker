@@ -27,6 +27,7 @@ const syncDelayRow = document.getElementById('sync-delay-row');
 const apoStatus = document.getElementById('apo-status');
 const apoDevicesText = document.getElementById('apo-devices-text');
 const launchApoBtn = document.getElementById('launch-apo-btn');
+const refreshOutputsBtn = document.getElementById('refresh-outputs-btn');
 
 // Sync delay elements
 const syncDelaySlider = document.getElementById('sync-delay-slider');
@@ -190,6 +191,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Load APO device info for Settings tab
   await loadApoDevices();
+
+  // Load audio output devices for quick switcher
+  await loadAudioOutputs();
 
   // Set up first-run event listener
   setupFirstRunListener();
@@ -538,6 +542,14 @@ function setupEventListeners() {
       } catch (error) {
         log(`APO Configurator error: ${error.message}`, 'error');
       }
+    });
+  }
+
+  // Refresh audio outputs button
+  if (refreshOutputsBtn) {
+    refreshOutputsBtn.addEventListener('click', async () => {
+      log('Refreshing audio outputs...');
+      await loadAudioOutputs();
     });
   }
 }
@@ -2013,6 +2025,114 @@ async function loadApoDevices() {
     apoDevicesText.classList.add('warning');
     log(`Failed to load APO devices: ${error.message}`, 'error');
   }
+}
+
+// ═══════════════════════════════════════════════════════════
+// QUICK AUDIO OUTPUT SWITCHER
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Load and display all audio output devices for quick switching
+ */
+async function loadAudioOutputs() {
+  const listEl = document.getElementById('audio-output-list');
+  if (!listEl) return;
+
+  // Show loading state
+  listEl.innerHTML = '<div class="audio-output-loading">Loading devices...</div>';
+
+  try {
+    const result = await window.api.getAudioOutputs();
+
+    if (!result.success || !result.devices || result.devices.length === 0) {
+      listEl.innerHTML = '<div class="audio-output-loading">No audio devices found</div>';
+      return;
+    }
+
+    // Build the device list
+    listEl.innerHTML = result.devices.map(device => {
+      const icon = getAudioDeviceIcon(device.name);
+      const isActive = device.isDefault;
+
+      return `
+        <div class="audio-output-item ${isActive ? 'active' : ''}"
+             data-device-name="${escapeHtml(device.name)}"
+             onclick="switchAudioOutput('${escapeHtml(device.name)}')">
+          <span class="audio-output-icon">${icon}</span>
+          <span class="audio-output-name">${escapeHtml(device.name)}</span>
+          <span class="audio-output-status">ACTIVE</span>
+        </div>
+      `;
+    }).join('');
+
+    log(`Loaded ${result.devices.length} audio outputs`, 'info');
+  } catch (error) {
+    listEl.innerHTML = '<div class="audio-output-loading">Error loading devices</div>';
+    log(`Failed to load audio outputs: ${error.message}`, 'error');
+  }
+}
+
+/**
+ * Get icon for audio device based on name
+ */
+function getAudioDeviceIcon(name) {
+  const nameLower = name.toLowerCase();
+  if (nameLower.includes('headphone') || nameLower.includes('headset')) return '🎧';
+  if (nameLower.includes('hdmi') || nameLower.includes('nvidia') || nameLower.includes('display')) return '🖥️';
+  if (nameLower.includes('virtual') || nameLower.includes('cable')) return '🔌';
+  if (nameLower.includes('bluetooth') || nameLower.includes('bt')) return '📶';
+  if (nameLower.includes('usb')) return '🔊';
+  return '🔈'; // Default speaker icon
+}
+
+/**
+ * Switch to a specific audio output device
+ */
+async function switchAudioOutput(deviceName) {
+  const listEl = document.getElementById('audio-output-list');
+  if (!listEl) return;
+
+  // Find the clicked item and add switching state
+  const items = listEl.querySelectorAll('.audio-output-item');
+  let clickedItem = null;
+  items.forEach(item => {
+    if (item.dataset.deviceName === deviceName) {
+      clickedItem = item;
+      item.classList.add('switching');
+    }
+  });
+
+  log(`Switching audio to: ${deviceName}`, 'info');
+
+  try {
+    const result = await window.api.switchAudioOutput(deviceName);
+
+    if (result.success) {
+      // Update active states
+      items.forEach(item => {
+        item.classList.remove('active', 'switching');
+        if (item.dataset.deviceName === deviceName) {
+          item.classList.add('active');
+        }
+      });
+      log(`Audio switched to: ${deviceName}`, 'success');
+    } else {
+      if (clickedItem) clickedItem.classList.remove('switching');
+      log(`Failed to switch: ${result.error}`, 'error');
+    }
+  } catch (error) {
+    if (clickedItem) clickedItem.classList.remove('switching');
+    log(`Error switching audio: ${error.message}`, 'error');
+  }
+}
+
+/**
+ * Escape HTML to prevent XSS
+ */
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 /**

@@ -1429,3 +1429,80 @@ body::before {
   display: block;
 }
 
+/* ═══════════════════════════════════════════════════════════
+   QUICK AUDIO OUTPUT SWITCHER
+   ═══════════════════════════════════════════════════════════ */
+
+.audio-output-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.audio-output-loading {
+  color: rgba(26, 26, 26, 0.5);
+  font-size: 0.8rem;
+  padding: 12px;
+  text-align: center;
+}
+
+.audio-output-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(26, 26, 26, 0.03);
+  border: 1px solid rgba(26, 26, 26, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.audio-output-item:hover {
+  background: rgba(26, 26, 26, 0.08);
+  border-color: rgba(26, 26, 26, 0.2);
+}
+
+.audio-output-item.active {
+  background: rgba(41, 191, 18, 0.1);
+  border-color: var(--green);
+  box-shadow: 0 0 10px rgba(41, 191, 18, 0.2);
+}
+
+.audio-output-item.switching {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.audio-output-icon {
+  font-size: 1.2rem;
+  width: 24px;
+  text-align: center;
+}
+
+.audio-output-name {
+  flex: 1;
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.audio-output-status {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--green);
+  color: white;
+}
+
+.audio-output-item:not(.active) .audio-output-status {
+  display: none;
+}
+

@@ -2578,6 +2578,34 @@ ipcMain.handle('launch-apo-configurator', async () => {
 });
 
 // ═══════════════════════════════════════════════════════════
+// QUICK AUDIO OUTPUT SWITCHER
+// ═══════════════════════════════════════════════════════════
+
+// Get list of all audio output devices
+ipcMain.handle('get-audio-outputs', async () => {
+  try {
+    const devices = await audioDeviceManager.getAllAudioOutputDevices();
+    return { success: true, devices };
+  } catch (error) {
+    sendLog(`Failed to list audio outputs: ${error.message}`, 'error');
+    return { success: false, error: error.message, devices: [] };
+  }
+});
+
+// Switch to a specific audio output device
+ipcMain.handle('switch-audio-output', async (event, deviceName) => {
+  try {
+    sendLog(`Switching audio output to: ${deviceName}`, 'info');
+    await audioDeviceManager.setDefaultAudioDevice(deviceName);
+    sendLog(`Audio output switched to: ${deviceName}`, 'success');
+    return { success: true, device: deviceName };
+  } catch (error) {
+    sendLog(`Failed to switch audio: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
 // LICENSE KEY VALIDATION
 // ═══════════════════════════════════════════════════════════
 function getLicensePath() {

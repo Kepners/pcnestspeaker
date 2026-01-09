@@ -71,6 +71,10 @@ contextBridge.exposeInMainWorld('api', {
   getApoDevices: () => ipcRenderer.invoke('get-apo-devices'),
   launchApoConfigurator: () => ipcRenderer.invoke('launch-apo-configurator'),
 
+  // Quick Audio Output Switcher
+  getAudioOutputs: () => ipcRenderer.invoke('get-audio-outputs'),
+  switchAudioOutput: (deviceName) => ipcRenderer.invoke('switch-audio-output', deviceName),
+
   // First-Run Setup
   getFirstRunStatus: () => ipcRenderer.invoke('get-first-run-status'),
   completeFirstRun: (options) => ipcRenderer.invoke('complete-first-run', options),

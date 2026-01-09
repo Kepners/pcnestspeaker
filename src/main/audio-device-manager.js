@@ -429,9 +429,151 @@ async function restoreOriginalDevice() {
   }
 }
 
+/**
+ * Get list of all audio output devices using PowerShell
+ * Returns array of { name: string, id: string, isDefault: boolean }
+ */
+function getAllAudioOutputDevices() {
+  return new Promise((resolve, reject) => {
+    const os = require('os');
+    const scriptPath = path.join(os.tmpdir(), 'list-audio-devices.ps1');
+
+    // PowerShell script to list all active render devices
+    const psScript = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+
+[Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDevice {
+    int Activate(ref Guid id, int clsCtx, int activationParams, out IntPtr ptr);
+    int OpenPropertyStore(int access, out IPropertyStore props);
+    int GetId(out IntPtr id);
+    int GetState(out int state);
+}
+
+[Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDeviceCollection {
+    int GetCount(out int count);
+    int Item(int index, out IMMDevice device);
+}
+
+[Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IPropertyStore {
+    int GetCount(out int count);
+    int GetAt(int index, out PROPERTYKEY key);
+    int GetValue(ref PROPERTYKEY key, out PROPVARIANT propvar);
+    int SetValue(ref PROPERTYKEY key, ref PROPVARIANT propvar);
+    int Commit();
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct PROPERTYKEY {
+    public Guid fmtid;
+    public int pid;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct PROPVARIANT {
+    public short vt;
+    public short r1, r2, r3;
+    public IntPtr val1, val2;
+}
+
+[Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDeviceEnumerator {
+    int EnumAudioEndpoints(int dataFlow, int stateMask, out IMMDeviceCollection devices);
+    int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice endpoint);
+}
+
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+class MMDeviceEnumerator {}
+
+public static class AudioLister {
+    public static string ListDevices() {
+        var results = new List<string>();
+        var enumerator = new MMDeviceEnumerator() as IMMDeviceEnumerator;
+
+        // Get default device ID
+        IMMDevice defaultDevice;
+        enumerator.GetDefaultAudioEndpoint(0, 1, out defaultDevice);
+        IntPtr defaultIdPtr;
+        defaultDevice.GetId(out defaultIdPtr);
+        string defaultId = Marshal.PtrToStringUni(defaultIdPtr);
+
+        // Enumerate all active render devices
+        IMMDeviceCollection devices;
+        enumerator.EnumAudioEndpoints(0, 1, out devices); // 0=render, 1=active
+
+        int count;
+        devices.GetCount(out count);
+
+        for (int i = 0; i < count; i++) {
+            IMMDevice device;
+            devices.Item(i, out device);
+
+            IntPtr idPtr;
+            device.GetId(out idPtr);
+            string id = Marshal.PtrToStringUni(idPtr);
+
+            IPropertyStore props;
+            device.OpenPropertyStore(0, out props);
+
+            PROPERTYKEY key = new PROPERTYKEY();
+            key.fmtid = new Guid("a45c254e-df1c-4efd-8020-67d146a850e0");
+            key.pid = 14; // PKEY_Device_FriendlyName
+
+            PROPVARIANT value;
+            props.GetValue(ref key, out value);
+            string name = Marshal.PtrToStringUni(value.val1);
+
+            bool isDefault = (id == defaultId);
+            results.Add(name + "|" + (isDefault ? "1" : "0"));
+        }
+        return string.Join("\\n", results);
+    }
+}
+"@
+[AudioLister]::ListDevices()
+`;
+
+    try {
+      fs.writeFileSync(scriptPath, psScript, 'utf8');
+    } catch (e) {
+      console.error('[AudioDeviceManager] Failed to write list script:', e.message);
+      reject(new Error('Failed to write PowerShell script'));
+      return;
+    }
+
+    exec(
+      `powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}"`,
+      { timeout: 10000, windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error) {
+          console.error('[AudioDeviceManager] List devices error:', stderr || error.message);
+          reject(new Error('Could not list audio devices'));
+        } else {
+          const lines = stdout.trim().split('\n').filter(l => l.trim());
+          const devices = lines.map(line => {
+            const [name, isDefault] = line.split('|');
+            return {
+              name: name.trim(),
+              isDefault: isDefault === '1'
+            };
+          });
+          console.log(`[AudioDeviceManager] Found ${devices.length} audio devices`);
+          resolve(devices);
+        }
+      }
+    );
+  });
+}
+
 module.exports = {
   switchToStreamingDevice,
   restoreOriginalDevice,
   getCurrentAudioDevice,
-  setDefaultAudioDevice
+  setDefaultAudioDevice,
+  getAllAudioOutputDevices
 };
