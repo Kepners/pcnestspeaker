@@ -310,18 +310,20 @@ function getAPOInstalledDevices() {
 /**
  * Launch APO Editor so user can configure their audio device
  * Note: The app is called "Editor.exe" (not "Configurator.exe")
+ * CRITICAL: Qt apps must be launched from their install directory for plugins to work
  */
 function launchAPOConfigurator() {
   return new Promise((resolve) => {
-    // APO 1.4+ uses Editor.exe (older versions used Configurator.exe)
-    const editorPath = 'C:\\Program Files\\EqualizerAPO\\Editor.exe';
-    const configuratorPath = 'C:\\Program Files\\EqualizerAPO\\Configurator.exe';
+    const apoDir = 'C:\\Program Files\\EqualizerAPO';
+    const editorPath = path.join(apoDir, 'Editor.exe');
+    const configuratorPath = path.join(apoDir, 'Configurator.exe');
 
     // Try Editor.exe first (APO 1.4+), then fall back to Configurator.exe
     const appPath = fs.existsSync(editorPath) ? editorPath : configuratorPath;
 
     if (fs.existsSync(appPath)) {
-      exec(`"${appPath}"`, { windowsHide: false }, (error) => {
+      // CRITICAL: Set cwd to APO directory so Qt can find its platform plugins
+      exec(`"${appPath}"`, { windowsHide: false, cwd: apoDir }, (error) => {
         if (error) {
           console.log('[AudioSync] Could not launch APO app:', error.message);
           resolve(false);
