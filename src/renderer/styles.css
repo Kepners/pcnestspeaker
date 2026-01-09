@@ -643,65 +643,109 @@ body::before {
   box-shadow: 0 2px 8px rgba(239, 71, 111, 0.3);
 }
 
-/* ==================== SYNC DELAY SLIDER ==================== */
-.sync-delay-row {
+/* ==================== SYNC CALIBRATION ==================== */
+.sync-calibrate-row {
   flex-direction: column;
   align-items: flex-start;
   gap: 10px;
 }
 
-.sync-delay-control {
+.sync-calibrate-control {
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
 }
 
-#sync-delay-slider {
-  flex: 1;
-  -webkit-appearance: none;
-  appearance: none;
-  background: rgba(26, 26, 26, 0.1);
-  border-radius: 6px;
-  height: 8px;
-  cursor: pointer;
-}
-
-#sync-delay-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  background: var(--pink);
-  border-radius: 50%;
+/* Calibrate button */
+.btn-sync-calibrate {
+  padding: 10px 18px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--pink), var(--cyan));
+  color: white;
+  border: none;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 0 8px rgba(252, 191, 183, 0.4);
+  box-shadow: 0 2px 8px rgba(239, 71, 111, 0.3);
 }
 
-#sync-delay-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.1);
-  box-shadow: 0 0 15px rgba(252, 191, 183, 0.6);
+.btn-sync-calibrate:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 15px rgba(239, 71, 111, 0.4);
 }
 
-#sync-delay-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  background: var(--pink);
+.btn-sync-calibrate.calibrating {
+  background: linear-gradient(135deg, #00c896, var(--cyan));
+  animation: pulse-glow 1s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 2px 8px rgba(0, 200, 150, 0.4); }
+  50% { box-shadow: 0 4px 20px rgba(0, 200, 150, 0.7); }
+}
+
+/* Visual sync indicator - two circles coming together */
+.sync-visual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  margin-left: 8px;
+}
+
+.sync-wave {
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  cursor: pointer;
-  border: none;
+  transition: all 0.3s ease;
 }
 
-#sync-delay-slider:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+.sync-wave.left {
+  background: var(--pink);
+  transform: translateX(10px);
 }
 
-#sync-delay-slider:disabled::-webkit-slider-thumb {
-  background: rgba(26, 26, 26, 0.3);
-  cursor: not-allowed;
-  box-shadow: none;
+.sync-wave.right {
+  background: var(--cyan);
+  transform: translateX(-10px);
+}
+
+/* When calibrating, waves pulse */
+.calibrating .sync-wave {
+  animation: wave-pulse 0.5s ease-in-out infinite alternate;
+}
+
+.calibrating .sync-wave.left {
+  animation-delay: 0s;
+}
+
+.calibrating .sync-wave.right {
+  animation-delay: 0.25s;
+}
+
+@keyframes wave-pulse {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  100% { transform: scale(1.2); opacity: 1; }
+}
+
+/* When synced (delay near optimal), waves merge */
+.sync-visual.synced .sync-wave.left {
+  transform: translateX(0);
+}
+
+.sync-visual.synced .sync-wave.right {
+  transform: translateX(0);
+}
+
+.sync-visual.synced .sync-wave {
+  animation: synced-glow 0.8s ease-in-out infinite;
+}
+
+@keyframes synced-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(0, 200, 150, 0.5); }
+  50% { box-shadow: 0 0 15px rgba(0, 200, 150, 0.9); }
 }
 
 .sync-delay-value {

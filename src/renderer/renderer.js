@@ -23,15 +23,22 @@ const volumeBoostToggle = document.getElementById('volume-boost-toggle');
 const castSpeakersBtn = document.getElementById('cast-speakers-btn');
 const castAllBtn = document.getElementById('cast-all-btn');
 const castModeHint = document.getElementById('cast-mode-hint');
-const syncDelayRow = document.getElementById('sync-delay-row');
+const syncCalibrateRow = document.getElementById('sync-calibrate-row');
 const apoStatus = document.getElementById('apo-status');
 const apoDevicesText = document.getElementById('apo-devices-text');
 const launchApoBtn = document.getElementById('launch-apo-btn');
 const refreshOutputsBtn = document.getElementById('refresh-outputs-btn');
 
-// Sync delay elements
+// Sync calibration elements
+const syncCalibrateBtn = document.getElementById('sync-calibrate-btn');
 const syncDelaySlider = document.getElementById('sync-delay-slider');
 const syncDelayValue = document.getElementById('sync-delay-value');
+const syncVisual = document.getElementById('sync-visual');
+const syncHint = document.getElementById('sync-hint');
+
+// Calibration state
+let isCalibrating = false;
+let currentSyncDelay = 0;
 
 // Trial info elements
 const trialCard = document.getElementById('trial-card');
@@ -679,28 +686,10 @@ async function setCastMode(mode) {
     }
   }
 
-  // Show/hide sync delay row based on mode AND Equalizer APO status
-  if (syncDelayRow) {
-    if (mode === 'all') {
-      syncDelayRow.style.display = 'flex';
-
-      // If Equalizer APO not installed, show prompt on first enable
-      if (!equalizerApoInstalled) {
-        // Disable slider and show install hint
-        if (syncDelaySlider) {
-          syncDelaySlider.disabled = true;
-        }
-        // Check again in case user just installed it
-        const freshCheck = await checkEqualizerApo();
-        if (!freshCheck) {
-          showEqualizerApoPrompt();
-        } else {
-          if (syncDelaySlider) syncDelaySlider.disabled = false;
-        }
-      }
-    } else {
-      syncDelayRow.style.display = 'none';
-    }
+  // Calibration is now in Settings tab - no need to show/hide based on mode
+  // Just stop calibration if mode changes to Speakers Only
+  if (mode !== 'all' && isCalibrating) {
+    stopCalibration();
   }
 
   // Save setting AND switch audio device if streaming
@@ -2034,17 +2023,16 @@ async function initAudioSync() {
 }
 
 /**
- * Update sync delay UI based on availability
+ * Update sync calibration UI based on availability
  */
 function updateSyncDelayUI() {
-  const syncRow = document.querySelector('.sync-delay-row');
+  const syncRow = document.querySelector('.sync-calibrate-row');
   if (!syncRow) return;
 
   if (!audioSyncAvailable) {
-    // Show install prompt instead of slider
-    const hint = syncRow.nextElementSibling;
-    if (hint && hint.classList.contains('option-hint')) {
-      hint.innerHTML = 'Sync requires <a href="#" id="install-apo-link" style="color: var(--color-blush);">Equalizer APO</a> (free). Click to install.';
+    // Show install prompt
+    if (syncHint) {
+      syncHint.innerHTML = 'Sync requires <a href="#" id="install-apo-link" style="color: var(--color-blush);">Equalizer APO</a> (free). Click to install.';
 
       // Add click handler for install link
       const installLink = document.getElementById('install-apo-link');
@@ -2057,14 +2045,14 @@ function updateSyncDelayUI() {
       }
     }
 
-    // Disable slider
-    if (syncDelaySlider) {
-      syncDelaySlider.disabled = true;
+    // Disable calibrate button
+    if (syncCalibrateBtn) {
+      syncCalibrateBtn.disabled = true;
     }
   } else {
-    // Enable slider
-    if (syncDelaySlider) {
-      syncDelaySlider.disabled = false;
+    // Enable calibrate button
+    if (syncCalibrateBtn) {
+      syncCalibrateBtn.disabled = false;
     }
   }
 }
@@ -2325,56 +2313,104 @@ async function playDualSyncPing() {
   }
 }
 
-// Sync delay slider event listener
-if (syncDelaySlider) {
-  syncDelaySlider.addEventListener('input', (e) => {
-    handleSyncDelayChange(parseInt(e.target.value, 10));
-  });
+// ===================
+// Sync Calibration Mode
+// ===================
 
-  // Mouse scroll wheel support for fine-tuning sync delay
-  // Scroll up = increase delay, scroll down = decrease delay
-  syncDelaySlider.addEventListener('wheel', (e) => {
-    e.preventDefault(); // Don't scroll the page
+/**
+ * Start calibration mode - plays pings on scroll
+ */
+function startCalibration() {
+  isCalibrating = true;
+  pingModeEnabled = true;
 
-    const step = 50; // 50ms per scroll tick
-    const min = parseInt(syncDelaySlider.min, 10);
-    const max = parseInt(syncDelaySlider.max, 10);
-    let currentValue = parseInt(syncDelaySlider.value, 10);
+  if (syncCalibrateBtn) {
+    syncCalibrateBtn.textContent = '✓ Done';
+    syncCalibrateBtn.classList.add('calibrating');
+  }
+  if (syncVisual) {
+    syncVisual.classList.add('calibrating');
+  }
+  if (syncHint) {
+    syncHint.textContent = 'Scroll up/down until you hear ONE ping, then click Done';
+  }
 
-    // Scroll up (negative deltaY) = increase, scroll down = decrease
-    if (e.deltaY < 0) {
-      currentValue = Math.min(max, currentValue + step);
+  // Play initial ping to start
+  playDualSyncPing();
+
+  log('Calibration started - scroll to adjust sync delay');
+}
+
+/**
+ * Stop calibration mode
+ */
+function stopCalibration() {
+  isCalibrating = false;
+  pingModeEnabled = false;
+
+  if (syncCalibrateBtn) {
+    syncCalibrateBtn.textContent = '🔊 Calibrate';
+    syncCalibrateBtn.classList.remove('calibrating');
+  }
+  if (syncVisual) {
+    syncVisual.classList.remove('calibrating');
+  }
+  if (syncHint) {
+    syncHint.textContent = 'Click Calibrate, then scroll until you hear ONE ping';
+  }
+
+  log(`Calibration done - sync delay: ${currentSyncDelay}ms`);
+}
+
+// Calibrate button click handler
+if (syncCalibrateBtn) {
+  syncCalibrateBtn.addEventListener('click', () => {
+    if (isCalibrating) {
+      stopCalibration();
     } else {
-      currentValue = Math.max(min, currentValue - step);
-    }
-
-    syncDelaySlider.value = currentValue;
-    handleSyncDelayChange(currentValue);
-  }, { passive: false }); // passive: false required for preventDefault
-}
-
-// Ping toggle button - enables/disables pings during slider movement
-const pingToggleBtn = document.getElementById('ping-toggle-btn');
-if (pingToggleBtn) {
-  pingToggleBtn.addEventListener('click', () => {
-    pingModeEnabled = !pingModeEnabled;
-    pingToggleBtn.textContent = pingModeEnabled ? '🔊' : '🔇';
-    pingToggleBtn.title = pingModeEnabled ? 'Pings ON - slide to test sync' : 'Pings OFF - click to enable';
-    pingToggleBtn.classList.toggle('active', pingModeEnabled);
-
-    // Play one ping immediately when enabled so user knows it's working
-    if (pingModeEnabled) {
-      playDualSyncPing();
+      startCalibration();
     }
   });
 }
+
+// Scroll wheel for calibration - works anywhere on page when calibrating
+document.addEventListener('wheel', (e) => {
+  if (!isCalibrating) return;
+
+  e.preventDefault(); // Don't scroll the page
+
+  const step = 50; // 50ms per scroll tick
+  const min = 0;
+  const max = 2000;
+
+  // Scroll up (negative deltaY) = increase, scroll down = decrease
+  if (e.deltaY < 0) {
+    currentSyncDelay = Math.min(max, currentSyncDelay + step);
+  } else {
+    currentSyncDelay = Math.max(min, currentSyncDelay - step);
+  }
+
+  // Update hidden slider and display
+  if (syncDelaySlider) syncDelaySlider.value = currentSyncDelay;
+  if (syncDelayValue) syncDelayValue.textContent = `${currentSyncDelay}ms`;
+
+  // Apply the delay change
+  handleSyncDelayChange(currentSyncDelay);
+}, { passive: false });
 
 // ===================
 // Test Sync Button - Plays beep to help user sync audio
 // ===================
 const testSyncBtn = document.getElementById('test-sync-btn');
-const syncHint = document.getElementById('sync-hint');
 let audioContext = null;
+
+// Clean up audio context when app closes
+window.addEventListener('beforeunload', () => {
+  if (audioContext) {
+    audioContext.close();
+    audioContext = null;
+  }
+});
 
 /**
  * Play a test beep sound using Web Audio API

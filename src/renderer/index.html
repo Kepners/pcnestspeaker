@@ -95,18 +95,7 @@
 
           <p class="option-hint" id="cast-mode-hint">Audio only goes to Nest speakers</p>
 
-          <!-- Sync Delay (only shown in PC + Speakers mode) -->
-          <div class="option-row sync-delay-row" id="sync-delay-row" style="display: none;">
-            <span class="option-label">Sync Delay</span>
-            <div class="sync-delay-control">
-              <input type="range" id="sync-delay-slider" min="0" max="2000" value="0" step="50">
-              <span class="sync-delay-value" id="sync-delay-value">0ms</span>
-              <button class="btn btn-small btn-ping-toggle" id="ping-toggle-btn" title="Toggle pings while sliding">🔊</button>
-            </div>
-          </div>
-          <p class="option-hint sync-hint" id="sync-hint" style="display: none;">Toggle 🔊 then slide or scroll to hear both - adjust until ONE ping</p>
-
-          <!-- PC Audio Output (shown in PC + Speakers mode, under sync delay) -->
+          <!-- PC Audio Output (shown in PC + Speakers mode) -->
           <div class="audio-output-grid" id="audio-output-list">
             <div class="audio-output-loading">Loading...</div>
           </div>
@@ -156,6 +145,23 @@
             <p class="apo-devices" id="apo-devices-text">APO installed on: Loading...</p>
             <button class="btn btn-small btn-secondary" id="launch-apo-btn">Configure APO</button>
           </div>
+
+          <!-- Audio Sync Calibration -->
+          <div class="option-row sync-calibrate-row" id="sync-calibrate-row" style="margin-top: 16px;">
+            <span class="option-label">Sync Delay</span>
+            <div class="sync-calibrate-control">
+              <button class="btn btn-sync-calibrate" id="sync-calibrate-btn">🔊 Calibrate</button>
+              <div class="sync-visual" id="sync-visual">
+                <div class="sync-wave left"></div>
+                <div class="sync-wave right"></div>
+              </div>
+              <span class="sync-delay-value" id="sync-delay-value">0ms</span>
+            </div>
+          </div>
+          <p class="option-hint sync-hint" id="sync-hint">Click Calibrate, then scroll until you hear ONE ping</p>
+
+          <!-- Hidden value storage -->
+          <input type="hidden" id="sync-delay-slider" value="0">
         </div>
 
         <!-- Debug Log (hidden by default) -->

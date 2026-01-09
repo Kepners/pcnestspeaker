@@ -493,6 +493,14 @@ function cleanup() {
     }
     ffmpegWebrtcProcess = null;
   }
+  // Also force kill ALL FFmpeg processes to ensure cleanup
+  try {
+    if (process.platform === 'win32') {
+      execSync('taskkill /F /IM ffmpeg.exe', { stdio: 'ignore', windowsHide: true });
+    }
+  } catch (e) {
+    // Process may already be dead
+  }
 
   // Stop MediaMTX (WebRTC mode)
   sendLog('Stopping MediaMTX...');
