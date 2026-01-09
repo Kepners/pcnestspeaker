@@ -1076,20 +1076,37 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
     sendLog(`Starting ${streamingMode} stream to "${speakerName}"...`);
     currentStreamingMode = streamingMode;
 
+    // Debug: Log discovered speakers and currently connected
+    const targetSpeaker = discoveredSpeakers.find(s => s.name === speakerName);
+    sendLog(`Target speaker: ${speakerName}, IP: ${targetSpeaker?.ip || 'NOT FOUND in cache'}`);
+    sendLog(`Currently connected speakers: ${JSON.stringify(currentConnectedSpeakers)}`);
+    sendLog(`Discovered speakers IPs: ${discoveredSpeakers.map(s => `${s.name}:${s.ip}`).join(', ')}`);
+
     // DISCONNECT any currently connected speakers BEFORE connecting to new one
     if (currentConnectedSpeakers.length > 0) {
       sendLog(`Disconnecting ${currentConnectedSpeakers.length} previous speaker(s)...`);
       for (const speaker of currentConnectedSpeakers) {
         try {
-          sendLog(`Disconnecting "${speaker.name}"...`);
+          sendLog(`Disconnecting "${speaker.name}" (IP: ${speaker.ip || 'unknown'})...`);
+          let stopResult;
           if (daemonManager.isDaemonRunning()) {
-            await daemonManager.disconnectSpeaker(speaker.name).catch(() => {});
+            stopResult = await daemonManager.disconnectSpeaker(speaker.name);
+            sendLog(`Daemon disconnect result: ${JSON.stringify(stopResult)}`);
           } else if (speaker.ip) {
             // Use fast stop with cached IP (no network scan needed)
-            await runPython(['stop-fast', speaker.name, speaker.ip]).catch(() => {});
+            sendLog(`Using stop-fast with IP ${speaker.ip}...`);
+            stopResult = await runPython(['stop-fast', speaker.name, speaker.ip]);
+            sendLog(`Stop-fast result: ${JSON.stringify(stopResult)}`);
           } else {
             // Fallback to slow stop if no IP cached
-            await runPython(['stop', speaker.name]).catch(() => {});
+            sendLog(`No IP cached, using slow stop...`);
+            stopResult = await runPython(['stop', speaker.name]);
+            sendLog(`Stop result: ${JSON.stringify(stopResult)}`);
+          }
+          if (stopResult && stopResult.success) {
+            sendLog(`Disconnected "${speaker.name}" successfully`, 'success');
+          } else {
+            sendLog(`Disconnect "${speaker.name}" failed: ${stopResult?.error || 'unknown error'}`, 'warning');
           }
         } catch (e) {
           sendLog(`Failed to disconnect "${speaker.name}": ${e.message}`, 'warning');
@@ -1981,15 +1998,26 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
       sendLog(`Disconnecting ${currentConnectedSpeakers.length} previous speaker(s)...`);
       for (const speaker of currentConnectedSpeakers) {
         try {
-          sendLog(`Disconnecting "${speaker.name}"...`);
+          sendLog(`Disconnecting "${speaker.name}" (IP: ${speaker.ip || 'unknown'})...`);
+          let stopResult;
           if (daemonManager.isDaemonRunning()) {
-            await daemonManager.disconnectSpeaker(speaker.name).catch(() => {});
+            stopResult = await daemonManager.disconnectSpeaker(speaker.name);
+            sendLog(`Daemon disconnect result: ${JSON.stringify(stopResult)}`);
           } else if (speaker.ip) {
             // Use fast stop with cached IP (no network scan needed)
-            await runPython(['stop-fast', speaker.name, speaker.ip]).catch(() => {});
+            sendLog(`Using stop-fast with IP ${speaker.ip}...`);
+            stopResult = await runPython(['stop-fast', speaker.name, speaker.ip]);
+            sendLog(`Stop-fast result: ${JSON.stringify(stopResult)}`);
           } else {
             // Fallback to slow stop if no IP cached
-            await runPython(['stop', speaker.name]).catch(() => {});
+            sendLog(`No IP cached, using slow stop...`);
+            stopResult = await runPython(['stop', speaker.name]);
+            sendLog(`Stop result: ${JSON.stringify(stopResult)}`);
+          }
+          if (stopResult && stopResult.success) {
+            sendLog(`Disconnected "${speaker.name}" successfully`, 'success');
+          } else {
+            sendLog(`Disconnect "${speaker.name}" failed: ${stopResult?.error || 'unknown error'}`, 'warning');
           }
         } catch (e) {
           sendLog(`Failed to disconnect "${speaker.name}": ${e.message}`, 'warning');
