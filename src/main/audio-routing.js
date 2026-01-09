@@ -11,9 +11,16 @@
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
 
 // Path to SoundVolumeCommandLine tool
-const SVCL_PATH = path.join(__dirname, '..', '..', 'svcl', 'svcl.exe');
+const SVCL_DIR = path.join(__dirname, '..', '..', 'svcl');
+const SVCL_PATH = path.join(SVCL_DIR, 'svcl.exe');
+const SVCL_DOWNLOAD_URL = 'https://www.nirsoft.net/utils/svcl-x64.zip';
+
+// Track download state
+let isDownloading = false;
+let downloadPromise = null;
 
 /**
  * Check if SoundVolumeCommandLine is available
@@ -23,15 +30,133 @@ function isAvailable() {
 }
 
 /**
- * Run svcl.exe command
+ * Download and extract svcl.exe from NirSoft
+ * @returns {Promise<{success: boolean, error?: string}>}
  */
-function runSvcl(args) {
-  return new Promise((resolve, reject) => {
-    if (!isAvailable()) {
-      reject(new Error('svcl.exe not found - download from nirsoft.net'));
+async function downloadSvcl() {
+  // Prevent duplicate downloads
+  if (isDownloading && downloadPromise) {
+    console.log('[AudioRouting] Download already in progress, waiting...');
+    return downloadPromise;
+  }
+
+  if (isAvailable()) {
+    return { success: true, message: 'Already installed' };
+  }
+
+  isDownloading = true;
+  downloadPromise = new Promise((resolve) => {
+    console.log('[AudioRouting] Downloading svcl.exe from NirSoft...');
+
+    // Ensure svcl directory exists
+    if (!fs.existsSync(SVCL_DIR)) {
+      fs.mkdirSync(SVCL_DIR, { recursive: true });
+    }
+
+    const zipPath = path.join(SVCL_DIR, 'svcl.zip');
+    const file = fs.createWriteStream(zipPath);
+
+    https.get(SVCL_DOWNLOAD_URL, (response) => {
+      // Handle redirects
+      if (response.statusCode === 301 || response.statusCode === 302) {
+        https.get(response.headers.location, (redirectResponse) => {
+          redirectResponse.pipe(file);
+          file.on('finish', () => {
+            file.close();
+            extractZip(zipPath, resolve);
+          });
+        }).on('error', (err) => {
+          fs.unlink(zipPath, () => {});
+          isDownloading = false;
+          resolve({ success: false, error: `Download failed: ${err.message}` });
+        });
+        return;
+      }
+
+      if (response.statusCode !== 200) {
+        isDownloading = false;
+        resolve({ success: false, error: `Download failed: HTTP ${response.statusCode}` });
+        return;
+      }
+
+      response.pipe(file);
+      file.on('finish', () => {
+        file.close();
+        extractZip(zipPath, resolve);
+      });
+    }).on('error', (err) => {
+      fs.unlink(zipPath, () => {});
+      isDownloading = false;
+      resolve({ success: false, error: `Download failed: ${err.message}` });
+    });
+  });
+
+  return downloadPromise;
+}
+
+/**
+ * Extract svcl.exe from zip file using PowerShell
+ */
+function extractZip(zipPath, resolve) {
+  console.log('[AudioRouting] Extracting svcl.exe...');
+
+  // Use PowerShell to extract (works on all Windows versions)
+  const psCommand = `
+    $ErrorActionPreference = 'Stop'
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [System.IO.Compression.ZipFile]::OpenRead('${zipPath.replace(/\\/g, '\\\\')}')
+    $entry = $zip.Entries | Where-Object { $_.Name -eq 'svcl.exe' }
+    if ($entry) {
+      $destPath = '${SVCL_PATH.replace(/\\/g, '\\\\')}'
+      [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $destPath, $true)
+    }
+    $zip.Dispose()
+  `;
+
+  exec(`powershell -NoProfile -Command "${psCommand}"`, { windowsHide: true }, (error) => {
+    // Clean up zip file
+    fs.unlink(zipPath, () => {});
+    isDownloading = false;
+
+    if (error) {
+      console.error('[AudioRouting] Extract failed:', error.message);
+      resolve({ success: false, error: `Extract failed: ${error.message}` });
       return;
     }
 
+    if (fs.existsSync(SVCL_PATH)) {
+      console.log('[AudioRouting] svcl.exe installed successfully!');
+      resolve({ success: true });
+    } else {
+      resolve({ success: false, error: 'Extract completed but svcl.exe not found' });
+    }
+  });
+}
+
+/**
+ * Ensure svcl.exe is available, download if needed
+ */
+async function ensureAvailable() {
+  if (isAvailable()) {
+    return { success: true };
+  }
+  return await downloadSvcl();
+}
+
+/**
+ * Run svcl.exe command (auto-downloads if not available)
+ */
+async function runSvcl(args) {
+  // Auto-download if not available
+  if (!isAvailable()) {
+    console.log('[AudioRouting] svcl.exe not found, downloading...');
+    const downloadResult = await ensureAvailable();
+    if (!downloadResult.success) {
+      throw new Error(`Failed to download svcl.exe: ${downloadResult.error}`);
+    }
+  }
+
+  return new Promise((resolve, reject) => {
     const cmd = `"${SVCL_PATH}" ${args}`;
     console.log(`[AudioRouting] Running: ${cmd}`);
 
@@ -202,6 +327,8 @@ async function disablePCSpeakersMode() {
 
 module.exports = {
   isAvailable,
+  ensureAvailable,
+  downloadSvcl,
   getDevices,
   enableListening,
   disableListening,
