@@ -2060,7 +2060,6 @@ async function loadAudioOutputs() {
              onclick="switchAudioOutput('${escapeHtml(device.name)}')">
           <span class="audio-output-icon">${icon}</span>
           <span class="audio-output-name">${escapeHtml(device.name)}</span>
-          <span class="audio-output-status">ACTIVE</span>
         </div>
       `;
     }).join('');
