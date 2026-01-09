@@ -1044,21 +1044,9 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
     sendLog(`Starting ${streamingMode} stream to "${speakerName}"...`);
     currentStreamingMode = streamingMode;
 
-    // Switch Windows default audio to virtual device (skips if already correct)
-    let audioDeviceSwitched = false; // Track if we actually switched (for FFmpeg restart decision)
-    try {
-      const switchResult = await audioDeviceManager.switchToStreamingDevice();
-      if (switchResult.skipped) {
-        sendLog(`Already on virtual device - no switch needed`, 'success');
-        audioDeviceSwitched = false; // No FFmpeg restart needed!
-      } else {
-        sendLog('Audio device switched', 'success');
-        audioDeviceSwitched = true; // FFmpeg needs restart to capture from new device
-      }
-    } catch (err) {
-      sendLog(`Audio switch failed: ${err.message}`, 'warning');
-      audioDeviceSwitched = false; // Continue with existing FFmpeg
-    }
+    // NOTE: Device switching is now SEPARATE from streaming!
+    // Use cast-mode toggle to control PC speaker output independently.
+    // Streaming always captures from virtual-audio-capturer.
 
     if (streamingMode === 'http') {
       // HTTP MP3 streaming mode
@@ -1705,15 +1693,8 @@ ipcMain.handle('stop-streaming', async (event, speakerName) => {
     // Stop Windows volume sync
     volumeSync.stopMonitoring();
 
-    // Restore original Windows audio device
-    try {
-      sendLog('Restoring original audio device...');
-      await audioDeviceManager.restoreOriginalDevice();
-      sendLog('Audio device restored', 'success');
-    } catch (err) {
-      sendLog(`Audio restore failed: ${err.message}`, 'warning');
-      // Continue anyway
-    }
+    // NOTE: Device switching is now SEPARATE from streaming!
+    // Audio device state is managed by cast-mode toggle, not streaming start/stop.
 
     sendLog('Stopped', 'success');
     trayManager.updateTrayState(false); // Update tray to idle state
@@ -1996,18 +1977,8 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
       ffmpegWebrtcProcess = null;
     }
 
-    // Switch Windows default audio to virtual device (skips if already correct)
-    try {
-      const switchResult = await audioDeviceManager.switchToStreamingDevice();
-      if (switchResult.skipped) {
-        sendLog(`Already on virtual device - no switch needed`, 'success');
-      } else {
-        sendLog('Audio device switched', 'success');
-      }
-    } catch (err) {
-      sendLog(`Audio switch failed: ${err.message}`, 'warning');
-      // Continue anyway - user may have already set it manually
-    }
+    // NOTE: Device switching is now SEPARATE from streaming!
+    // Cast-mode toggle controls PC speaker output independently.
 
     // 1. Start MediaMTX (if not already running)
     if (!mediamtxProcess) {
@@ -2229,15 +2200,8 @@ ipcMain.handle('stop-stereo-streaming', async (event, leftSpeaker, rightSpeaker)
     // Stop Windows volume sync
     volumeSync.stopMonitoring();
 
-    // Restore original Windows audio device
-    try {
-      sendLog('Restoring original audio device...');
-      await audioDeviceManager.restoreOriginalDevice();
-      sendLog('Audio device restored', 'success');
-    } catch (err) {
-      sendLog(`Audio restore failed: ${err.message}`, 'warning');
-      // Continue anyway
-    }
+    // NOTE: Device switching is now SEPARATE from streaming!
+    // Audio device state is managed by cast-mode toggle, not streaming start/stop.
 
     sendLog('Stereo streaming stopped', 'success');
     trayManager.updateTrayState(false); // Update tray to idle state
@@ -2275,17 +2239,8 @@ ipcMain.handle('start-tv-streaming', async (event, deviceName, deviceIp = null) 
 
     sendLog(`Starting TV streaming to "${deviceName}" via HLS...`);
 
-    // Switch Windows default audio to virtual device (skips if already correct)
-    try {
-      const switchResult = await audioDeviceManager.switchToStreamingDevice();
-      if (switchResult.skipped) {
-        sendLog(`Already on virtual device - no switch needed`, 'success');
-      } else {
-        sendLog('Audio device switched', 'success');
-      }
-    } catch (err) {
-      sendLog(`Audio switch failed: ${err.message}`, 'warning');
-    }
+    // NOTE: Device switching is now SEPARATE from streaming!
+    // Cast-mode toggle controls PC speaker output independently.
 
     // 1. Start MediaMTX (if not already running) - HLS is enabled in config
     if (!mediamtxProcess) {
@@ -2391,14 +2346,8 @@ ipcMain.handle('stop-tv-streaming', async (event) => {
       streamStats.stop();
     }
 
-    // Restore audio device
-    try {
-      sendLog('Restoring original audio device...');
-      await audioDeviceManager.restoreOriginalDevice();
-      sendLog('Audio device restored', 'success');
-    } catch (err) {
-      sendLog(`Audio restore failed: ${err.message}`, 'warning');
-    }
+    // NOTE: Device switching is now SEPARATE from streaming!
+    // Audio device state is managed by cast-mode toggle, not streaming start/stop.
 
     tvStreamingActive = false;
     trayManager.updateTrayState(false);
@@ -2438,13 +2387,10 @@ ipcMain.handle('update-settings', (event, updates) => {
 ipcMain.handle('set-cast-mode', async (event, mode) => {
   console.log(`[Main] Cast mode changing to: ${mode}`);
 
-  // Only switch devices if we're actively streaming
+  // Device switching is now INDEPENDENT of streaming state.
+  // User can switch audio output anytime - streaming always captures from virtual-audio-capturer.
   const isStreaming = ffmpegWebrtcProcess || (stereoFFmpegProcesses && stereoFFmpegProcesses.left);
-
-  if (!isStreaming) {
-    console.log(`[Main] Not streaming - mode saved, device switch will happen on stream start`);
-    return { success: true, mode, switched: false };
-  }
+  console.log(`[Main] Cast mode changing to: ${mode}, streaming: ${isStreaming}`);
 
   try {
     if (mode === 'speakers') {
