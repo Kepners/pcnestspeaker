@@ -1697,11 +1697,15 @@ ipcMain.handle('stop-streaming', async (event, speakerName) => {
         sendLog(`Disconnecting "${speaker.name}"...`);
         if (daemonManager.isDaemonRunning()) {
           await daemonManager.disconnectSpeaker(speaker.name);
+        } else if (speaker.ip) {
+          // Use stop-fast with cached IP for quick disconnection
+          await runPython(['stop-fast', speaker.name, speaker.ip]);
         } else {
+          // Fallback to slow stop if no IP cached
           await runPython(['stop', speaker.name]);
         }
       } catch (e) {
-        // Ignore stop errors
+        sendLog(`Disconnect error for ${speaker.name}: ${e.message}`, 'warning');
       }
     }
 
@@ -2253,11 +2257,14 @@ ipcMain.handle('stop-stereo-streaming', async (event, leftSpeaker, rightSpeaker)
         sendLog(`Disconnecting "${speaker.name}"...`);
         if (daemonManager.isDaemonRunning()) {
           await daemonManager.disconnectSpeaker(speaker.name).catch(() => {});
+        } else if (speaker.ip) {
+          // Use stop-fast with cached IP for quick disconnection
+          await runPython(['stop-fast', speaker.name, speaker.ip]).catch(() => {});
         } else {
           await runPython(['stop', speaker.name]).catch(() => {});
         }
       } catch (e) {
-        // Ignore stop errors
+        sendLog(`Disconnect error for ${speaker.name}: ${e.message}`, 'warning');
       }
     }
 
