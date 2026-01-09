@@ -16,8 +16,13 @@ import threading
 import pychromecast
 from pychromecast.controllers import BaseController
 
-# Custom receiver for WebRTC low-latency streaming
-CUSTOM_APP_ID = "FCAA4619"
+# Custom receivers for WebRTC low-latency streaming
+# Visual receiver: Shows ambient videos on TVs/Shields
+VISUAL_APP_ID = "FCAA4619"
+# Audio receiver: Lean, no visuals - for Nest speakers and groups
+AUDIO_APP_ID = "4B876246"
+# Default to audio receiver (most common use case)
+CUSTOM_APP_ID = AUDIO_APP_ID
 WEBRTC_NAMESPACE = "urn:x-cast:com.pcnestspeaker.webrtc"
 
 
@@ -426,7 +431,7 @@ def get_volume(speaker_name):
         return {"success": False, "error": str(e)}
 
 
-def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pcaudio"):
+def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pcaudio", app_id=None):
     """Launch custom receiver for WebRTC streaming.
 
     If https_url is provided, sends it to the receiver via play_media customData.
@@ -435,7 +440,10 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pc
     If speaker_ip is provided, connects directly without discovery (faster, more reliable).
 
     stream_name: MediaMTX stream path (default: "pcaudio", or "left"/"right" for stereo split)
+    app_id: Which receiver to use (AUDIO_APP_ID or VISUAL_APP_ID). Defaults to AUDIO_APP_ID.
     """
+    # Use passed app_id or default to audio receiver
+    receiver_app_id = app_id if app_id else AUDIO_APP_ID
     try:
         browser = None
 
@@ -487,12 +495,12 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pc
             browser.stop_discovery()
 
         # Launch custom receiver
-        print(f"[WebRTC] Launching receiver (App ID: {CUSTOM_APP_ID})...", file=sys.stderr)
+        print(f"[WebRTC] Launching receiver (App ID: {receiver_app_id})...", file=sys.stderr)
         print(f"[WebRTC] Device UUID: {cast.uuid}", file=sys.stderr)
         print(f"[WebRTC] Device model: {cast.cast_info.model_name}", file=sys.stderr)
 
         try:
-            cast.start_app(CUSTOM_APP_ID)
+            cast.start_app(receiver_app_id)
             time.sleep(3)  # Wait for receiver to load
             print("[WebRTC] Receiver launched!", file=sys.stderr)
         except Exception as app_error:
@@ -513,8 +521,8 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pc
 
             # Other errors
             print(f"[WebRTC] Possible causes:", file=sys.stderr)
-            print(f"[WebRTC]   1. App {CUSTOM_APP_ID} is UNPUBLISHED", file=sys.stderr)
-            print(f"[WebRTC]   2. App {CUSTOM_APP_ID} does not exist", file=sys.stderr)
+            print(f"[WebRTC]   1. App {receiver_app_id} is UNPUBLISHED", file=sys.stderr)
+            print(f"[WebRTC]   2. App {receiver_app_id} does not exist", file=sys.stderr)
             print(f"[WebRTC]   3. Check: https://cast.google.com/publish/", file=sys.stderr)
             return {"success": False, "error": error_msg, "error_code": "UNKNOWN"}
 
@@ -526,7 +534,7 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pc
             for i in range(10):
                 cast.socket_client.receiver_controller.update_status()
                 time.sleep(0.5)
-                if cast.status and cast.status.app_id == CUSTOM_APP_ID:
+                if cast.status and cast.status.app_id == receiver_app_id:
                     print(f"[WebRTC] App ready, transport_id: {cast.status.transport_id}", file=sys.stderr)
                     break
                 print(f"[WebRTC] Waiting for app... ({i+1}/10)", file=sys.stderr)
@@ -638,7 +646,7 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pc
         return {"success": False, "error": str(e)}
 
 
-def webrtc_proxy_connect(speaker_name, mediamtx_url, speaker_ip=None, stream_name="pcaudio"):
+def webrtc_proxy_connect(speaker_name, mediamtx_url, speaker_ip=None, stream_name="pcaudio", app_id=None):
     """
     Connect to WebRTC using PROXY SIGNALING - avoids mixed content issues!
 
@@ -651,7 +659,11 @@ def webrtc_proxy_connect(speaker_name, mediamtx_url, speaker_ip=None, stream_nam
     6. WebRTC connects!
 
     No HTTP fetch from receiver = no mixed content = works everywhere!
+
+    app_id: Which receiver to use (AUDIO_APP_ID or VISUAL_APP_ID). Defaults to AUDIO_APP_ID.
     """
+    # Use passed app_id or default to audio receiver
+    receiver_app_id = app_id if app_id else AUDIO_APP_ID
     import urllib.request
     import urllib.error
 
@@ -695,9 +707,9 @@ def webrtc_proxy_connect(speaker_name, mediamtx_url, speaker_ip=None, stream_nam
         cast.wait(timeout=10)
 
         # Step 2: Launch custom receiver
-        print(f"[WebRTC-Proxy] Launching receiver (App ID: {CUSTOM_APP_ID})...", file=sys.stderr)
+        print(f"[WebRTC-Proxy] Launching receiver (App ID: {receiver_app_id})...", file=sys.stderr)
         try:
-            cast.start_app(CUSTOM_APP_ID)
+            cast.start_app(receiver_app_id)
             time.sleep(3)
             print("[WebRTC-Proxy] Receiver launched!", file=sys.stderr)
         except Exception as app_error:
@@ -722,7 +734,7 @@ def webrtc_proxy_connect(speaker_name, mediamtx_url, speaker_ip=None, stream_nam
         for i in range(10):
             cast.socket_client.receiver_controller.update_status()
             time.sleep(0.5)
-            if cast.status and cast.status.app_id == CUSTOM_APP_ID:
+            if cast.status and cast.status.app_id == receiver_app_id:
                 print(f"[WebRTC-Proxy] App ready!", file=sys.stderr)
                 break
             print(f"[WebRTC-Proxy] Waiting for app... ({i+1}/10)", file=sys.stderr)
@@ -1132,7 +1144,7 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None):
         return {"success": False, "error": str(e)}
 
 
-def webrtc_launch_multicast(speaker_names, https_url, speaker_ips=None, stream_name="pcaudio"):
+def webrtc_launch_multicast(speaker_names, https_url, speaker_ips=None, stream_name="pcaudio", app_id=None):
     """Launch custom receiver on MULTIPLE speakers for true multi-room audio.
 
     This is the solution for Cast Groups - instead of casting to the group (which only
@@ -1143,6 +1155,7 @@ def webrtc_launch_multicast(speaker_names, https_url, speaker_ips=None, stream_n
         https_url: WebRTC URL to send to receivers
         speaker_ips: Optional list of IPs (same order as names) for faster connection
         stream_name: MediaMTX stream path
+        app_id: Which receiver to use (AUDIO_APP_ID or VISUAL_APP_ID). Defaults to AUDIO_APP_ID.
 
     Returns:
         { success: true, launched: ["Speaker1", "Speaker2"], failed: [] }
@@ -1158,7 +1171,7 @@ def webrtc_launch_multicast(speaker_names, https_url, speaker_ips=None, stream_n
             ip = speaker_ips[i] if speaker_ips and i < len(speaker_ips) else None
             print(f"[Multicast] Launching on '{name}' (IP: {ip})...", file=sys.stderr)
 
-            result = webrtc_launch(name, https_url, ip, stream_name)
+            result = webrtc_launch(name, https_url, ip, stream_name, app_id)
 
             if result.get("success"):
                 launched.append(name)
@@ -1313,22 +1326,24 @@ if __name__ == "__main__":
 
     elif command == "webrtc-launch" and len(sys.argv) >= 3:
         # Launch custom receiver for WebRTC streaming with HTTPS tunnel URL
-        # Args: webrtc-launch <speaker_name> [https_url] [speaker_ip] [stream_name]
+        # Args: webrtc-launch <speaker_name> [https_url] [speaker_ip] [stream_name] [app_id]
         speaker = sys.argv[2]
         https_url = sys.argv[3] if len(sys.argv) > 3 else None
         speaker_ip = sys.argv[4] if len(sys.argv) > 4 else None
         stream_name = sys.argv[5] if len(sys.argv) > 5 else "pcaudio"
-        result = webrtc_launch(speaker, https_url, speaker_ip, stream_name)
+        app_id = sys.argv[6] if len(sys.argv) > 6 else None
+        result = webrtc_launch(speaker, https_url, speaker_ip, stream_name, app_id)
         print(json.dumps(result))
 
     elif command == "webrtc-proxy-connect" and len(sys.argv) >= 4:
         # NEW: Proxy signaling - PC proxies WHEP requests to avoid mixed content
-        # Args: webrtc-proxy-connect <speaker_name> <mediamtx_url> [speaker_ip] [stream_name]
+        # Args: webrtc-proxy-connect <speaker_name> <mediamtx_url> [speaker_ip] [stream_name] [app_id]
         speaker = sys.argv[2]
         mediamtx_url = sys.argv[3]
         speaker_ip = sys.argv[4] if len(sys.argv) > 4 else None
         stream_name = sys.argv[5] if len(sys.argv) > 5 else "pcaudio"
-        result = webrtc_proxy_connect(speaker, mediamtx_url, speaker_ip, stream_name)
+        app_id = sys.argv[6] if len(sys.argv) > 6 else None
+        result = webrtc_proxy_connect(speaker, mediamtx_url, speaker_ip, stream_name, app_id)
         print(json.dumps(result))
 
     elif command == "webrtc-signal" and len(sys.argv) >= 4:
@@ -1376,12 +1391,13 @@ if __name__ == "__main__":
 
     elif command == "webrtc-multicast" and len(sys.argv) >= 4:
         # Launch WebRTC on multiple speakers simultaneously
-        # Args: webrtc-multicast <speaker_names_json> <https_url> [speaker_ips_json] [stream_name]
+        # Args: webrtc-multicast <speaker_names_json> <https_url> [speaker_ips_json] [stream_name] [app_id]
         speaker_names = json.loads(sys.argv[2])  # ["Speaker1", "Speaker2"]
         https_url = sys.argv[3]
         speaker_ips = json.loads(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] != "null" else None
         stream_name = sys.argv[5] if len(sys.argv) > 5 else "pcaudio"
-        result = webrtc_launch_multicast(speaker_names, https_url, speaker_ips, stream_name)
+        app_id = sys.argv[6] if len(sys.argv) > 6 else None
+        result = webrtc_launch_multicast(speaker_names, https_url, speaker_ips, stream_name, app_id)
         print(json.dumps(result))
 
     elif command == "hls-cast" and len(sys.argv) >= 4:
