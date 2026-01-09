@@ -162,6 +162,12 @@ pcnestspeaker/
 │   └── APP_DOCUMENTATION.md      # This file
 ├── ffmpeg/
 │   └── ffmpeg.exe                # Bundled FFmpeg
+├── audioctl/
+│   └── audioctl.exe              # WindowsAudioControl-CLI (Listen to device)
+├── svcl/
+│   └── svcl.exe                  # NirSoft SoundVolumeCommandLine (device switching)
+├── nircmd/
+│   └── nircmd.exe                # NirCmd (audio commands)
 ├── assets/
 │   ├── icon.ico                  # Windows icon
 │   ├── icon.icns                 # macOS icon
@@ -368,9 +374,22 @@ Works on ALL Google Cast devices including:
 
 ### Dependencies (Bundled)
 
-- FFmpeg (audio encoding)
-- MediaMTX (WebRTC bridge)
-- Python 3.x (pychromecast)
+| Tool | Version | Purpose | Source |
+|------|---------|---------|--------|
+| **FFmpeg** | 6.x | Audio capture & Opus/MP3 encoding | ffmpeg.org |
+| **MediaMTX** | 1.15.6 | RTSP to WebRTC (WHEP) bridge | github.com/bluenviron/mediamtx |
+| **audioctl.exe** | 1.4.3.2 | "Listen to this device" control | [WindowsAudioControl-CLI](https://github.com/Mr5niper/WindowsAudioControl-CLI-wGUI) |
+| **svcl.exe** | 1.x | Audio device switching | [NirSoft SoundVolumeCommandLine](https://www.nirsoft.net/utils/sound_volume_command_line.html) |
+| **nircmd.exe** | 2.x | Additional audio commands | [NirSoft NirCmd](https://www.nirsoft.net/utils/nircmd.html) |
+| **Python** | 3.x | pychromecast for Cast control | python.org |
+
+### Audio Control Utilities
+
+| Utility | Command Example | Purpose |
+|---------|-----------------|---------|
+| **audioctl** | `audioctl listen --name "Virtual Desktop Audio" --enable` | Enable/disable "Listen to this device" |
+| **svcl** | `svcl /SetDefault "Speakers" all` | Switch Windows default audio device |
+| **nircmd** | `nircmd setdefaultsounddevice "Speakers" 1` | Alternative device switching |
 
 ### Dependencies (Auto-installed)
 
@@ -414,11 +433,14 @@ Works on ALL Google Cast devices including:
 
 ## Credits
 
-- **FFmpeg**: Audio encoding
-- **MediaMTX**: WebRTC streaming server
+- **FFmpeg**: Audio capture & encoding
+- **MediaMTX**: WebRTC streaming server (bluenviron)
 - **pychromecast**: Google Cast control
 - **Electron**: Desktop framework
-- **cloudflared**: HTTPS tunneling
+- **cloudflared**: HTTPS tunneling (Cloudflare)
+- **audioctl**: WindowsAudioControl-CLI for "Listen to this device" (Mr5niper)
+- **svcl**: SoundVolumeCommandLine (NirSoft)
+- **nircmd**: NirCmd utility (NirSoft)
 
 ---
 
@@ -430,4 +452,4 @@ Works on ALL Google Cast devices including:
 
 ---
 
-*Last Updated: January 7, 2026*
+*Last Updated: January 9, 2026*
