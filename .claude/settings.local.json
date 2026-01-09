@@ -158,7 +158,10 @@
       "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/soundvolumeview/SoundVolumeView.exe\" /SetDefault \"NVIDIA High Definition Audio\\\\Device\\\\ASUS VG32V\\\\Render\" all)",
       "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/soundvolumeview/SoundVolumeView.exe\" /scomma \"c:/Users/kepne/temp_devices.csv\" /Columns \"Name,Command-Line Friendly ID,Type,Direction\")",
       "Bash(\"soundvolumeview/SoundVolumeView.exe\" /scomma \"temp_devices.csv\")",
-      "Bash(more:*)"
+      "Bash(more:*)",
+      "Bash(\"soundvolumeview\\\\SoundVolumeView.exe\" /scomma \"C:\\\\temp\\\\svv_devices.csv\")",
+      "Bash(soundvolumeviewSoundVolumeView.exe /SetListenToThisDevice \"Virtual Desktop Audio\" 1 \"ASUS VG32V\")",
+      "Bash(Select-Object -First 30)"
     ]
   }
 }

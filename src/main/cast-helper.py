@@ -1279,6 +1279,13 @@ def get_audio_outputs():
                 name = device.FriendlyName or "Unknown Device"
                 name_lower = name.lower()
 
+                # CRITICAL: Only include ACTIVE devices!
+                # State: Active=1, Disabled=2, NotPresent=4, Unplugged=8
+                state_str = str(device.state) if device.state else ""
+                if "Active" not in state_str:
+                    print(f"[AudioOutput] Skipping (not active): {name} [{state_str}]", file=sys.stderr)
+                    continue
+
                 # Skip excluded devices
                 is_excluded = any(pattern in name_lower for pattern in exclude_patterns)
                 if is_excluded:
@@ -1335,11 +1342,17 @@ def set_default_audio_output(device_name):
         devices = AudioUtilities.GetAllDevices()
         device_name_lower = device_name.lower()
 
-        # Find matching render device
+        # Find matching render device - MUST be ACTIVE!
         target_device = None
         for device in devices:
             # Only render devices (ID starts with {0.0.0.)
             if not device.id or not device.id.startswith("{0.0.0."):
+                continue
+
+            # CRITICAL: Only match ACTIVE devices!
+            # Multiple devices can have same name but different states (Active, NotPresent, etc.)
+            state_str = str(device.state) if device.state else ""
+            if "Active" not in state_str:
                 continue
 
             name = device.FriendlyName or ""
@@ -1347,6 +1360,7 @@ def set_default_audio_output(device_name):
                 target_device = device
                 print(f"[AudioSwitch] Found device: {name}", file=sys.stderr)
                 print(f"[AudioSwitch] Device ID: {device.id}", file=sys.stderr)
+                print(f"[AudioSwitch] State: {state_str}", file=sys.stderr)
                 break
 
         if not target_device:
