@@ -2382,82 +2382,86 @@ ipcMain.handle('update-settings', (event, updates) => {
 });
 
 // Cast Mode handler - Switches Windows audio device when toggling while streaming
-// "Speakers Only" = Virtual Desktop Audio (no local sound, audio only to Cast)
-// "PC + Speakers" = User's real speakers (local sound + Cast via loopback)
+// "Speakers Only" = Audio only to Cast, no local playback
+// "PC + Speakers" = Audio to Cast + local HDMI speakers (with APO delay for sync)
+//
+// ARCHITECTURE NOTE (January 2026):
+// Cast capture and local playback are now FULLY SEPARATE:
+// - Cast: Always captures from Virtual Desktop Audio (clean, no APO delay)
+// - Local: Uses Windows audio routing (Stereo Mix or Voicemeeter) to HDMI with APO delay
+//
+// In "PC + Speakers" mode:
+// - Windows stays on Virtual Desktop Audio for clean capture
+// - Audio is MIRRORED to HDMI via Windows "Stereo Mix" → "Listen to this device"
+// - APO delay only affects HDMI path (configured in APO Configurator)
+//
+// The cast mode toggle now controls:
+// 1. Audio routing (Virtual Desktop Audio → HDMI via "Listen to this device")
+// 2. APO delay settings
+// NO Windows device switching - keeps Cast capture clean!
 ipcMain.handle('set-cast-mode', async (event, mode) => {
   console.log(`[Main] Cast mode changing to: ${mode}`);
-
-  // Device switching is now INDEPENDENT of streaming state.
-  // User can switch audio output anytime - streaming always captures from virtual-audio-capturer.
-  const isStreaming = ffmpegWebrtcProcess || (stereoFFmpegProcesses && stereoFFmpegProcesses.left);
-  console.log(`[Main] Cast mode changing to: ${mode}, streaming: ${isStreaming}`);
+  const audioRouting = require('./audio-routing.js');
+  const pcSpeakerDelay = require('./pc-speaker-delay.js');
 
   try {
     if (mode === 'speakers') {
-      // "Speakers Only" - Switch to Virtual Desktop Audio (no local sound)
-      console.log(`[Main] Switching to virtual audio device for Speakers Only mode...`);
-      const switchResult = await audioDeviceManager.switchToStreamingDevice();
-      if (switchResult.skipped) {
-        sendLog(`Already on virtual device - no change needed`, 'success');
-      } else {
-        sendLog(`Switched to virtual audio - PC speakers now silent`, 'success');
-      }
-      return { success: true, mode, switched: !switchResult.skipped };
+      // "Speakers Only" - Disable local speaker routing and APO delay
+      console.log(`[Main] Speakers Only mode - audio goes to Cast only`);
 
-    } else if (mode === 'all') {
-      // "PC + Speakers" - Restore user's real speakers (local sound + Cast)
-      console.log(`[Main] Restoring original audio device for PC + Speakers mode...`);
-      const restoreResult = await audioDeviceManager.restoreOriginalDevice();
-      if (restoreResult.success) {
-        sendLog(`Restored to original speakers - you should hear audio locally now`, 'success');
-        return { success: true, mode, switched: true };
-      } else {
-        // No original device saved (user was already on virtual device)
-        // Need to detect and switch to a real device
-        sendLog(`No original device saved - detecting real audio devices...`, 'info');
-
-        // Try to get current device and find a real one
-        try {
-          const currentDevice = await audioDeviceManager.getCurrentAudioDevice();
-          console.log(`[Main] Current device: ${currentDevice}`);
-
-          // If already on a real device (not virtual), we're good
-          const virtualPatterns = ['virtual desktop audio', 'virtual-audio-capturer', 'cable input', 'vb-audio'];
-          const isVirtual = virtualPatterns.some(p => currentDevice.toLowerCase().includes(p));
-
-          if (!isVirtual) {
-            sendLog(`Already on real device: ${currentDevice}`, 'success');
-            return { success: true, mode, switched: false };
-          }
-
-          // Try common real device names
-          const realDeviceNames = [
-            'Speakers',           // Generic speakers
-            'Headphones',         // Headphones
-            'HDMI',               // HDMI output
-            'Realtek',            // Realtek audio
-            'High Definition Audio' // HD Audio
-          ];
-
-          for (const deviceName of realDeviceNames) {
-            try {
-              console.log(`[Main] Trying device: ${deviceName}`);
-              await audioDeviceManager.setDefaultAudioDevice(deviceName);
-              sendLog(`Switched to: ${deviceName}`, 'success');
-              return { success: true, mode, switched: true, device: deviceName };
-            } catch (e) {
-              continue;
-            }
-          }
-
-          sendLog(`Could not find real audio device - check Windows Sound settings`, 'warning');
-          return { success: false, mode, error: 'No real audio device found' };
-
-        } catch (detectErr) {
-          sendLog(`Device detection failed: ${detectErr.message}`, 'error');
-          return { success: false, mode, error: detectErr.message };
+      // 1. Disable audio routing to local speakers
+      if (audioRouting.isAvailable()) {
+        const routeResult = await audioRouting.disablePCSpeakersMode();
+        if (routeResult.success) {
+          sendLog(`Local speaker routing disabled`, 'success');
+        } else {
+          console.log(`[Main] Could not disable routing: ${routeResult.error}`);
         }
       }
+
+      // 2. Clear APO delay (not needed in speakers-only mode)
+      try {
+        await pcSpeakerDelay.clearDelay();
+        console.log(`[Main] APO delay cleared`);
+      } catch (apoErr) {
+        console.log(`[Main] Could not clear APO delay: ${apoErr.message}`);
+      }
+
+      return { success: true, mode };
+
+    } else if (mode === 'all') {
+      // "PC + Speakers" - Enable local speaker routing with APO delay
+      console.log(`[Main] PC + Speakers mode - audio to Cast + local HDMI`);
+
+      // 1. Enable audio routing: Virtual Desktop Audio → HDMI speakers
+      if (audioRouting.isAvailable()) {
+        const routeResult = await audioRouting.enablePCSpeakersMode();
+        if (routeResult.success) {
+          sendLog(`Audio routing enabled: Virtual Audio → HDMI`, 'success');
+        } else {
+          sendLog(`Audio routing failed: ${routeResult.error}`, 'warning');
+          sendLog(`Please configure Windows Stereo Mix manually`, 'info');
+        }
+      } else {
+        // svcl.exe not found - guide user to manual setup
+        sendLog(`For automatic routing, install svcl.exe from nirsoft.net`, 'info');
+      }
+
+      // 2. Restore saved APO delay
+      try {
+        const settings = await settingsManager.loadSettings();
+        const savedDelay = settings.syncDelayMs || 0;
+        if (savedDelay > 0) {
+          await pcSpeakerDelay.setDelay(savedDelay);
+          sendLog(`APO sync delay: ${savedDelay}ms`, 'success');
+        } else {
+          sendLog(`Adjust sync delay slider to match Cast latency`, 'info');
+        }
+      } catch (apoErr) {
+        console.log(`[Main] Could not restore APO delay: ${apoErr.message}`);
+      }
+
+      return { success: true, mode };
     }
 
     return { success: true, mode };
