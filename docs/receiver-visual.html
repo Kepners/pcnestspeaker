@@ -154,8 +154,8 @@
     let currentVideoIndex = 0;
     let videoLoadTimeout = null;
     let videoErrorCount = 0;
-    const MAX_VIDEO_ERRORS = 3;
-    const VIDEO_LOAD_TIMEOUT = 15000; // 15 seconds to load
+    const MAX_VIDEO_ERRORS = 5;
+    const VIDEO_LOAD_TIMEOUT = 30000; // 30 seconds for 4K videos
     const ambientVideo = document.getElementById('ambient-video');
     let videosStarted = false;
 
