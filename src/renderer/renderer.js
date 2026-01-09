@@ -2330,6 +2330,27 @@ if (syncDelaySlider) {
   syncDelaySlider.addEventListener('input', (e) => {
     handleSyncDelayChange(parseInt(e.target.value, 10));
   });
+
+  // Mouse scroll wheel support for fine-tuning sync delay
+  // Scroll up = increase delay, scroll down = decrease delay
+  syncDelaySlider.addEventListener('wheel', (e) => {
+    e.preventDefault(); // Don't scroll the page
+
+    const step = 50; // 50ms per scroll tick
+    const min = parseInt(syncDelaySlider.min, 10);
+    const max = parseInt(syncDelaySlider.max, 10);
+    let currentValue = parseInt(syncDelaySlider.value, 10);
+
+    // Scroll up (negative deltaY) = increase, scroll down = decrease
+    if (e.deltaY < 0) {
+      currentValue = Math.min(max, currentValue + step);
+    } else {
+      currentValue = Math.max(min, currentValue - step);
+    }
+
+    syncDelaySlider.value = currentValue;
+    handleSyncDelayChange(currentValue);
+  }, { passive: false }); // passive: false required for preventDefault
 }
 
 // Ping toggle button - enables/disables pings during slider movement

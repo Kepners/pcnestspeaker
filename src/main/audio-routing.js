@@ -239,27 +239,69 @@ async function enablePCSpeakersMode(targetDevice = null) {
 }
 
 /**
- * Disable PC + Speakers mode
+ * Find a virtual audio device for "Speakers Only" mode
+ * Returns the first virtual device found
+ */
+async function findVirtualDevice() {
+  const devices = await getRenderDevices();
+
+  // Virtual devices to look for (in priority order)
+  const virtualPatterns = [
+    'Virtual Desktop Audio',
+    'CABLE Input',
+    'VB-Audio Virtual Cable',
+    'VoiceMeeter'
+  ];
+
+  for (const pattern of virtualPatterns) {
+    for (const device of devices) {
+      if (device.name.toLowerCase().includes(pattern.toLowerCase()) ||
+          device.deviceName.toLowerCase().includes(pattern.toLowerCase())) {
+        console.log(`[AudioRouting] Found virtual device: ${device.name}`);
+        return device.name;
+      }
+    }
+  }
+
+  console.log('[AudioRouting] No virtual device found');
+  return null;
+}
+
+/**
+ * Disable PC + Speakers mode (switch to "Speakers Only")
  *
- * Restores the original Windows default audio device.
- * This is typically called when switching back to "Speakers Only" mode
- * or when stopping streaming.
+ * Switches Windows default to a virtual audio device so audio
+ * ONLY goes to Cast speakers (not PC speakers).
  */
 async function disablePCSpeakersMode() {
-  console.log('[AudioRouting] disablePCSpeakersMode called');
+  console.log('[AudioRouting] disablePCSpeakersMode called (Speakers Only mode)');
 
   try {
+    // Find a virtual audio device to switch to
+    const virtualDevice = await findVirtualDevice();
+
+    if (virtualDevice) {
+      console.log(`[AudioRouting] Switching to virtual device: ${virtualDevice}`);
+      const result = await setDefaultDevice(virtualDevice);
+      if (result.success) {
+        console.log(`[AudioRouting] Speakers Only mode: audio goes to ${virtualDevice}`);
+        return { success: true, device: virtualDevice };
+      }
+      return result;
+    }
+
+    // Fallback: try to restore original if we have it
     if (originalDefaultDevice) {
-      console.log(`[AudioRouting] Restoring original device: ${originalDefaultDevice}`);
+      console.log(`[AudioRouting] No virtual device, restoring: ${originalDefaultDevice}`);
       const result = await setDefaultDevice(originalDefaultDevice);
       originalDefaultDevice = null;
       return result;
     }
 
-    console.log('[AudioRouting] No original device to restore');
-    return { success: true };
+    console.log('[AudioRouting] No virtual device found and no original to restore');
+    return { success: false, error: 'No virtual audio device found. Install Virtual Desktop Audio or VB-Cable.' };
   } catch (err) {
-    console.error('[AudioRouting] Failed to disable PC + Speakers mode:', err.message);
+    console.error('[AudioRouting] Failed to switch to Speakers Only mode:', err.message);
     return { success: false, error: err.message };
   }
 }
