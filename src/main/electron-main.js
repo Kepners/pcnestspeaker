@@ -1076,6 +1076,24 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
     sendLog(`Starting ${streamingMode} stream to "${speakerName}"...`);
     currentStreamingMode = streamingMode;
 
+    // DISCONNECT any currently connected speakers BEFORE connecting to new one
+    if (currentConnectedSpeakers.length > 0) {
+      sendLog(`Disconnecting ${currentConnectedSpeakers.length} previous speaker(s)...`);
+      for (const speaker of currentConnectedSpeakers) {
+        try {
+          sendLog(`Disconnecting "${speaker.name}"...`);
+          if (daemonManager.isDaemonRunning()) {
+            await daemonManager.disconnectSpeaker(speaker.name).catch(() => {});
+          } else {
+            await runPython(['stop', speaker.name]).catch(() => {});
+          }
+        } catch (e) {
+          sendLog(`Failed to disconnect "${speaker.name}": ${e.message}`, 'warning');
+        }
+      }
+      currentConnectedSpeakers = [];
+    }
+
     // NOTE: Device switching is now SEPARATE from streaming!
     // Use cast-mode toggle to control PC speaker output independently.
     // Streaming always captures from virtual-audio-capturer.
@@ -1152,66 +1170,6 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       // Check if pipeline was pre-started in background
       if (webrtcPipelineReady && mediamtxProcess && ffmpegWebrtcProcess) {
         sendLog('Using pre-started WebRTC pipeline', 'success');
-
-        // Only restart FFmpeg if we actually switched the audio device!
-        // If we were already on the virtual device, FFmpeg is already capturing correctly.
-        if (audioDeviceSwitched) {
-          sendLog('Restarting FFmpeg to capture from new audio device...');
-
-          // Kill old FFmpeg process
-          if (ffmpegWebrtcProcess) {
-            try {
-              ffmpegWebrtcProcess.kill('SIGTERM');
-            } catch (e) {}
-            ffmpegWebrtcProcess = null;
-          }
-
-          // Wait a moment for WASAPI to recognize the new default device
-          await new Promise(r => setTimeout(r, 500));
-
-          // Determine audio device name for FFmpeg
-          let audioDeviceName = 'virtual-audio-capturer';
-          if (streamingMode === 'webrtc-vbcable') {
-            audioDeviceName = 'CABLE Output (VB-Audio Virtual Cable)';
-          } else {
-            if (!audioStreamer) {
-              audioStreamer = new AudioStreamer();
-            }
-            const devices = await audioStreamer.getAudioDevices();
-            sendLog(`Available DirectShow audio devices: ${devices.join(', ')}`);
-
-            const vacDevice = devices.find(d =>
-              d.toLowerCase().includes('virtual-audio-capturer')
-            );
-            if (vacDevice) {
-              audioDeviceName = vacDevice;
-              sendLog(`Found virtual-audio-capturer: "${audioDeviceName}"`);
-            } else {
-              sendLog('[WARNING] virtual-audio-capturer not found! Checking for alternatives...', 'warning');
-              // Try to find any virtual audio device
-              const virtualDevice = devices.find(d =>
-                d.toLowerCase().includes('virtual') ||
-                d.toLowerCase().includes('cable') ||
-                d.toLowerCase().includes('stereo mix')
-              );
-              if (virtualDevice) {
-                audioDeviceName = virtualDevice;
-                sendLog(`Using alternative device: "${audioDeviceName}"`, 'warning');
-              } else {
-                sendLog('[ERROR] No virtual audio capture device found!', 'error');
-                sendLog('[ERROR] Please install screen-capture-recorder from: https://github.com/rdp/screen-capture-recorder-to-video-windows-free/releases', 'error');
-              }
-            }
-          }
-
-          sendLog(`Using audio device: ${audioDeviceName}`);
-
-          // Start new FFmpeg process
-          await startFFmpegWebRTC(audioDeviceName);
-          sendLog('FFmpeg restarted - now capturing from new audio device!', 'success');
-        } else {
-          sendLog('FFmpeg already capturing from correct device - no restart needed', 'success');
-        }
 
         // Start stream stats monitoring
         if (streamStats) {
@@ -2013,6 +1971,24 @@ let stereoCloudflared = null;
 ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker) => {
   try {
     sendLog(`Starting stereo separation: L="${leftSpeaker.name}", R="${rightSpeaker.name}"`);
+
+    // DISCONNECT any currently connected speakers BEFORE connecting new L/R pair
+    if (currentConnectedSpeakers.length > 0) {
+      sendLog(`Disconnecting ${currentConnectedSpeakers.length} previous speaker(s)...`);
+      for (const speaker of currentConnectedSpeakers) {
+        try {
+          sendLog(`Disconnecting "${speaker.name}"...`);
+          if (daemonManager.isDaemonRunning()) {
+            await daemonManager.disconnectSpeaker(speaker.name).catch(() => {});
+          } else {
+            await runPython(['stop', speaker.name]).catch(() => {});
+          }
+        } catch (e) {
+          sendLog(`Failed to disconnect "${speaker.name}": ${e.message}`, 'warning');
+        }
+      }
+      currentConnectedSpeakers = [];
+    }
 
     // Stop any existing mono streaming (ffmpegWebrtcProcess) before starting stereo
     // Set flag to prevent cleanup() being called by any pending timeout/error handler
