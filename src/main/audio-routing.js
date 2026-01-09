@@ -76,15 +76,23 @@ async function getDevices() {
 /**
  * Enable "Listen to this device" - routes audio from source to target
  *
- * @param {string} sourceDevice - Capture device to listen FROM (e.g., "Virtual Desktop Audio")
- * @param {string} targetDevice - Render device to listen ON (e.g., "HDMI")
+ * Uses two commands (per NirSoft documentation):
+ * 1. /SetListenToThisDevice "DeviceName" 1 - enables listening
+ * 2. /SetPlaybackThroughDevice "SourceDevice" "TargetDevice" - sets playback target
+ *
+ * @param {string} sourceDevice - Capture device to listen FROM (e.g., "Stereo Mix")
+ * @param {string} targetDevice - Render device to listen ON (e.g., "Speakers")
  */
 async function enableListening(sourceDevice, targetDevice) {
   try {
-    // Set the "Listen to this device" target
-    // Format: /SetListenToThisDevice "DeviceName" "TargetDeviceName" 1
-    await runSvcl(`/SetListenToThisDevice "${sourceDevice}" "${targetDevice}" 1`);
-    console.log(`[AudioRouting] Enabled listening: ${sourceDevice} → ${targetDevice}`);
+    // Step 1: Enable "Listen to this device" on the source
+    await runSvcl(`/SetListenToThisDevice "${sourceDevice}" 1`);
+    console.log(`[AudioRouting] Enabled listening on: ${sourceDevice}`);
+
+    // Step 2: Set the playback target device
+    await runSvcl(`/SetPlaybackThroughDevice "${sourceDevice}" "${targetDevice}"`);
+    console.log(`[AudioRouting] Set playback target: ${sourceDevice} → ${targetDevice}`);
+
     return { success: true };
   } catch (err) {
     console.error(`[AudioRouting] Failed to enable listening:`, err.message);
@@ -99,8 +107,8 @@ async function enableListening(sourceDevice, targetDevice) {
  */
 async function disableListening(sourceDevice) {
   try {
-    // Disable by setting empty target
-    await runSvcl(`/SetListenToThisDevice "${sourceDevice}" "" 0`);
+    // Disable listening (0 = off)
+    await runSvcl(`/SetListenToThisDevice "${sourceDevice}" 0`);
     console.log(`[AudioRouting] Disabled listening on: ${sourceDevice}`);
     return { success: true };
   } catch (err) {
