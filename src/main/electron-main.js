@@ -34,10 +34,13 @@ let currentCastMode = 'speakers'; // 'speakers' = Cast only, 'all' = PC + Speake
 let virtualCaptureCmdId = null; // Cached Virtual Desktop Audio CAPTURE device ID for Listen
 
 // Dependency download URLs
-// NOTE: We use screen-capture-recorder which installs "virtual-audio-capturer" device
-// VB-CABLE is legacy fallback only - not needed with screen-capture-recorder
+// NOTE: We use VB-CABLE which provides:
+// - CABLE Input (RENDER) - where apps output to, Windows default
+// - CABLE Output (CAPTURE) - what FFmpeg captures from, visible to Windows WASAPI
+// VB-CABLE is REQUIRED for PC+Speakers mode (Listen to this device needs WASAPI-visible capture)
 const DEPENDENCY_URLS = {
-  'virtual-audio': 'https://github.com/rdp/screen-capture-recorder-to-video-windows-free/releases/download/v0.13.3/Setup.Screen.Capturer.Recorder.v0.13.3.exe',
+  'vb-cable': 'https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack43.zip',
+  'virtual-audio': 'https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack43.zip',
   'screen-capture-recorder': 'https://github.com/rdp/screen-capture-recorder-to-video-windows-free/releases/download/v0.13.3/Setup.Screen.Capturer.Recorder.v0.13.3.exe'
 };
 
@@ -551,8 +554,8 @@ function cleanup() {
 // Check all dependencies
 async function checkAllDependencies() {
   const deps = {
-    virtualAudio: false,      // virtual-audio-capturer OR Virtual Desktop Audio
-    vbcableFallback: false,   // VB-CABLE (legacy fallback only)
+    vbcable: false,           // VB-CABLE (REQUIRED for PC+Speakers mode)
+    virtualAudio: false,      // Legacy: virtual-audio-capturer (fallback)
     mediamtx: false,
     ffmpeg: true // Assume bundled FFmpeg is always available
   };
@@ -562,14 +565,17 @@ async function checkAllDependencies() {
     if (!audioStreamer) audioStreamer = new AudioStreamer();
     const devices = await audioStreamer.getAudioDevices();
 
-    // Check for virtual-audio-capturer (preferred) or Virtual Desktop Audio
+    // VB-CABLE is REQUIRED - check for CABLE Output (capture device)
+    deps.vbcable = devices.some(d =>
+      d.toLowerCase().includes('cable output') ||
+      d.toLowerCase().includes('vb-audio virtual cable')
+    );
+
+    // Legacy fallback: virtual-audio-capturer from screen-capture-recorder
     deps.virtualAudio = devices.some(d =>
       d.toLowerCase().includes('virtual-audio-capturer') ||
       d.toLowerCase().includes('virtual desktop audio')
     );
-
-    // VB-CABLE is legacy fallback only
-    deps.vbcableFallback = devices.some(d => d.toLowerCase().includes('cable output'));
   } catch (e) {
     console.error('[Main] Error checking audio devices:', e.message);
   }
@@ -936,16 +942,18 @@ async function preStartWebRTCPipeline() {
     }
 
     const devices = await audioStreamer.getAudioDevices();
-    let audioDevice = 'virtual-audio-capturer';
+    let audioDevice = 'CABLE Output (VB-Audio Virtual Cable)';
 
-    // Prefer virtual-audio-capturer, fallback to VB-CABLE
-    const vacDevice = devices.find(d => d.toLowerCase().includes('virtual-audio-capturer'));
-    if (vacDevice) {
-      audioDevice = vacDevice;
+    // Prefer VB-CABLE (REQUIRED for PC+Speakers mode), fallback to virtual-audio-capturer
+    const vbDevice = devices.find(d => d.toLowerCase().includes('cable output'));
+    if (vbDevice) {
+      audioDevice = vbDevice;
     } else {
-      const vbDevice = devices.find(d => d.toLowerCase().includes('cable output'));
-      if (vbDevice) {
-        audioDevice = vbDevice;
+      // Fallback to virtual-audio-capturer (won't work for PC+Speakers mode)
+      const vacDevice = devices.find(d => d.toLowerCase().includes('virtual-audio-capturer'));
+      if (vacDevice) {
+        audioDevice = vacDevice;
+        sendLog('[WARNING] Using virtual-audio-capturer - PC+Speakers mode will NOT work!', 'warning');
       }
     }
 
@@ -1214,39 +1222,33 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         sendLog('Starting WebRTC pipeline...');
 
         // Determine audio device name for FFmpeg
-        let audioDeviceName = 'virtual-audio-capturer'; // Default for system audio
+        // VB-CABLE is REQUIRED for PC+Speakers mode (Listen to this device needs WASAPI-visible capture)
+        let audioDeviceName = 'CABLE Output (VB-Audio Virtual Cable)'; // Default to VB-CABLE
 
-        if (streamingMode === 'webrtc-vbcable') {
-          audioDeviceName = 'CABLE Output (VB-Audio Virtual Cable)';
+        if (!audioStreamer) {
+          audioStreamer = new AudioStreamer();
+        }
+        const devices = await audioStreamer.getAudioDevices();
+        sendLog(`Available DirectShow audio devices: ${devices.join(', ')}`);
+
+        // Prefer VB-CABLE (REQUIRED for PC+Speakers mode)
+        const vbDevice = devices.find(d => d.toLowerCase().includes('cable output'));
+        if (vbDevice) {
+          audioDeviceName = vbDevice;
+          sendLog(`Found VB-CABLE: "${audioDeviceName}"`);
         } else {
-          // For system audio mode, use virtual-audio-capturer from screen-capture-recorder
-          if (!audioStreamer) {
-            audioStreamer = new AudioStreamer();
-          }
-          const devices = await audioStreamer.getAudioDevices();
-          sendLog(`Available DirectShow audio devices: ${devices.join(', ')}`);
-
+          sendLog('[WARNING] VB-CABLE not found! PC+Speakers mode will NOT work.', 'warning');
+          // Fallback to virtual-audio-capturer (Cast Only mode will work)
           const vacDevice = devices.find(d =>
-            d.toLowerCase().includes('virtual-audio-capturer')
+            d.toLowerCase().includes('virtual-audio-capturer') ||
+            d.toLowerCase().includes('virtual desktop audio')
           );
           if (vacDevice) {
             audioDeviceName = vacDevice;
-            sendLog(`Found virtual-audio-capturer: "${audioDeviceName}"`);
+            sendLog(`Using fallback device: "${audioDeviceName}" - PC+Speakers mode disabled`, 'warning');
           } else {
-            sendLog('[WARNING] virtual-audio-capturer not found! Checking for alternatives...', 'warning');
-            // Try to find any virtual audio device
-            const virtualDevice = devices.find(d =>
-              d.toLowerCase().includes('virtual') ||
-              d.toLowerCase().includes('cable') ||
-              d.toLowerCase().includes('stereo mix')
-            );
-            if (virtualDevice) {
-              audioDeviceName = virtualDevice;
-              sendLog(`Using alternative device: "${audioDeviceName}"`, 'warning');
-            } else {
-              sendLog('[ERROR] No virtual audio capture device found!', 'error');
-              sendLog('[ERROR] Please install screen-capture-recorder from: https://github.com/rdp/screen-capture-recorder-to-video-windows-free/releases', 'error');
-            }
+            sendLog('[ERROR] No virtual audio capture device found!', 'error');
+            sendLog('[ERROR] Please install VB-CABLE from: https://vb-audio.com/Cable/', 'error');
           }
         }
 
@@ -1367,13 +1369,20 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
           const boostLevel = volumeBoostEnabled ? 1.25 : 1.03;
 
+          // Determine audio device - prefer VB-CABLE
+          if (!audioStreamer) audioStreamer = new AudioStreamer();
+          const availableDevices = await audioStreamer.getAudioDevices();
+          const vbDevice = availableDevices.find(d => d.toLowerCase().includes('cable output'));
+          const stereoAudioDevice = vbDevice || 'CABLE Output (VB-Audio Virtual Cable)';
+          sendLog(`Stereo audio device: ${stereoAudioDevice}`);
+
           // CRITICAL: DirectShow devices can only be opened ONCE!
           // Use SINGLE FFmpeg with filter_complex for L/R split + dual RTSP output
           sendLog('Starting FFmpeg stereo split (single capture, dual output)...');
           stereoFFmpegProcesses.left = spawn(ffmpegPath, [
             '-hide_banner', '-stats',
             '-f', 'dshow',
-            '-i', 'audio=virtual-audio-capturer',
+            '-i', `audio=${stereoAudioDevice}`,
             '-filter_complex', `[0:a]pan=mono|c0=c0,volume=${boostLevel}[left];[0:a]pan=mono|c0=c1,volume=${boostLevel}[right]`,
             '-map', '[left]', '-c:a', 'libopus', '-b:a', '128k', '-ar', '48000', '-ac', '1',
             '-f', 'rtsp', '-rtsp_transport', 'tcp', 'rtsp://localhost:8554/left',
@@ -1571,8 +1580,14 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           audioStreamer = new AudioStreamer();
         }
 
-        sendLog(`Audio source: ${audioDevice || 'virtual-audio-capturer'}`);
-        const streamUrl = await audioStreamer.start(audioDevice || 'virtual-audio-capturer', 'mp3');
+        // Determine audio device - prefer VB-CABLE
+        let fallbackAudioDevice = 'CABLE Output (VB-Audio Virtual Cable)';
+        const fbDevices = await audioStreamer.getAudioDevices();
+        const fbVbDevice = fbDevices.find(d => d.toLowerCase().includes('cable output'));
+        if (fbVbDevice) fallbackAudioDevice = fbVbDevice;
+
+        sendLog(`Audio source: ${fallbackAudioDevice}`);
+        const streamUrl = await audioStreamer.start(fallbackAudioDevice, 'mp3');
         sendLog(`Stream URL: ${streamUrl}`, 'success');
 
         // Cast to speaker using default receiver
@@ -1766,7 +1781,11 @@ ipcMain.handle('restart-ffmpeg', async () => {
       return { success: false, error: 'Not streaming' };
     }
 
-    const audioDevice = 'virtual-audio-capturer';
+    // Determine audio device - prefer VB-CABLE
+    if (!audioStreamer) audioStreamer = new AudioStreamer();
+    const restartDevices = await audioStreamer.getAudioDevices();
+    const restartVbDevice = restartDevices.find(d => d.toLowerCase().includes('cable output'));
+    const audioDevice = restartVbDevice || 'CABLE Output (VB-Audio Virtual Cable)';
     sendLog('Restarting FFmpeg with new settings...');
 
     // Stop current FFmpeg (on Windows, SIGTERM doesn't work - just kill it)
@@ -2079,11 +2098,18 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
     const boostLevel = volumeBoostEnabled ? 1.25 : 1.03; // 3% hidden, 25% with boost
 
+    // Determine audio device - prefer VB-CABLE
+    if (!audioStreamer) audioStreamer = new AudioStreamer();
+    const stereoDevices2 = await audioStreamer.getAudioDevices();
+    const stereoVbDevice2 = stereoDevices2.find(d => d.toLowerCase().includes('cable output'));
+    const stereoDevice2 = stereoVbDevice2 || 'CABLE Output (VB-Audio Virtual Cable)';
+    sendLog(`Stereo audio device: ${stereoDevice2}`);
+
     // Single FFmpeg process with filter_complex for L/R split + dual RTSP output
     stereoFFmpegProcesses.left = spawn(ffmpegPath, [
       '-hide_banner', '-stats',
       '-f', 'dshow',
-      '-i', 'audio=virtual-audio-capturer',
+      '-i', `audio=${stereoDevice2}`,
       '-filter_complex', `[0:a]pan=mono|c0=c0,volume=${boostLevel}[left];[0:a]pan=mono|c0=c1,volume=${boostLevel}[right]`,
       '-map', '[left]', '-c:a', 'libopus', '-b:a', '128k', '-ar', '48000', '-ac', '1',
       '-f', 'rtsp', '-rtsp_transport', 'tcp', 'rtsp://localhost:8554/left',
@@ -2353,10 +2379,17 @@ ipcMain.handle('start-tv-streaming', async (event, deviceName, deviceIp = null) 
       const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
       const boostLevel = volumeBoostEnabled ? 1.25 : 1.03;
 
+      // Determine audio device - prefer VB-CABLE
+      if (!audioStreamer) audioStreamer = new AudioStreamer();
+      const hlsDevices = await audioStreamer.getAudioDevices();
+      const hlsVbDevice = hlsDevices.find(d => d.toLowerCase().includes('cable output'));
+      const hlsAudioDevice = hlsVbDevice || 'CABLE Output (VB-Audio Virtual Cable)';
+      sendLog(`HLS audio device: ${hlsAudioDevice}`);
+
       ffmpegWebrtcProcess = spawn(ffmpegPath, [
         '-hide_banner', '-stats',
         '-f', 'dshow',
-        '-i', 'audio=virtual-audio-capturer',
+        '-i', `audio=${hlsAudioDevice}`,
         '-af', `volume=${boostLevel}`,
         '-c:a', 'aac', // HLS works better with AAC than Opus
         '-b:a', '128k',

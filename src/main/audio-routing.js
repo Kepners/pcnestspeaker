@@ -2,10 +2,16 @@
  * Audio Routing Module - Manages Windows audio device switching for PC + Speakers mode
  *
  * PC + Speakers mode works by:
- * 1. Keep Windows default on Virtual Desktop Audio (PRE-APO capture for Cast)
- * 2. Enable "Listen to this device" on Virtual Desktop Audio → PC speakers
+ * 1. Keep Windows default on VB-Cable Input (PRE-APO capture for Cast)
+ * 2. Enable "Listen to this device" on VB-Cable Output → PC speakers
  * 3. APO delay is applied ONLY on PC speakers output pipeline
  * 4. Cast gets PRE-APO audio, PC speakers get POST-APO delayed audio
+ *
+ * WHY VB-CABLE (not Virtual Desktop Audio):
+ * - VDA's CAPTURE device is only visible to DirectShow apps (FFmpeg), NOT Windows
+ * - VB-Cable's "CABLE Output" IS visible to Windows WASAPI
+ * - "Listen to this device" requires a Windows-visible CAPTURE device
+ * - VB-Cable provides both RENDER (CABLE Input) and CAPTURE (CABLE Output)
  *
  * Uses:
  * - NirSoft SoundVolumeCommandLine (svcl.exe) for device switching
@@ -493,15 +499,19 @@ async function disableListenToDevice(sourceDevice) {
 /**
  * Enable PC + Speakers mode
  *
- * CORRECT ARCHITECTURE:
- * 1. Keep Windows default on Virtual Desktop Audio RENDER device (so FFmpeg captures PRE-APO)
- * 2. Enable "Listen to this device" on Virtual Desktop Audio CAPTURE device → PC speakers
+ * CORRECT ARCHITECTURE (using VB-Cable):
+ * 1. Keep Windows default on VB-Cable Input (RENDER) so FFmpeg captures PRE-APO
+ * 2. Enable "Listen to this device" on VB-Cable Output (CAPTURE) → PC speakers
  * 3. APO delay is applied ONLY on PC speakers pipeline
  * 4. Cast gets PRE-APO audio, PC speakers get POST-APO audio
  *
+ * WHY VB-CABLE: VB-Cable's CAPTURE device ("CABLE Output") IS visible to Windows WASAPI,
+ * which is required for "Listen to this device" to work. Virtual Desktop Audio's capture
+ * is DirectShow-only and NOT visible to Windows.
+ *
  * KEY INSIGHT: "Listen to this device" is a CAPTURE device feature!
- * - Virtual Desktop Audio RENDER = where apps output to
- * - Virtual Desktop Audio CAPTURE = loopback source for "Listen"
+ * - VB-Cable Input (RENDER) = where apps output to
+ * - VB-Cable Output (CAPTURE) = loopback source for "Listen"
  *
  * @param {string} targetDevice - Optional specific PC speaker device name
  */
@@ -512,14 +522,14 @@ async function enablePCSpeakersMode(targetDevice = null) {
     // Step 1: Find virtual RENDER device (keep this as Windows default for FFmpeg capture)
     const virtualRenderDevice = await findVirtualDevice();
     if (!virtualRenderDevice) {
-      return { success: false, error: 'No virtual audio device found. Install Virtual Desktop Audio.' };
+      return { success: false, error: 'No virtual audio device found. Install VB-Cable from https://vb-audio.com/Cable/' };
     }
 
     // Step 2: Find virtual CAPTURE device (source for "Listen to this device")
-    // CRITICAL: Must match the render device! VDA render -> VDA capture
+    // CRITICAL: Must match the render device! VB-Cable render -> VB-Cable capture
     const virtualCaptureDevice = await findVirtualCaptureDevice(virtualRenderDevice);
     if (!virtualCaptureDevice) {
-      return { success: false, error: 'No Virtual Desktop Audio capture device found. Make sure screen-capture-recorder is installed.' };
+      return { success: false, error: 'No VB-Cable capture device found. Make sure VB-Cable is installed from https://vb-audio.com/Cable/' };
     }
 
     // Step 3: Find PC speakers (target for Listen)
@@ -530,7 +540,12 @@ async function enablePCSpeakersMode(targetDevice = null) {
 
     // Step 4: Ensure Windows default is on virtual RENDER device (for PRE-APO capture)
     const currentDefault = await getCurrentDefaultDevice();
-    if (!currentDefault || !currentDefault.toLowerCase().includes('virtual desktop audio')) {
+    const isOnVirtualDevice = currentDefault &&
+      (currentDefault.toLowerCase().includes('vb-audio') ||
+       currentDefault.toLowerCase().includes('cable') ||
+       currentDefault.toLowerCase().includes('virtual desktop audio'));
+
+    if (!isOnVirtualDevice) {
       console.log(`[AudioRouting] Switching default to virtual device: ${virtualRenderDevice}`);
       await setDefaultDevice(virtualRenderDevice);
     } else {
@@ -538,7 +553,7 @@ async function enablePCSpeakersMode(targetDevice = null) {
     }
 
     // Step 5: Enable "Listen to this device" on the CAPTURE device
-    // Route: Virtual Desktop Audio (CAPTURE) → PC speakers (RENDER)
+    // Route: VB-Cable Output (CAPTURE) → PC speakers (RENDER)
     console.log(`[AudioRouting] Enabling Listen on CAPTURE device: ${virtualCaptureDevice.cmdId}`);
     console.log(`[AudioRouting] Target RENDER device: ${pcSpeakers}`);
 
@@ -564,25 +579,29 @@ async function enablePCSpeakersMode(targetDevice = null) {
 
 /**
  * Find a virtual audio RENDER device for "Speakers Only" mode
- * Returns the UNIQUE deviceName (e.g., "Virtual Desktop Audio") not ambiguous name ("Speakers")
+ * Returns the UNIQUE deviceName (e.g., "VB-Audio Virtual Cable") not ambiguous name ("CABLE Input")
+ *
+ * WHY VB-CABLE: VB-Cable's CAPTURE device is visible to Windows WASAPI, which is required
+ * for "Listen to this device" to work. Virtual Desktop Audio's capture is DirectShow-only.
  */
 async function findVirtualDevice() {
   const devices = await getRenderDevices();
 
-  // Virtual device to look for
-  // NOTE: We ONLY use Virtual Desktop Audio - NOT VB-Cable or VoiceMeeter!
-  // screen-capture-recorder installs Virtual Desktop Audio which provides:
-  // - A RENDER device (where apps output to)
-  // - A CAPTURE device (loopback for "Listen to this device")
+  // Virtual devices to look for - VB-Cable PREFERRED
+  // VB-Cable provides:
+  // - RENDER device: "CABLE Input" (where apps output to)
+  // - CAPTURE device: "CABLE Output" (Windows-visible, for "Listen to this device")
   const virtualPatterns = [
-    'Virtual Desktop Audio'
+    'VB-Audio Virtual Cable',    // VB-Cable device name (preferred)
+    'CABLE Input',               // VB-Cable render device display name
+    'Virtual Desktop Audio'      // Fallback to VDA if VB-Cable not installed
   ];
 
   for (const pattern of virtualPatterns) {
     for (const device of devices) {
       if (device.name.toLowerCase().includes(pattern.toLowerCase()) ||
           device.deviceName.toLowerCase().includes(pattern.toLowerCase())) {
-        // CRITICAL: Return deviceName (unique) not name (ambiguous "Speakers")
+        // CRITICAL: Return deviceName (unique) not name (ambiguous)
         // Multiple devices can have name="Speakers" but deviceName is unique
         console.log(`[AudioRouting] Found virtual RENDER device: ${device.deviceName} (display: ${device.name})`);
         return device.deviceName;
@@ -590,7 +609,7 @@ async function findVirtualDevice() {
     }
   }
 
-  console.log('[AudioRouting] No virtual device found');
+  console.log('[AudioRouting] No virtual device found. Install VB-Cable from https://vb-audio.com/Cable/');
   return null;
 }
 
@@ -599,9 +618,8 @@ async function findVirtualDevice() {
  * "Listen to this device" is a CAPTURE device feature - it takes audio from a capture source
  * and plays it through a render device
  *
- * CRITICAL: The capture device must match the render device!
- * If Windows default is "Virtual Desktop Audio" (render), we need "Virtual Desktop Audio" (capture)
- * NOT "VB-Audio Virtual Cable" which is a completely different audio path!
+ * CRITICAL: VB-Cable's "CABLE Output" IS visible to Windows WASAPI!
+ * Virtual Desktop Audio's capture is DirectShow-only and NOT visible to Windows.
  *
  * @param {string} matchRenderDevice - Optional: Match capture device to this render device name
  */
@@ -620,7 +638,7 @@ async function findVirtualCaptureDevice(matchRenderDevice = null) {
       const name = device['Name'] || '';
       const deviceName = device['Device Name'] || '';
 
-      // Match by Device Name (e.g., "Virtual Desktop Audio" matches "Virtual Desktop Audio")
+      // For VB-Cable: render="VB-Audio Virtual Cable" -> capture="VB-Audio Virtual Cable"
       if (deviceName.toLowerCase().includes(matchLower) ||
           matchLower.includes(deviceName.toLowerCase())) {
         console.log(`[AudioRouting] Found matching CAPTURE device: ${deviceName} (display: ${name})`);
@@ -635,11 +653,13 @@ async function findVirtualCaptureDevice(matchRenderDevice = null) {
     console.log(`[AudioRouting] No CAPTURE device found matching: ${matchRenderDevice}`);
   }
 
-  // Virtual capture device to look for
-  // NOTE: We ONLY use Virtual Desktop Audio - NOT VB-Cable!
-  // VB-Cable is a completely different audio path and causes routing mismatches.
+  // Virtual capture devices to look for - VB-Cable PREFERRED
+  // VB-Cable's "CABLE Output" IS visible to Windows WASAPI (required for Listen)
+  // Virtual Desktop Audio's capture is DirectShow-only and won't work
   const virtualPatterns = [
-    'Virtual Desktop Audio'  // screen-capture-recorder's loopback device
+    'VB-Audio Virtual Cable',    // VB-Cable device name (preferred)
+    'CABLE Output',              // VB-Cable capture device display name
+    'Virtual Desktop Audio'      // Fallback (won't work for Listen, but try anyway)
   ];
 
   for (const pattern of virtualPatterns) {
@@ -664,7 +684,7 @@ async function findVirtualCaptureDevice(matchRenderDevice = null) {
     }
   }
 
-  console.log('[AudioRouting] No virtual CAPTURE device found');
+  console.log('[AudioRouting] No virtual CAPTURE device found. Install VB-Cable from https://vb-audio.com/Cable/');
   return null;
 }
 
@@ -699,7 +719,12 @@ async function disablePCSpeakersMode() {
     const virtualRenderDevice = await findVirtualDevice();
     if (virtualRenderDevice) {
       const currentDefault = await getCurrentDefaultDevice();
-      if (!currentDefault || !currentDefault.toLowerCase().includes('virtual desktop audio')) {
+      const isOnVirtualDevice = currentDefault &&
+        (currentDefault.toLowerCase().includes('vb-audio') ||
+         currentDefault.toLowerCase().includes('cable') ||
+         currentDefault.toLowerCase().includes('virtual desktop audio'));
+
+      if (!isOnVirtualDevice) {
         await setDefaultDevice(virtualRenderDevice);
       }
       console.log(`[AudioRouting] Speakers Only mode: ${virtualRenderDevice} → Cast only (no PC speakers)`);
@@ -707,7 +732,7 @@ async function disablePCSpeakersMode() {
     }
 
     console.log('[AudioRouting] No virtual device found');
-    return { success: false, error: 'No virtual audio device found. Install Virtual Desktop Audio or VB-Cable.' };
+    return { success: false, error: 'No virtual audio device found. Install VB-Cable from https://vb-audio.com/Cable/' };
   } catch (err) {
     console.error('[AudioRouting] Failed to switch to Speakers Only mode:', err.message);
     return { success: false, error: err.message };
