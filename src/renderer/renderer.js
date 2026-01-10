@@ -31,6 +31,7 @@ const refreshOutputsBtn = document.getElementById('refresh-outputs-btn');
 
 // Sync calibration elements
 const syncCalibrateBtn = document.getElementById('sync-calibrate-btn');
+const measureLatencyBtn = document.getElementById('measure-latency-btn');
 const syncDelaySlider = document.getElementById('sync-delay-slider');
 const syncDelayValue = document.getElementById('sync-delay-value');
 const syncVisual = document.getElementById('sync-visual');
@@ -2565,6 +2566,53 @@ if (syncCalibrateBtn) {
       stopCalibration();
     } else {
       startCalibration();
+    }
+  });
+}
+
+// Measure Latency button click handler - auto-measures RTT and sets slider
+if (measureLatencyBtn) {
+  measureLatencyBtn.addEventListener('click', async () => {
+    // Need an active speaker to measure
+    const activeSpeaker = speakers.find(s => s.isStreaming);
+    if (!activeSpeaker) {
+      log('Start streaming to a speaker first to measure latency', 'warning');
+      return;
+    }
+
+    // Show measuring state
+    measureLatencyBtn.classList.add('measuring');
+    measureLatencyBtn.textContent = '📡 Measuring...';
+    if (syncHint) syncHint.textContent = 'Measuring network latency (~10 seconds)...';
+
+    try {
+      log(`Measuring latency to ${activeSpeaker.name}...`, 'info');
+      const result = await window.api.measureLatency(activeSpeaker.name, activeSpeaker.ip);
+
+      if (result.success) {
+        // Auto-populate the sync delay slider with recommended value
+        const recommendedDelay = result.recommendedDelay || 700;
+        currentSyncDelay = recommendedDelay;
+
+        if (syncDelaySlider) syncDelaySlider.value = recommendedDelay;
+        if (syncDelayValue) syncDelayValue.textContent = `${recommendedDelay}ms`;
+
+        // Apply the delay
+        await window.api.setSyncDelay(recommendedDelay);
+
+        log(`Latency measured: RTT=${result.rtt}ms → Recommended delay: ${recommendedDelay}ms`, 'success');
+        if (syncHint) syncHint.textContent = `Auto-set to ${recommendedDelay}ms (RTT: ${result.rtt}ms)`;
+      } else {
+        log(`Failed to measure latency: ${result.error}`, 'error');
+        if (syncHint) syncHint.textContent = 'Measurement failed - use manual calibration';
+      }
+    } catch (error) {
+      log(`Error measuring latency: ${error.message}`, 'error');
+      if (syncHint) syncHint.textContent = 'Measurement error - use manual calibration';
+    } finally {
+      // Reset button state
+      measureLatencyBtn.classList.remove('measuring');
+      measureLatencyBtn.textContent = '📡 Measure';
     }
   });
 }

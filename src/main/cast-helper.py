@@ -1414,6 +1414,89 @@ def set_default_audio_output(device_name):
         return {"success": False, "error": str(e)}
 
 
+def measure_latency(speaker_name, speaker_ip=None, timeout=15):
+    """Request latency measurement from Cast receiver.
+
+    Sends a 'measure-latency' message to the receiver, which measures RTT
+    using WebRTC getStats() and sends back a 'latency-result' message.
+
+    Args:
+        speaker_name: Name of the speaker
+        speaker_ip: Optional IP for faster connection
+        timeout: How long to wait for response (default 15s, measurement takes ~10s)
+
+    Returns:
+        { success: true, rtt: 42, recommendedDelay: 521, samples: 5 }
+    """
+    try:
+        browser = None
+
+        if speaker_ip:
+            print(f"[MeasureLatency] Connecting to {speaker_name} at {speaker_ip}...", file=sys.stderr)
+            chromecasts, browser = pychromecast.get_listed_chromecasts(
+                friendly_names=[speaker_name],
+                known_hosts=[speaker_ip],
+                timeout=5
+            )
+        else:
+            print(f"[MeasureLatency] Looking for '{speaker_name}'...", file=sys.stderr)
+            chromecasts, browser = pychromecast.get_listed_chromecasts(
+                friendly_names=[speaker_name],
+                timeout=10
+            )
+
+        if not chromecasts:
+            if browser:
+                browser.stop_discovery()
+            return {"success": False, "error": f"Speaker '{speaker_name}' not found"}
+
+        cast = chromecasts[0]
+        cast.wait(timeout=10)
+
+        # Register WebRTC namespace controller
+        webrtc = WebRTCController()
+        cast.register_handler(webrtc)
+
+        # Clear any pending messages
+        webrtc.messages.clear()
+        webrtc.message_event.clear()
+
+        # Send measure-latency request
+        print(f"[MeasureLatency] Sending measure-latency request...", file=sys.stderr)
+        webrtc.send_message({"type": "measure-latency"})
+
+        # Wait for latency-result response
+        print(f"[MeasureLatency] Waiting for response (up to {timeout}s)...", file=sys.stderr)
+
+        # Poll for response
+        import time
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if webrtc.messages:
+                response = webrtc.messages.pop(0)
+                if response.get('type') == 'latency-result':
+                    print(f"[MeasureLatency] Got result: RTT={response.get('rtt')}ms, Recommended={response.get('recommendedDelay')}ms", file=sys.stderr)
+                    if browser:
+                        browser.stop_discovery()
+                    return {
+                        "success": True,
+                        "rtt": response.get('rtt'),
+                        "recommendedDelay": response.get('recommendedDelay'),
+                        "samples": response.get('samples', 0)
+                    }
+            time.sleep(0.5)
+
+        if browser:
+            browser.stop_discovery()
+        return {"success": False, "error": "Timeout waiting for latency measurement"}
+
+    except Exception as e:
+        import traceback
+        print(f"[MeasureLatency] ERROR: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        return {"success": False, "error": str(e)}
+
+
 def set_volume_fast(speaker_name, volume_level, speaker_ip=None):
     """Fast volume set using direct IP connection (no discovery).
 
@@ -1643,6 +1726,15 @@ if __name__ == "__main__":
         # Args: set-audio-output <device_name>
         device_name = sys.argv[2]
         result = set_default_audio_output(device_name)
+        print(json.dumps(result))
+
+    elif command == "measure-latency" and len(sys.argv) >= 3:
+        # Request latency measurement from Cast receiver
+        # Args: measure-latency <speaker_name> [speaker_ip] [timeout]
+        speaker = sys.argv[2]
+        speaker_ip = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] != '' else None
+        timeout = int(sys.argv[4]) if len(sys.argv) > 4 else 15
+        result = measure_latency(speaker, speaker_ip, timeout)
         print(json.dumps(result))
 
     else:

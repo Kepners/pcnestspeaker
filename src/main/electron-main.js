@@ -2648,6 +2648,31 @@ ipcMain.handle('get-sync-delay', () => {
   };
 });
 
+// Measure latency from Cast receiver
+ipcMain.handle('measure-latency', async (event, speakerName, speakerIp) => {
+  try {
+    sendLog(`Measuring latency to ${speakerName}...`, 'info');
+
+    const result = await runPython(['measure-latency', speakerName, speakerIp || '', '15']);
+
+    if (result.success) {
+      sendLog(`Latency: RTT=${result.rtt}ms, Recommended delay=${result.recommendedDelay}ms`, 'success');
+      return {
+        success: true,
+        rtt: result.rtt,
+        recommendedDelay: result.recommendedDelay,
+        samples: result.samples
+      };
+    } else {
+      sendLog(`Latency measurement failed: ${result.error}`, 'error');
+      return { success: false, error: result.error };
+    }
+  } catch (error) {
+    sendLog(`Latency measurement error: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
 // Check if Equalizer APO is installed (for showing install prompt)
 ipcMain.handle('check-equalizer-apo', () => {
   return {

@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld('api', {
   initAudioSync: () => ipcRenderer.invoke('init-audio-sync'),
   setSyncDelay: (delayMs) => ipcRenderer.invoke('set-sync-delay', delayMs),
   getSyncDelay: () => ipcRenderer.invoke('get-sync-delay'),
+  measureLatency: (speakerName, speakerIp) => ipcRenderer.invoke('measure-latency', speakerName, speakerIp),
   checkEqualizerApo: () => ipcRenderer.invoke('check-equalizer-apo'),
   installEqualizerApo: () => ipcRenderer.invoke('install-equalizer-apo'),
   getApoDevices: () => ipcRenderer.invoke('get-apo-devices'),

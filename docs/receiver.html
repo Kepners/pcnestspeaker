@@ -317,6 +317,91 @@
     const MAX_RETRIES = 5;
     const RETRY_DELAY = 2000; // 2 seconds
 
+    // ===================
+    // RTT Measurement
+    // ===================
+    let rttMeasurementInterval = null;
+    let rttSamples = [];
+    const RTT_SAMPLE_COUNT = 5;
+    const RTT_POLL_INTERVAL = 2000; // 2 seconds
+    const BUFFER_OFFSET_MS = 500; // Estimated buffer delay
+
+    async function measureRTT() {
+      if (!peerConnection || peerConnection.connectionState !== 'connected') {
+        return null;
+      }
+
+      try {
+        const stats = await peerConnection.getStats();
+        for (const report of stats.values()) {
+          // Look for the active ICE candidate pair
+          if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+            if (report.currentRoundTripTime !== undefined) {
+              return Math.round(report.currentRoundTripTime * 1000); // Convert to ms
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[RTT] getStats error:', e);
+      }
+      return null;
+    }
+
+    function startRTTMeasurement() {
+      if (rttMeasurementInterval) return; // Already measuring
+
+      rttSamples = [];
+      console.log('[RTT] Starting measurement...');
+      log('Measuring latency...');
+
+      rttMeasurementInterval = setInterval(async () => {
+        const rtt = await measureRTT();
+        if (rtt !== null) {
+          rttSamples.push(rtt);
+          console.log('[RTT] Sample:', rtt, 'ms');
+
+          if (rttSamples.length >= RTT_SAMPLE_COUNT) {
+            // Calculate average RTT
+            const avgRTT = Math.round(rttSamples.reduce((a, b) => a + b, 0) / rttSamples.length);
+            // One-way latency is RTT/2, plus buffer offset
+            const recommendedDelay = Math.round(avgRTT / 2) + BUFFER_OFFSET_MS;
+
+            console.log('[RTT] Average RTT:', avgRTT, 'ms, Recommended delay:', recommendedDelay, 'ms');
+
+            // Send result back to sender
+            sendLatencyResult({
+              rtt: avgRTT,
+              recommendedDelay: recommendedDelay,
+              samples: rttSamples.length
+            });
+
+            stopRTTMeasurement();
+            log('Streaming audio...');
+          }
+        }
+      }, RTT_POLL_INTERVAL);
+    }
+
+    function stopRTTMeasurement() {
+      if (rttMeasurementInterval) {
+        clearInterval(rttMeasurementInterval);
+        rttMeasurementInterval = null;
+      }
+    }
+
+    function sendLatencyResult(data) {
+      try {
+        // Send via Cast message to all connected senders
+        context.sendCustomMessage(WEBRTC_NAMESPACE, undefined, {
+          type: 'latency-result',
+          ...data
+        });
+        console.log('[RTT] Sent latency result:', data);
+      } catch (e) {
+        console.error('[RTT] Failed to send result:', e);
+      }
+    }
+
     async function connectToMediaMTX(serverUrl, streamName = 'pcaudio', forceRelay = false) {
       log(forceRelay ? 'Connecting (relay)...' : 'Connecting...');
 
@@ -498,6 +583,7 @@
     }
 
     function disconnect() {
+      stopRTTMeasurement(); // Stop any ongoing measurement
       if (peerConnection) {
         if (whepResourceUrl) {
           fetch(whepResourceUrl, { method: 'DELETE' }).catch(() => {});
@@ -523,6 +609,10 @@
         case 'disconnect':
         case 'close':
           disconnect();
+          break;
+        case 'measure-latency':
+          // PC requested latency measurement
+          startRTTMeasurement();
           break;
       }
     }

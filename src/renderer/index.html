@@ -165,10 +165,13 @@
           </div>
           <p class="option-hint sync-hint" id="sync-hint">Delay HDMI speakers to sync with Cast (~700-1200ms typical)</p>
 
-          <!-- Calibrate button for quick adjustment -->
+          <!-- Calibrate buttons for sync adjustment -->
           <div class="option-row" style="margin-top: 8px;">
             <span class="option-label"></span>
-            <button class="btn btn-small btn-secondary" id="sync-calibrate-btn">🔊 Test Sync</button>
+            <div class="sync-buttons">
+              <button class="btn btn-small btn-secondary" id="measure-latency-btn">📡 Measure</button>
+              <button class="btn btn-small btn-secondary" id="sync-calibrate-btn">🔊 Test Sync</button>
+            </div>
           </div>
         </div>
 
