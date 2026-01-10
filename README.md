@@ -23,7 +23,6 @@ Stream Windows system audio to Google Nest speakers over Wi-Fi with sub-second l
 
 - Windows 10/11 (64-bit)
 - Google Nest speaker(s) on same Wi-Fi network
-- **[VB-Cable](https://vb-audio.com/Cable/)** - Virtual audio cable (FREE)
 
 ### Optional (for PC + Speakers mode)
 
@@ -31,13 +30,10 @@ Stream Windows system audio to Google Nest speakers over Wi-Fi with sub-second l
 
 ### Installation
 
-1. **Install VB-Cable** - [Download from vb-audio.com](https://vb-audio.com/Cable/)
-   - Extract the zip file
-   - Right-click `VBCABLE_Setup_x64.exe` → Run as Administrator
-   - Restart your computer after installation
-2. **Download PC Nest Speaker** from [releases](https://github.com/Kepners/pcnestspeaker/releases)
-3. Run the installer or portable exe
-4. Done! The app will automatically use VB-Cable for audio routing
+1. **Download PC Nest Speaker** from [releases](https://github.com/Kepners/pcnestspeaker/releases)
+2. Run the installer or portable exe
+3. **On first launch** - The app will automatically install VB-Cable (requires admin + restart)
+4. Done! Start streaming to your Nest speakers
 
 ### Usage
 
@@ -111,15 +107,17 @@ Click a speaker, then Ctrl+click another speaker to create a stereo pair:
 - Restart the app
 
 ### No audio playing
-- **Verify VB-Cable is installed** - Check Sound settings for "CABLE Input" and "CABLE Output"
+- **Restart your PC** if you just installed VB-Cable (required for driver to work)
+- Verify VB-Cable is installed - Check Sound settings for "CABLE Input" and "CABLE Output"
 - Verify Windows audio is playing (test with YouTube)
 - Check that the app set Windows default to "CABLE Input"
 - Try the HTTP/MP3 fallback mode
 
 ### VB-Cable not showing up
-- Run installer as Administrator
-- Restart your computer after installation
-- Re-download from [vb-audio.com/Cable](https://vb-audio.com/Cable/)
+- The app should auto-install VB-Cable on first launch
+- If it didn't, re-run the app and accept the VB-Cable installation prompt
+- Make sure you restart your PC after VB-Cable installs
+- Manual install: [vb-audio.com/Cable](https://vb-audio.com/Cable/)
 
 ### PC + Speakers mode not working
 - VB-Cable must be installed (not Virtual Desktop Audio)
