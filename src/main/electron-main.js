@@ -770,7 +770,15 @@ async function startFFmpegWebRTC(audioDevice) {
     const args = [
       '-hide_banner',
       '-stats',  // Force progress output for stream monitor
+      // Low-latency input flags (CRITICAL for real-time streaming)
+      '-fflags', 'nobuffer',
+      '-flags', 'low_delay',
+      '-probesize', '32',
+      '-analyzeduration', '0',
+      '-rtbufsize', '64k',
+      // Input from DirectShow with minimal buffer
       '-f', 'dshow',
+      '-audio_buffer_size', '50',
       '-i', `audio=${audioDevice}`,
       '-af', `volume=${boostLevel}`  // Always apply volume filter
     ];
@@ -779,12 +787,19 @@ async function startFFmpegWebRTC(audioDevice) {
       sendLog('[FFmpeg] Volume boost enabled (2.15x signal)');
     }
 
-    // Add output settings
+    // Add output settings with low-latency flags
     args.push(
       '-c:a', 'libopus',
       '-b:a', '128k',
       '-ar', '48000',
       '-ac', '2',
+      // Opus low-latency settings (20ms frames for stability)
+      '-application', 'lowdelay',
+      '-frame_duration', '20',
+      // Low-latency output flags
+      '-flush_packets', '1',
+      '-max_delay', '0',
+      '-muxdelay', '0',
       '-f', 'rtsp',
       '-rtsp_transport', 'tcp',
       'rtsp://localhost:8554/pcaudio'
@@ -1544,12 +1559,25 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           sendLog('Starting FFmpeg stereo split (single capture, dual output)...');
           stereoFFmpegProcesses.left = spawn(ffmpegPath, [
             '-hide_banner', '-stats',
+            // Low-latency input flags
+            '-fflags', 'nobuffer',
+            '-flags', 'low_delay',
+            '-probesize', '32',
+            '-analyzeduration', '0',
+            '-rtbufsize', '64k',
             '-f', 'dshow',
+            '-audio_buffer_size', '50',
             '-i', `audio=${stereoAudioDevice}`,
             '-filter_complex', `[0:a]pan=mono|c0=c0,volume=${boostLevel}[left];[0:a]pan=mono|c0=c1,volume=${boostLevel}[right]`,
+            // Left output with low-latency flags
             '-map', '[left]', '-c:a', 'libopus', '-b:a', '128k', '-ar', '48000', '-ac', '1',
+            '-application', 'lowdelay', '-frame_duration', '20',
+            '-flush_packets', '1', '-max_delay', '0', '-muxdelay', '0',
             '-f', 'rtsp', '-rtsp_transport', 'tcp', 'rtsp://localhost:8554/left',
+            // Right output with low-latency flags
             '-map', '[right]', '-c:a', 'libopus', '-b:a', '128k', '-ar', '48000', '-ac', '1',
+            '-application', 'lowdelay', '-frame_duration', '20',
+            '-flush_packets', '1', '-max_delay', '0', '-muxdelay', '0',
             '-f', 'rtsp', '-rtsp_transport', 'tcp', 'rtsp://localhost:8554/right'
           ], { stdio: 'pipe', windowsHide: true });
 
@@ -1576,35 +1604,35 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           const stereoUrl = `http://${localIp}:8889`;
           sendLog(`Stereo URL: ${stereoUrl} (local HTTP - no tunnel)`);
 
-          // Connect speakers directly (no retry needed with local HTTP)
-          // Stereo pairs are always audio devices, so use audio receiver
-          sendLog(`Connecting LEFT speaker: "${leftMember.name}"...`);
-          const leftResult = await runPython([
-            'webrtc-launch',
-            leftMember.name,
-            stereoUrl,
-            leftMember.ip || '',
-            'left',
-            AUDIO_APP_ID  // Stereo pairs always use audio receiver
+          // Connect BOTH speakers in PARALLEL for better L/R sync
+          // Sequential connection causes LEFT to start playing before RIGHT
+          sendLog(`Connecting LEFT + RIGHT speakers in parallel...`);
+          const [leftResult, rightResult] = await Promise.all([
+            runPython([
+              'webrtc-launch',
+              leftMember.name,
+              stereoUrl,
+              leftMember.ip || '',
+              'left',
+              AUDIO_APP_ID
+            ]),
+            runPython([
+              'webrtc-launch',
+              rightMember.name,
+              stereoUrl,
+              rightMember.ip || '',
+              'right',
+              AUDIO_APP_ID
+            ])
           ]);
+
           if (!leftResult.success) {
             throw new Error(`Left speaker failed: ${leftResult.error}`);
           }
-          sendLog(`LEFT speaker connected`, 'success');
-
-          sendLog(`Connecting RIGHT speaker: "${rightMember.name}"...`);
-          const rightResult = await runPython([
-            'webrtc-launch',
-            rightMember.name,
-            stereoUrl,
-            rightMember.ip || '',
-            'right',
-            AUDIO_APP_ID  // Stereo pairs always use audio receiver
-          ]);
           if (!rightResult.success) {
             throw new Error(`Right speaker failed: ${rightResult.error}`);
           }
-          sendLog(`RIGHT speaker connected`, 'success');
+          sendLog(`LEFT + RIGHT speakers connected in sync`, 'success');
 
           switchingToStereoMode = false;
 
@@ -2282,12 +2310,25 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     // Single FFmpeg process with filter_complex for L/R split + dual RTSP output
     stereoFFmpegProcesses.left = spawn(ffmpegPath, [
       '-hide_banner', '-stats',
+      // Low-latency input flags
+      '-fflags', 'nobuffer',
+      '-flags', 'low_delay',
+      '-probesize', '32',
+      '-analyzeduration', '0',
+      '-rtbufsize', '64k',
       '-f', 'dshow',
+      '-audio_buffer_size', '50',
       '-i', `audio=${stereoDevice2}`,
       '-filter_complex', `[0:a]pan=mono|c0=c0,volume=${boostLevel}[left];[0:a]pan=mono|c0=c1,volume=${boostLevel}[right]`,
+      // Left output with low-latency flags
       '-map', '[left]', '-c:a', 'libopus', '-b:a', '128k', '-ar', '48000', '-ac', '1',
+      '-application', 'lowdelay', '-frame_duration', '20',
+      '-flush_packets', '1', '-max_delay', '0', '-muxdelay', '0',
       '-f', 'rtsp', '-rtsp_transport', 'tcp', 'rtsp://localhost:8554/left',
+      // Right output with low-latency flags
       '-map', '[right]', '-c:a', 'libopus', '-b:a', '128k', '-ar', '48000', '-ac', '1',
+      '-application', 'lowdelay', '-frame_duration', '20',
+      '-flush_packets', '1', '-max_delay', '0', '-muxdelay', '0',
       '-f', 'rtsp', '-rtsp_transport', 'tcp', 'rtsp://localhost:8554/right'
     ], { stdio: 'pipe', windowsHide: true });
 
@@ -2317,57 +2358,43 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     const localIp = getLocalIp();
     const webrtcUrl = `http://${localIp}:8889`;
 
-    // 5. Cast to LEFT speaker (NO PROXY - direct WebRTC)
-    // Stereo mode always uses audio receiver
-    sendLog(`Connecting to LEFT speaker: "${leftSpeaker.name}"...`);
-    const leftResult = await runPython([
-      'webrtc-launch',
-      leftSpeaker.name,
-      webrtcUrl,
-      leftSpeaker.ip || '', // Use cached IP if available
-      'left', // Stream name
-      AUDIO_APP_ID  // Stereo always uses audio receiver
+    // 5+6. Cast to BOTH speakers in PARALLEL for better L/R sync
+    // Sequential connection causes LEFT to start playing before RIGHT
+    sendLog(`Connecting LEFT + RIGHT speakers in parallel...`);
+    const [leftResult, rightResult] = await Promise.all([
+      runPython([
+        'webrtc-launch',
+        leftSpeaker.name,
+        webrtcUrl,
+        leftSpeaker.ip || '',
+        'left',
+        AUDIO_APP_ID
+      ]),
+      runPython([
+        'webrtc-launch',
+        rightSpeaker.name,
+        webrtcUrl,
+        rightSpeaker.ip || '',
+        'right',
+        AUDIO_APP_ID
+      ])
     ]);
 
     if (!leftResult.success) {
       throw new Error(`Left speaker cast failed: ${leftResult.error}`);
     }
-    // Show verification status for LEFT
-    if (leftResult.verified) {
-      sendLog(`✓ LEFT speaker verified - audio playing!`, 'success');
-    } else if (leftResult.warning === 'no_data') {
-      sendLog(`⚠ LEFT: Connected but NO AUDIO (bytesSent=0)`, 'warning');
-    } else if (leftResult.warning === 'no_session') {
-      sendLog(`⚠ LEFT: No WebRTC session - speaker may not have turned on`, 'warning');
-    } else {
-      sendLog(`LEFT speaker connected (unverified)`, 'success');
-    }
-
-    // 6. Cast to RIGHT speaker (NO PROXY - direct WebRTC)
-    // Stereo mode always uses audio receiver
-    sendLog(`Connecting to RIGHT speaker: "${rightSpeaker.name}"...`);
-    const rightResult = await runPython([
-      'webrtc-launch',
-      rightSpeaker.name,
-      webrtcUrl,
-      rightSpeaker.ip || '', // Use cached IP if available
-      'right', // Stream name
-      AUDIO_APP_ID  // Stereo always uses audio receiver
-    ]);
-
     if (!rightResult.success) {
       throw new Error(`Right speaker cast failed: ${rightResult.error}`);
     }
-    // Show verification status for RIGHT
-    if (rightResult.verified) {
-      sendLog(`✓ RIGHT speaker verified - audio playing!`, 'success');
-    } else if (rightResult.warning === 'no_data') {
-      sendLog(`⚠ RIGHT: Connected but NO AUDIO (bytesSent=0)`, 'warning');
-    } else if (rightResult.warning === 'no_session') {
-      sendLog(`⚠ RIGHT: No WebRTC session - speaker may not have turned on`, 'warning');
-    } else {
-      sendLog(`RIGHT speaker connected (unverified)`, 'success');
-    }
+
+    // Show verification status for both
+    const leftStatus = leftResult.verified ? '✓ verified' :
+      leftResult.warning === 'no_data' ? '⚠ no audio' :
+      leftResult.warning === 'no_session' ? '⚠ no session' : 'connected';
+    const rightStatus = rightResult.verified ? '✓ verified' :
+      rightResult.warning === 'no_data' ? '⚠ no audio' :
+      rightResult.warning === 'no_session' ? '⚠ no session' : 'connected';
+    sendLog(`LEFT: ${leftStatus} | RIGHT: ${rightStatus}`, 'success');
 
     // Final status based on both speakers
     const bothVerified = leftResult.verified && rightResult.verified;
@@ -3066,6 +3093,10 @@ function deleteLicenseData() {
 
 // Get current license status
 ipcMain.handle('get-license', async () => {
+  // Dev mode bypass - always licensed during development
+  if (!app.isPackaged) {
+    return { licenseKey: 'DEV-MODE-LICENSE', activatedAt: new Date().toISOString() };
+  }
   const license = getLicenseData();
   return license;
 });

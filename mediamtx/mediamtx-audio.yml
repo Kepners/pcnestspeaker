@@ -7,10 +7,10 @@
 logLevel: info
 logDestinations: [stdout]
 
-# Timeouts
-readTimeout: 10s
-writeTimeout: 10s
-writeQueueSize: 512
+# Timeouts - balanced for low latency + stability
+readTimeout: 5s
+writeTimeout: 5s
+writeQueueSize: 64
 
 ###############################################
 # Authentication - allow all for local use

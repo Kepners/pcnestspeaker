@@ -173,7 +173,8 @@
       "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/audioctl/audioctl.exe\" listen --name \"CABLE Output\" --enable --playback-target-name \"ASUS VG32V\")",
       "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/audioctl/audioctl.exe\" listen --name \"CABLE Output\" --disable)",
       "Bash(node_modules/electron/dist/electron.exe .)",
-      "Bash(node_modules/electron/dist/electron.exe:*)"
+      "Bash(node_modules/electron/dist/electron.exe:*)",
+      "mcp__exa__web_search_exa"
     ]
   }
 }
