@@ -14,9 +14,10 @@
       left: 0;
       width: 100vw;
       height: 100vh;
-      background: #FFFFFF;
+      background: linear-gradient(135deg, #334E58 0%, #1a2a30 50%, #33261D 100%);
       z-index: 100;
       display: flex;
+      flex-direction: column;
       justify-content: center;
       align-items: center;
       transition: opacity 1s ease-out;
@@ -26,9 +27,27 @@
       pointer-events: none;
     }
     #splash-video {
-      max-width: 60%;
-      max-height: 60%;
+      max-width: 50%;
+      max-height: 50%;
       object-fit: contain;
+      border-radius: 20px;
+    }
+    #splash-title {
+      color: #FCBFB7;
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 48px;
+      font-weight: 300;
+      letter-spacing: 8px;
+      margin-top: 40px;
+      text-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    #splash-subtitle {
+      color: rgba(255,255,255,0.6);
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 18px;
+      font-weight: 300;
+      letter-spacing: 4px;
+      margin-top: 10px;
     }
 
     /* Ambient video background - fullscreen, behind everything */
@@ -130,6 +149,8 @@
     <video id="splash-video" autoplay loop muted playsinline>
       <source src="https://kepners.github.io/pcnestspeaker/splash.mp4" type="video/mp4">
     </video>
+    <div id="splash-title">PC NEST SPEAKER</div>
+    <div id="splash-subtitle">STREAMING AUDIO</div>
   </div>
 
   <!-- Ambient video background -->

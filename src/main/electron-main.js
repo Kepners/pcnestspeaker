@@ -418,10 +418,24 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
+      devTools: !app.isPackaged, // Disable DevTools in production builds
     },
   });
 
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+
+  // Block DevTools keyboard shortcuts in production
+  if (app.isPackaged) {
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      // Block Ctrl+Shift+I, Ctrl+Shift+J, F12
+      if (input.control && input.shift && (input.key.toLowerCase() === 'i' || input.key.toLowerCase() === 'j')) {
+        event.preventDefault();
+      }
+      if (input.key === 'F12') {
+        event.preventDefault();
+      }
+    });
+  }
 
   // Initialize stream stats
   streamStats = new StreamStats();
