@@ -26,7 +26,7 @@ const DEFAULT_SETTINGS = {
   streamingMode: 'webrtc-system',  // Default streaming mode
   volumeBoost: false,          // When true, speaker stays at 100%
   syncDelayMs: 0,              // PC speaker delay in ms (to sync with Nest)
-  castMode: 'speakers',        // 'speakers' = Nest only, 'all' = PC + Nest
+  pcAudioEnabled: false,       // true = also play on PC speakers (via Listen)
   version: '1.0.0',
 
   // First-run setup

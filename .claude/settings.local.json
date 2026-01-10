@@ -165,7 +165,15 @@
       "mcp__substack-api__create_draft_post",
       "Bash(.svclsvcl.exe /stdout /scomma)",
       "Bash(\"svcl\\\\SoundVolumeView.exe\" /SetListenToThisDevice \"Virtual Desktop Audio\\\\Device\\\\Virtual Desktop Audio\\\\Capture\" 1 \"NVIDIA High Definition Audio\\\\Device\\\\ASUS VG32V\\\\Render\")",
-      "mcp__playwright__browser_navigate"
+      "mcp__playwright__browser_navigate",
+      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/audioctl/audioctl.exe\" --help)",
+      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/audioctl/audioctl.exe\" listen --help)",
+      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/audioctl/audioctl.exe\" list --help)",
+      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/audioctl/audioctl.exe\" list --json)",
+      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/audioctl/audioctl.exe\" listen --name \"CABLE Output\" --enable --playback-target-name \"ASUS VG32V\")",
+      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/audioctl/audioctl.exe\" listen --name \"CABLE Output\" --disable)",
+      "Bash(node_modules/electron/dist/electron.exe .)",
+      "Bash(node_modules/electron/dist/electron.exe:*)"
     ]
   }
 }

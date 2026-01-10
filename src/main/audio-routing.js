@@ -21,6 +21,7 @@
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const settingsManager = require('./settings-manager');
 
 // Path to NirSoft SoundVolumeView (RELIABLE device switching)
 const SVV_DIR = path.join(__dirname, '..', '..', 'soundvolumeview');
@@ -275,8 +276,22 @@ async function getRenderDevices() {
 /**
  * Find the user's real speakers (HDMI, monitor speakers, etc.)
  * Returns the UNIQUE deviceName (not ambiguous name)
+ *
+ * SMART DETECTION: On first run, we capture the Windows default audio device
+ * BEFORE we change anything. This is the device the user actually hears from.
+ * We save it and use it forever - no guessing needed!
  */
 async function findRealSpeakers() {
+  // First, check if we saved the user's original default device on first run
+  const settings = settingsManager.getAllSettings();
+  if (settings.detectedRealSpeakers && settings.detectedRealSpeakers.length > 0) {
+    const savedDevice = settings.detectedRealSpeakers[0];
+    console.log(`[AudioRouting] Using saved PC speaker from first run: ${savedDevice}`);
+    return savedDevice;
+  }
+
+  // Fallback: pattern-match if no saved device (shouldn't happen normally)
+  console.log('[AudioRouting] No saved device, falling back to pattern detection...');
   const devices = await getRenderDevices();
 
   // Priority order for finding real speakers (universal patterns only)
@@ -390,21 +405,52 @@ async function enableListenToDevice(sourceDevice, targetDevice = null) {
 }
 
 /**
- * Fallback: Enable "Listen to this device" using audioctl CLI tool
+ * Enable "Listen to this device" using audioctl CLI tool (PRIMARY method)
+ *
+ * audioctl is more reliable than SoundVolumeView for Listen control
+ * Returns JSON with confirmation: {"listenSet": {"enabled": true}}
  */
 async function enableListenWithAudioctl(sourceDevice, targetDevice = null) {
   try {
     let args = `listen --name "${sourceDevice}" --enable`;
     if (targetDevice) {
       args += ` --playback-target-name "${targetDevice}"`;
-    } else {
-      args += ` --playback-target-name ""`;
     }
     const result = await runAudioctl(args);
-    console.log(`[AudioRouting] Listen enabled via audioctl`);
-    return { success: true, result };
+
+    // audioctl returns: {"listenSet": {"id": "...", "name": "...", "enabled": true}}
+    if (result && result.listenSet && result.listenSet.enabled === true) {
+      console.log(`[AudioRouting] Listen enabled via audioctl - confirmed: ${result.listenSet.name}`);
+      return { success: true, verified: true, device: result.listenSet.name };
+    }
+
+    // Got response but not the expected format
+    console.log(`[AudioRouting] audioctl response:`, JSON.stringify(result));
+    return { success: true, verified: false, result };
   } catch (err) {
-    console.error(`[AudioRouting] audioctl also failed:`, err.message);
+    console.error(`[AudioRouting] audioctl failed:`, err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Disable "Listen to this device" using audioctl CLI tool
+ */
+async function disableListenWithAudioctl(sourceDevice) {
+  try {
+    const args = `listen --name "${sourceDevice}" --disable`;
+    const result = await runAudioctl(args);
+
+    // audioctl returns: {"listenSet": {"id": "...", "name": "...", "enabled": false}}
+    if (result && result.listenSet && result.listenSet.enabled === false) {
+      console.log(`[AudioRouting] Listen disabled via audioctl - confirmed: ${result.listenSet.name}`);
+      return { success: true, verified: true };
+    }
+
+    console.log(`[AudioRouting] audioctl response:`, JSON.stringify(result));
+    return { success: true, verified: false, result };
+  } catch (err) {
+    console.error(`[AudioRouting] audioctl failed:`, err.message);
     return { success: false, error: err.message };
   }
 }
@@ -493,21 +539,11 @@ async function disableListenToDevice(sourceDevice) {
 }
 
 /**
- * Enable PC + Speakers mode
+ * Enable PC Audio - just toggles "Listen to this device" on VB-Cable Output
+ * Does NOT affect streaming - that runs independently via FFmpeg/MediaMTX
  *
- * CORRECT ARCHITECTURE (using VB-Cable):
- * 1. Keep Windows default on VB-Cable Input (RENDER) so FFmpeg captures PRE-APO
- * 2. Enable "Listen to this device" on VB-Cable Output (CAPTURE) → PC speakers
- * 3. APO delay is applied ONLY on PC speakers pipeline
- * 4. Cast gets PRE-APO audio, PC speakers get POST-APO audio
- *
- * WHY VB-CABLE: VB-Cable's CAPTURE device ("CABLE Output") IS visible to Windows WASAPI,
- * which is required for "Listen to this device" to work. Virtual Desktop Audio's capture
- * is DirectShow-only and NOT visible to Windows.
- *
- * KEY INSIGHT: "Listen to this device" is a CAPTURE device feature!
- * - VB-Cable Input (RENDER) = where apps output to
- * - VB-Cable Output (CAPTURE) = loopback source for "Listen"
+ * Uses audioctl as PRIMARY method (more reliable than SoundVolumeView for Listen)
+ * audioctl returns verified confirmation: {"listenSet": {"enabled": true}}
  *
  * @param {string} targetDevice - Optional specific PC speaker device name
  */
@@ -515,60 +551,53 @@ async function enablePCSpeakersMode(targetDevice = null) {
   console.log('[AudioRouting] enablePCSpeakersMode called');
 
   try {
-    // Step 1: Find virtual RENDER device (keep this as Windows default for FFmpeg capture)
-    const virtualRenderDevice = await findVirtualDevice();
-    if (!virtualRenderDevice) {
-      return { success: false, error: 'No virtual audio device found. Install VB-Cable from https://vb-audio.com/Cable/' };
-    }
-
-    // Step 2: Find virtual CAPTURE device (source for "Listen to this device")
-    // CRITICAL: Must match the render device! VB-Cable render -> VB-Cable capture
-    const virtualCaptureDevice = await findVirtualCaptureDevice(virtualRenderDevice);
-    if (!virtualCaptureDevice) {
-      return { success: false, error: 'No VB-Cable capture device found. Make sure VB-Cable is installed from https://vb-audio.com/Cable/' };
-    }
-
-    // Step 3: Find PC speakers (target for Listen)
+    // Step 1: Find PC speakers (target for Listen)
     const pcSpeakers = targetDevice || await findRealSpeakers();
     if (!pcSpeakers) {
-      return { success: false, error: 'No PC speakers found. Please check your audio devices.' };
+      return { success: false, error: 'No PC speakers found.' };
     }
 
-    // Step 4: Ensure Windows default is on virtual RENDER device (for PRE-APO capture)
-    const currentDefault = await getCurrentDefaultDevice();
-    const isOnVirtualDevice = currentDefault &&
-      (currentDefault.toLowerCase().includes('vb-audio') ||
-       currentDefault.toLowerCase().includes('cable') ||
-       currentDefault.toLowerCase().includes('virtual desktop audio'));
+    // Step 2: Enable "Listen to this device" using audioctl (PRIMARY - more reliable)
+    // Use "CABLE Output" directly - this is the standard VB-Cable capture device name
+    console.log(`[AudioRouting] Enabling Listen: CABLE Output → ${pcSpeakers}`);
 
-    if (!isOnVirtualDevice) {
-      console.log(`[AudioRouting] Switching default to virtual device: ${virtualRenderDevice}`);
-      await setDefaultDevice(virtualRenderDevice);
-    } else {
-      console.log(`[AudioRouting] Already on virtual device: ${currentDefault}`);
+    // Try audioctl FIRST (it returns verified confirmation)
+    if (isAudioctlAvailable()) {
+      console.log('[AudioRouting] Using audioctl for Listen control...');
+      const result = await enableListenWithAudioctl('CABLE Output', pcSpeakers);
+
+      if (result.success && result.verified) {
+        console.log(`[AudioRouting] PC Audio ON - Listen enabled and VERIFIED via audioctl`);
+        return { success: true, device: pcSpeakers, method: 'audioctl', verified: true };
+      }
+
+      if (result.success) {
+        // Got success but not verified - still try
+        console.log(`[AudioRouting] PC Audio ON - Listen enabled via audioctl (unverified)`);
+        return { success: true, device: pcSpeakers, method: 'audioctl', verified: false };
+      }
+
+      console.log('[AudioRouting] audioctl failed, trying SoundVolumeView...');
     }
 
-    // Step 5: Enable "Listen to this device" on the CAPTURE device
-    // Route: VB-Cable Output (CAPTURE) → PC speakers (RENDER)
-    console.log(`[AudioRouting] Enabling Listen on CAPTURE device: ${virtualCaptureDevice.cmdId}`);
-    console.log(`[AudioRouting] Target RENDER device: ${pcSpeakers}`);
-
-    const listenResult = await enableListenToDeviceWithCmdId(virtualCaptureDevice.cmdId, pcSpeakers);
-    if (!listenResult.success) {
-      return listenResult;
+    // Fallback to SoundVolumeView if audioctl failed or unavailable
+    const virtualCaptureDevice = await findVirtualCaptureDevice();
+    if (!virtualCaptureDevice) {
+      return { success: false, error: 'VB-Cable not found. Install from https://vb-audio.com/Cable/' };
     }
 
-    console.log(`[AudioRouting] PC + Speakers mode enabled!`);
-    console.log(`[AudioRouting]   Default: ${virtualRenderDevice} (PRE-APO, captured by FFmpeg)`);
-    console.log(`[AudioRouting]   Listen: ${virtualCaptureDevice.deviceName} → ${pcSpeakers} (POST-APO)`);
-    return {
-      success: true,
-      virtualDevice: virtualRenderDevice,
-      pcSpeakers,
-      virtualCaptureCmdId: virtualCaptureDevice.cmdId // For quick Listen target changes
-    };
+    console.log('[AudioRouting] Trying SoundVolumeView for Listen control...');
+    const svvResult = await enableListenToDeviceWithCmdId(virtualCaptureDevice.cmdId, pcSpeakers);
+
+    if (svvResult.success) {
+      // SVV doesn't give verified confirmation - warn user
+      console.log(`[AudioRouting] PC Audio ON - Listen enabled via SVV (cannot verify)`);
+      return { success: true, device: pcSpeakers, method: 'svv', verified: false };
+    }
+
+    return svvResult;
   } catch (err) {
-    console.error('[AudioRouting] Failed to enable PC + Speakers mode:', err.message);
+    console.error('[AudioRouting] enablePCSpeakersMode error:', err.message);
     return { success: false, error: err.message };
   }
 }
@@ -685,52 +714,46 @@ async function findVirtualCaptureDevice(matchRenderDevice = null) {
 }
 
 /**
- * Disable PC + Speakers mode (switch to "Speakers Only")
+ * Disable PC Audio - just disables "Listen to this device" on VB-Cable Output
+ * Does NOT affect streaming - that runs independently via FFmpeg/MediaMTX
  *
- * 1. Disable "Listen to this device" on the CAPTURE device so PC speakers stop playing
- * 2. Keep Windows default on virtual RENDER device (FFmpeg keeps capturing)
- * 3. Only Cast gets audio now
+ * Uses audioctl as PRIMARY method (returns verified confirmation)
  */
 async function disablePCSpeakersMode() {
-  console.log('[AudioRouting] disablePCSpeakersMode called (Speakers Only mode)');
+  console.log('[AudioRouting] disablePCSpeakersMode called');
 
   try {
-    // Find virtual CAPTURE device (to disable Listen on it)
+    // Try audioctl FIRST with standard "CABLE Output" name
+    if (isAudioctlAvailable()) {
+      console.log('[AudioRouting] Disabling Listen via audioctl on: CABLE Output');
+      const result = await disableListenWithAudioctl('CABLE Output');
+
+      if (result.success && result.verified) {
+        console.log(`[AudioRouting] PC Audio OFF - Listen disabled and VERIFIED via audioctl`);
+        return { success: true, method: 'audioctl', verified: true };
+      }
+
+      if (result.success) {
+        console.log(`[AudioRouting] PC Audio OFF - Listen disabled via audioctl (unverified)`);
+        return { success: true, method: 'audioctl', verified: false };
+      }
+
+      console.log('[AudioRouting] audioctl failed, trying SoundVolumeView...');
+    }
+
+    // Fallback to SoundVolumeView
     const virtualCaptureDevice = await findVirtualCaptureDevice();
-
     if (virtualCaptureDevice && virtualCaptureDevice.cmdId) {
-      // Disable Listen on the CAPTURE device - PC speakers stop playing
-      console.log(`[AudioRouting] Disabling Listen on CAPTURE device: ${virtualCaptureDevice.cmdId}`);
+      console.log(`[AudioRouting] Disabling Listen via SVV on: ${virtualCaptureDevice.deviceName}`);
       await runSVV(`/SetListenToThisDevice '${virtualCaptureDevice.cmdId}' 0`);
-      console.log(`[AudioRouting] Listen disabled`);
-    } else {
-      // Fallback: try finding any virtual device
-      const virtualDevice = await findVirtualDevice();
-      if (virtualDevice) {
-        await disableListenToDevice(virtualDevice);
-      }
+      console.log(`[AudioRouting] PC Audio OFF - Listen disabled via SVV`);
+      return { success: true, method: 'svv', verified: false };
     }
 
-    // Ensure default is still virtual RENDER device
-    const virtualRenderDevice = await findVirtualDevice();
-    if (virtualRenderDevice) {
-      const currentDefault = await getCurrentDefaultDevice();
-      const isOnVirtualDevice = currentDefault &&
-        (currentDefault.toLowerCase().includes('vb-audio') ||
-         currentDefault.toLowerCase().includes('cable') ||
-         currentDefault.toLowerCase().includes('virtual desktop audio'));
-
-      if (!isOnVirtualDevice) {
-        await setDefaultDevice(virtualRenderDevice);
-      }
-      console.log(`[AudioRouting] Speakers Only mode: ${virtualRenderDevice} → Cast only (no PC speakers)`);
-      return { success: true, device: virtualRenderDevice };
-    }
-
-    console.log('[AudioRouting] No virtual device found');
-    return { success: false, error: 'No virtual audio device found. Install VB-Cable from https://vb-audio.com/Cable/' };
+    console.log('[AudioRouting] VB-Cable not found');
+    return { success: false, error: 'VB-Cable not found' };
   } catch (err) {
-    console.error('[AudioRouting] Failed to switch to Speakers Only mode:', err.message);
+    console.error('[AudioRouting] disablePCSpeakersMode error:', err.message);
     return { success: false, error: err.message };
   }
 }

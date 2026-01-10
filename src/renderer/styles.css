@@ -18,6 +18,13 @@
   --cyan: #55828B;
   --green: #29BF12;
 
+  /* Warm Neutral Palette */
+  --color-grey: #6B6D76;
+  --color-beige: #A69888;
+  --color-blush: #FCBFB7;
+  --color-blue: #334E58;
+  --color-coffee: #33261D;
+
   --color-success: #29BF12;
   --color-error: #EF476F;
   --color-warning: #FFB74D;
@@ -65,8 +72,7 @@ body::before {
   max-width: 560px;
   margin: 0 auto;
   padding: 28px 24px 100px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
@@ -191,6 +197,7 @@ body::before {
   letter-spacing: 2.5px;
   text-transform: uppercase;
   color: var(--pink);
+  margin-top: 20px;
   margin-bottom: 14px;
   padding-bottom: 0;
 }
@@ -336,6 +343,16 @@ body::before {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-height: calc(100vh - 280px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Hide scrollbar but keep scrollable */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.speaker-list::-webkit-scrollbar {
+  display: none;
 }
 
 .loading-text {
@@ -492,13 +509,16 @@ body::before {
   background: rgba(26, 26, 26, 0.03);
   border: 1px solid rgba(26, 26, 26, 0.15);
   border-radius: 8px;
-  padding: 6px 10px;
+  padding: 6px 0;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.5px;
   color: rgba(26, 26, 26, 0.4);
   cursor: pointer;
   transition: all 0.2s ease;
+  width: 68px; /* Match L+R buttons width (32+32+4gap) for vertical alignment */
+  text-align: center;
+  flex-shrink: 0;
 }
 
 .stereo-badge:hover {
@@ -514,11 +534,11 @@ body::before {
 }
 
 .speaker-item.speaker-left {
-  border-left: 3px solid var(--green);
+  border-left: 3px solid var(--color-beige);
 }
 
 .speaker-item.speaker-right {
-  border-right: 3px solid var(--pink);
+  border-right: 3px solid var(--color-beige);
 }
 
 /* ==================== TOGGLE SWITCHES - Pill Style like iOS/DMT ==================== */
@@ -527,7 +547,14 @@ body::before {
   align-items: center;
   justify-content: space-between;
   padding: 12px 0;
+  /* Align toggle with speaker list checkmarks: account for stereo-toggles(72) + gap(12) + info-btn(24) + gap(12) - toggle width adjustment */
+  padding-right: 0;
   border-bottom: 1px solid rgba(26, 26, 26, 0.08);
+}
+
+/* Wall of Sound option row - align toggle+Ⓦ with L/R stereo buttons */
+#options-card .option-row {
+  padding-right: 62px; /* 22(check) + 12(gap) + 24(info) + 4(margin) = 62px to align with stereo toggles */
 }
 
 .option-row:last-child {
@@ -538,6 +565,30 @@ body::before {
   font-size: 0.9rem;
   color: rgba(26, 26, 26, 0.9);
   font-weight: 500;
+}
+
+.wall-of-sound-icon {
+  font-size: 0.75rem;
+  color: rgba(26, 26, 26, 0.4);
+  margin-left: 4px;
+  cursor: help;
+}
+
+.toggle-with-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.info-icon {
+  font-size: 1rem;
+  color: rgba(26, 26, 26, 0.35);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.info-icon:hover {
+  color: var(--pink);
 }
 
 .option-hint {
@@ -753,12 +804,108 @@ body::before {
   50% { box-shadow: 0 0 15px rgba(0, 200, 150, 0.9); }
 }
 
-.sync-delay-value {
-  font-size: 0.9rem;
+/* ═══════════════════════════════════════════════════════════
+   SYNC DELAY - VISUAL BAR DESIGN
+   ═══════════════════════════════════════════════════════════ */
+
+.sync-delay-container {
+  margin-top: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sync-delay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.sync-delay-label {
+  font-size: 0.85rem;
   font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sync-delay-value {
+  font-size: 1.4rem;
+  font-weight: 700;
   color: var(--pink);
-  min-width: 55px;
+  font-variant-numeric: tabular-nums;
+  min-width: 80px;
   text-align: right;
+}
+
+/* Visual Bars Wrapper - scrollable area */
+.sync-bars-wrapper {
+  position: relative;
+  padding: 8px 0;
+  cursor: ew-resize;
+  border-radius: 8px;
+  transition: background 0.2s ease;
+  outline: none;
+}
+
+.sync-bars-wrapper:hover,
+.sync-bars-wrapper:focus {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.sync-bars-wrapper:focus {
+  box-shadow: 0 0 0 2px rgba(252, 191, 183, 0.3);
+}
+
+/* Visual Bars */
+.sync-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  height: 40px;
+  gap: 3px;
+  padding: 0 4px;
+}
+
+.sync-bar {
+  flex: 1;
+  min-width: 8px;
+  max-width: 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px 3px 0 0;
+  transition: all 0.15s ease;
+}
+
+.sync-bar.active {
+  background: linear-gradient(to top, var(--pink), #ff6b9d);
+  box-shadow: 0 0 8px rgba(252, 191, 183, 0.4);
+}
+
+.sync-bar.active.peak {
+  background: linear-gradient(to top, #00c896, #00ffaa);
+  box-shadow: 0 0 12px rgba(0, 200, 150, 0.6);
+}
+
+/* Hidden slider (for accessibility, still functional) */
+.sync-slider-hidden {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  cursor: ew-resize;
+  z-index: 10;
+}
+
+/* Sync Hint */
+.sync-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin: 8px 0 12px 0;
 }
 
 /* Sync Buttons Row */
@@ -769,56 +916,13 @@ body::before {
 
 .sync-buttons .btn {
   flex: 1;
+  font-size: 0.75rem;
+  padding: 8px 12px;
 }
 
 #measure-latency-btn.measuring {
   opacity: 0.7;
   pointer-events: none;
-}
-
-/* Sync Delay Slider Control */
-.sync-slider-control {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-}
-
-.sync-slider {
-  flex: 1;
-  height: 6px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
-  outline: none;
-  cursor: pointer;
-}
-
-.sync-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  background: var(--pink);
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 0 8px rgba(252, 191, 183, 0.5);
-}
-
-.sync-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
-  box-shadow: 0 0 15px rgba(252, 191, 183, 0.8);
-}
-
-.sync-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  background: var(--pink);
-  border-radius: 50%;
-  cursor: pointer;
-  border: none;
 }
 
 /* Test Sync Button */
@@ -1406,15 +1510,20 @@ body::before {
 
 /* ==================== FOOTER ==================== */
 .footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
   text-align: center;
-  padding: 20px 0 30px;
-  font-size: 0.75rem;
+  padding: 10px 20px;
+  font-size: 0.7rem;
   color: rgba(26, 26, 26, 0.4);
-  margin-top: auto;
+  z-index: 99;
 }
 
 .footer p {
-  margin-bottom: 4px;
+  margin: 0;
+  display: inline;
 }
 
 .footer a {
@@ -1428,6 +1537,8 @@ body::before {
 }
 
 .footer-copyright {
+  display: inline;
+  margin-left: 8px;
   font-size: 0.7rem;
   color: rgba(26, 26, 26, 0.25);
 }
@@ -1502,7 +1613,7 @@ body::before {
 /* ==================== BOTTOM TAB NAVIGATION ==================== */
 .bottom-tabs {
   position: fixed;
-  bottom: 12px;
+  bottom: 45px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;

@@ -336,29 +336,43 @@ function isAPOInstalledOnDevice(deviceName) {
 }
 
 /**
- * Check APO status for the current default audio device
- * Returns detailed info about whether APO will work
+ * Check APO status for PC SPEAKERS (not Windows default!)
+ *
+ * IMPORTANT: APO delay is applied to PC speakers via "Listen to this device"
+ * The Windows default is CABLE Input (for capture), but APO needs to be on
+ * the actual PC speakers (HDMI, Realtek, etc.) where audio is played.
+ *
+ * Returns detailed info about whether APO will work for PC + Speakers mode
  */
 async function checkAPOStatusForCurrentDevice() {
-  const audioDeviceManager = require('./audio-device-manager');
+  const audioRouting = require('./audio-routing');
 
   try {
-    const currentDevice = await audioDeviceManager.getCurrentAudioDevice();
+    // Get PC SPEAKERS device (target of "Listen to this device")
+    // NOT the Windows default (which is CABLE Input for capture)
+    const pcSpeakers = await audioRouting.findRealSpeakers();
     const apoInstalled = isEqualizerAPOInstalled();
-    const apoOnDevice = isAPOInstalledOnDevice(currentDevice);
+    const apoOnDevice = pcSpeakers ? isAPOInstalledOnDevice(pcSpeakers) : false;
     const apoDevices = getAPOInstalledDevices();
 
+    // Log what we're checking
+    console.log(`[AudioSync] Checking APO for PC speakers: "${pcSpeakers}"`);
+    console.log(`[AudioSync] APO installed devices: ${apoDevices.join(', ')}`);
+    console.log(`[AudioSync] APO on PC speakers: ${apoOnDevice}`);
+
     return {
-      currentDevice,
+      currentDevice: pcSpeakers,  // Now returns PC speakers, not default
       apoInstalled,
       apoOnDevice,
       apoDevices,
       canUseDelay: apoInstalled && apoOnDevice,
       message: !apoInstalled
         ? 'Equalizer APO is not installed'
-        : !apoOnDevice
-          ? `APO is not enabled for "${currentDevice}". Run APO Configurator and check this device.`
-          : `APO delay ready for "${currentDevice}"`
+        : !pcSpeakers
+          ? 'No PC speakers detected. Connect HDMI/speakers to enable sync.'
+          : !apoOnDevice
+            ? `APO is not enabled for "${pcSpeakers}". Run APO Configurator and check this device.`
+            : `APO delay ready for "${pcSpeakers}"`
     };
   } catch (err) {
     console.error('[AudioSync] Failed to check APO status:', err.message);
@@ -368,7 +382,7 @@ async function checkAPOStatusForCurrentDevice() {
       apoOnDevice: false,
       apoDevices: getAPOInstalledDevices(),
       canUseDelay: false,
-      message: `Could not detect current device: ${err.message}`
+      message: `Could not detect PC speakers: ${err.message}`
     };
   }
 }
@@ -420,15 +434,27 @@ function promptInstallEqualizerAPO() {
 }
 
 /**
- * Cleanup - remove delay when app closes
+ * Cleanup - remove delay when app closes (SYNC version for reliable exit)
+ * Uses synchronous file write to ensure delay is reset before app quits
  */
-async function cleanup() {
+function cleanup() {
   if (delayMethod === 'equalizerapo' && currentDelayMs > 0) {
     try {
-      await clearEqualizerAPODelay();
-      console.log('[AudioSync] Cleaned up Equalizer APO delay');
+      // Synchronous write for reliable cleanup on app exit
+      const syncConfigPath = 'C:\\Program Files\\EqualizerAPO\\config\\pcnestspeaker-sync.txt';
+      const configLines = [
+        '# PC Nest Speaker Audio Sync',
+        '# Auto-generated - do not edit manually',
+        '',
+        '# Delay PC speakers to sync with Nest speakers',
+        'Delay: 0 ms',
+        ''
+      ].join('\r\n');
+
+      fs.writeFileSync(syncConfigPath, configLines, 'utf8');
+      console.log('[AudioSync] Cleaned up Equalizer APO delay (set to 0ms)');
     } catch (err) {
-      console.error('[AudioSync] Cleanup failed:', err);
+      console.error('[AudioSync] Cleanup failed:', err.message);
     }
   }
   currentDelayMs = 0;

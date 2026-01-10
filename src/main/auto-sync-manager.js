@@ -9,8 +9,8 @@ const { exec } = require('child_process');
 const path = require('path');
 
 // Configuration
-const CHECK_INTERVAL_MS = 60000; // Check every 60 seconds
-const ADJUSTMENT_THRESHOLD_MS = 50; // Only adjust if drift > 50ms
+const CHECK_INTERVAL_MS = 500; // Check every 0.5 seconds
+const ADJUSTMENT_THRESHOLD_MS = 10; // Only adjust if drift > 10ms (conservative - no hunting)
 const MIN_DELAY_MS = 200; // Minimum reasonable delay
 const MAX_DELAY_MS = 2000; // Maximum delay
 

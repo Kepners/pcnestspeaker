@@ -124,10 +124,12 @@ C:\Program Files\EqualizerAPO\config\
 ### Auto-Sync Algorithm
 ```
 1. User calibrates "perfect" sync → baseline (delay + RTT)
-2. Every 60s, ping speaker to measure current RTT
-3. If RTT drift > 50ms, adjust delay proportionally
+2. Every 500ms (0.5s), ping speaker to measure current RTT
+3. If RTT drift > 10ms, adjust delay proportionally
 4. newDelay = baselineDelay + (currentRTT - baselineRTT)
 ```
+
+**Note**: Auto-sync checks twice per second for ultra-responsive sync adjustment!
 
 ---
 
@@ -227,4 +229,55 @@ dist/
 
 ---
 
-*Last Updated: January 2025*
+## Session: January 10, 2025 - UI/UX Improvements
+
+### CSS Variables Added
+Added warm neutral color palette to `:root` in `styles.css`:
+```css
+--color-grey: #6B6D76;
+--color-beige: #A69888;
+--color-blush: #FCBFB7;
+--color-blue: #334E58;
+--color-coffee: #33261D;
+```
+
+### Speaker List "Ears" (Colored Borders)
+Visual indicators showing stereo channel assignment:
+
+| Device Type | Behavior |
+|-------------|----------|
+| **Stereo devices** (TVs, Groups) | Both ears show when streaming (left + right borders) |
+| **Mono speakers with L selected** | Only left ear (left border) |
+| **Mono speakers with R selected** | Only right ear (right border) |
+
+**CSS Classes**: `.speaker-left` (left border), `.speaker-right` (right border)
+**Color**: `var(--color-beige)` (#A69888)
+
+### Wall of Sound Section
+Renamed "OPTIONS" → "WALL OF SOUND" with these features:
+- **"Add PC speaker"** toggle - Enables PC speaker in sync with Nest
+- **Ⓦ button** - Click to jump to Settings > Sync section
+- **Auto-sync auto-start** - When PC speaker enabled, auto-sync starts immediately
+
+### Section Label Spacing
+Added `margin-top: 20px` to `.section-label` for better visual separation between "CAST TO" and "WALL OF SOUND" sections.
+
+### Stereo Badge Alignment
+Fixed vertical alignment of ⓘ info icons by setting `.stereo-badge` to fixed `width: 68px` (matches L+R button width of 32+32+4gap).
+
+### Smart PC Speaker Detection
+On first run, the app captures the user's default audio device and saves it to `settings.detectedRealSpeakers`. This prevents needing to configure which device is the "PC speaker" - it remembers what they had before we installed.
+
+**File**: `audio-routing.js` - `findRealSpeakers()` checks saved device first, falls back to pattern matching.
+
+### Files Modified
+| File | Changes |
+|------|---------|
+| `src/renderer/styles.css` | CSS variables, ear colors, badge width, section spacing, info-icon styling |
+| `src/renderer/index.html` | Wall of Sound section, Ⓦ button, sync settings restructure |
+| `src/renderer/renderer.js` | Ear class logic for stereo devices, Ⓦ click handler, auto-sync on PC enable |
+| `src/main/audio-routing.js` | Smart first-run speaker detection |
+
+---
+
+*Last Updated: January 10, 2025*

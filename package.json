@@ -9,6 +9,8 @@
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
+    "build:protected": "node scripts/obfuscate.js && electron-builder",
+    "obfuscate": "node scripts/obfuscate.js",
     "download-ffmpeg": "node scripts/download-ffmpeg.js",
     "postinstall": "electron-builder install-app-deps"
   },
@@ -32,7 +34,8 @@
   },
   "devDependencies": {
     "electron": "^31.7.7",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "javascript-obfuscator": "^5.1.0"
   },
   "build": {
     "appId": "com.choppedonions.pcnestspeaker",

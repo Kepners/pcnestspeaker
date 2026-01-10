@@ -21,7 +21,6 @@ const volumeBoostToggle = document.getElementById('volume-boost-toggle');
 
 // PC Audio toggle (simplified from cast mode)
 const pcAudioToggle = document.getElementById('pc-audio-toggle');
-const pcAudioHint = document.getElementById('pc-audio-hint');
 const syncCalibrateRow = document.getElementById('sync-calibrate-row');
 const apoStatus = document.getElementById('apo-status');
 const apoDevicesText = document.getElementById('apo-devices-text');
@@ -131,15 +130,7 @@ async function loadSettings() {
       // Update visual bars after a small delay (DOM needs to be ready)
       setTimeout(() => updateSyncBars(currentSyncDelayMs), 100);
       log(`Sync delay: ${currentSyncDelayMs}ms`);
-
-      // Apply saved delay to APO on startup (if non-zero)
-      if (currentSyncDelayMs > 0 && audioSyncAvailable) {
-        window.api.setSyncDelay(currentSyncDelayMs).then(result => {
-          if (result.success) {
-            log(`Restored sync delay: ${currentSyncDelayMs}ms`, 'info');
-          }
-        }).catch(() => {}); // Silent fail on startup
-      }
+      // Note: APO delay is restored in initAudioSync() after confirming APO is available
     }
 
     // Apply PC audio toggle state (default to OFF)
@@ -531,6 +522,21 @@ function setupEventListeners() {
     pcAudioToggle.addEventListener('change', () => togglePCAudio(pcAudioToggle.checked));
   }
 
+  // Ⓦ info icon - click to go to Settings sync section
+  const pcAudioInfo = document.getElementById('pc-audio-info');
+  if (pcAudioInfo) {
+    pcAudioInfo.addEventListener('click', () => {
+      // Switch to Settings tab
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.querySelector('[data-tab="settings"]').classList.add('active');
+      document.getElementById('tab-settings').classList.add('active');
+      // Scroll to sync section
+      const syncSection = document.getElementById('sync-section-settings');
+      if (syncSection) syncSection.scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+
   // Sync delay slider - adjust HDMI delay to match Cast latency
   if (syncDelaySlider) {
     syncDelaySlider.addEventListener('input', (e) => {
@@ -547,7 +553,7 @@ function setupEventListeners() {
   if (syncBarsWrapper) {
     syncBarsWrapper.addEventListener('wheel', (e) => {
       e.preventDefault();
-      const step = 50; // 50ms per scroll step
+      const step = 10; // 10ms per scroll step
       const direction = e.deltaY < 0 ? 1 : -1; // Scroll up = increase, down = decrease
       const currentVal = parseInt(syncDelaySlider?.value || 0, 10);
       const newVal = Math.max(0, Math.min(SYNC_MAX_DELAY, currentVal + (step * direction)));
@@ -806,13 +812,6 @@ async function togglePCAudio(enabled) {
   pcAudioEnabled = enabled;
   log(`PC Audio: ${enabled ? 'ON' : 'OFF'}`);
 
-  // Update hint text
-  if (pcAudioHint) {
-    pcAudioHint.textContent = enabled
-      ? 'Audio plays on PC speakers + Nest (sync with slider below)'
-      : 'Audio only goes to Nest speakers';
-  }
-
   // Stop calibration if turning off
   if (!enabled && isCalibrating) {
     stopCalibration();
@@ -826,6 +825,26 @@ async function togglePCAudio(enabled) {
     const result = await window.api.togglePCAudio(enabled);
     if (result.success) {
       log(`PC Audio ${enabled ? 'enabled' : 'disabled'}`, 'success');
+
+      // AUTO-START SYNC: When PC audio enabled, immediately start auto-sync
+      // This captures the baseline BEFORE the user has a chance to adjust anything
+      if (enabled && !autoSyncEnabled) {
+        autoSyncEnabled = true;
+        if (autoSyncToggle) autoSyncToggle.checked = true;
+        if (autoSyncHint) {
+          autoSyncHint.textContent = 'Monitoring network latency and auto-adjusting delay';
+        }
+
+        // Start auto-sync with current speaker info
+        const speakerInfo = selectedSpeaker !== null ? speakers[selectedSpeaker] : null;
+        const syncResult = await window.api.enableAutoSync(speakerInfo);
+        if (syncResult.success) {
+          log('Auto-sync started - capturing baseline', 'info');
+        }
+
+        // Save auto-sync state
+        window.api.updateSettings({ autoSyncEnabled: true });
+      }
     } else {
       log(`PC Audio toggle failed: ${result.error}`, 'error');
     }
@@ -1143,7 +1162,7 @@ function renderSpeakers() {
          <div class="info-btn-placeholder"></div>`;
 
     return `
-    <div class="speaker-item ${isSelected ? 'selected' : ''} ${isActivelyStreaming ? 'streaming' : ''} ${isLeft ? 'speaker-left' : ''} ${isRight ? 'speaker-right' : ''}" data-index="${index}">
+    <div class="speaker-item ${isSelected ? 'selected' : ''} ${isActivelyStreaming ? 'streaming' : ''} ${isStereoDevice && isActivelyStreaming ? 'speaker-left speaker-right' : ''} ${!isStereoDevice && isLeft ? 'speaker-left' : ''} ${!isStereoDevice && isRight ? 'speaker-right' : ''}" data-index="${index}">
       <div class="speaker-icon">
         ${getSpeakerIcon(speaker)}
       </div>
@@ -2140,6 +2159,15 @@ async function initAudioSync() {
 
     if (result.supported) {
       log(`Audio sync available (${result.method})`, 'success');
+
+      // Restore saved sync delay now that APO is confirmed available
+      if (currentSyncDelayMs > 0) {
+        window.api.setSyncDelay(currentSyncDelayMs).then(res => {
+          if (res.success) {
+            log(`Restored sync delay: ${currentSyncDelayMs}ms`, 'info');
+          }
+        }).catch(() => {}); // Silent fail
+      }
     } else if (result.needsInstall) {
       log('Audio sync: Equalizer APO not installed', 'warning');
       equalizerApoInstalled = false;
@@ -2786,7 +2814,7 @@ document.addEventListener('wheel', (e) => {
 
   e.preventDefault(); // Don't scroll the page
 
-  const step = 50; // 50ms per scroll tick
+  const step = 10; // 10ms per scroll tick
   const min = 0;
   const max = 2000;
 

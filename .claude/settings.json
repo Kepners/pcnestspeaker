@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/audioctl/audioctl.exe\" list --capture)"
+    ]
+  }
+}
