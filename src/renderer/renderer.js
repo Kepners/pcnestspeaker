@@ -499,6 +499,14 @@ function setupEventListeners() {
     castAllBtn.addEventListener('click', () => setCastMode('all'));
   }
 
+  // Sync delay slider - adjust HDMI delay to match Cast latency
+  if (syncDelaySlider) {
+    syncDelaySlider.addEventListener('input', (e) => {
+      const delayMs = parseInt(e.target.value, 10);
+      handleSyncDelayChange(delayMs);
+    });
+  }
+
   // Listen for auto-connect event from main process
   window.api.onAutoConnect(async (speaker) => {
     log(`Auto-connecting to ${speaker.name}...`, 'info');

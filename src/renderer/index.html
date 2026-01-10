@@ -154,22 +154,22 @@
             <button class="btn btn-small btn-secondary" id="launch-apo-btn">Configure APO</button>
           </div>
 
-          <!-- Audio Sync Calibration -->
-          <div class="option-row sync-calibrate-row" id="sync-calibrate-row" style="margin-top: 16px;">
+          <!-- Audio Sync Delay Slider -->
+          <div class="option-row sync-delay-row" id="sync-delay-row" style="margin-top: 16px;">
             <span class="option-label">Sync Delay</span>
-            <div class="sync-calibrate-control">
-              <button class="btn btn-sync-calibrate" id="sync-calibrate-btn">🔊 Calibrate</button>
-              <div class="sync-visual" id="sync-visual">
-                <div class="sync-wave left"></div>
-                <div class="sync-wave right"></div>
-              </div>
+            <div class="sync-slider-control">
+              <input type="range" min="0" max="2000" value="0" step="50"
+                     class="sync-slider" id="sync-delay-slider">
               <span class="sync-delay-value" id="sync-delay-value">0ms</span>
             </div>
           </div>
-          <p class="option-hint sync-hint" id="sync-hint">Click Calibrate, then scroll until you hear ONE ping</p>
+          <p class="option-hint sync-hint" id="sync-hint">Delay HDMI speakers to sync with Cast (~700-1200ms typical)</p>
 
-          <!-- Hidden value storage -->
-          <input type="hidden" id="sync-delay-slider" value="0">
+          <!-- Calibrate button for quick adjustment -->
+          <div class="option-row" style="margin-top: 8px;">
+            <span class="option-label"></span>
+            <button class="btn btn-small btn-secondary" id="sync-calibrate-btn">🔊 Test Sync</button>
+          </div>
         </div>
 
         <!-- Debug Log (hidden by default) -->

@@ -761,6 +761,51 @@ body::before {
   text-align: right;
 }
 
+/* Sync Delay Slider Control */
+.sync-slider-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.sync-slider {
+  flex: 1;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+.sync-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  background: var(--pink);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 0 8px rgba(252, 191, 183, 0.5);
+}
+
+.sync-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 15px rgba(252, 191, 183, 0.8);
+}
+
+.sync-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  background: var(--pink);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
 /* Test Sync Button */
 .btn-test-sync {
   padding: 6px 12px;
