@@ -1256,18 +1256,12 @@ def get_audio_outputs():
         except Exception as e:
             print(f"[AudioOutput] Could not get default ID: {e}", file=sys.stderr)
 
-        # Patterns to EXCLUDE (virtual devices, digital outputs, etc.)
+        # MINIMAL EXCLUSIONS - Only internal routing devices used by this app!
+        # Show ALL real hardware to users - don't assume what they have
         exclude_patterns = [
-            'virtual desktop audio',
-            'vb-audio',
-            'cable ',
-            'steam streaming',
-            'droidcam',
-            'oculus',
-            'digital output',
-            'digital audio',
-            'nvidia output',
-            'internal aux',
+            'virtual desktop audio',  # Our internal routing device
+            'cable input',            # VB-Cable render (internal routing)
+            'cable output',           # VB-Cable capture (internal routing)
         ]
 
         output_devices = []

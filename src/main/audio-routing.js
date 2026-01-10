@@ -293,14 +293,10 @@ async function findRealSpeakers() {
     'DisplayPort'              // DisplayPort audio
   ];
 
-  // Skip these virtual devices
+  // Skip ONLY our internal routing devices - don't filter user's real hardware
   const skipPatterns = [
-    'Virtual Desktop Audio',
-    'VB-Audio',
-    'CABLE',
-    'Steam Streaming',
-    'Oculus',
-    'DroidCam'
+    'Virtual Desktop Audio',  // Our internal routing
+    'CABLE',                  // VB-Cable internal routing
   ];
 
   for (const pattern of priorityPatterns) {
