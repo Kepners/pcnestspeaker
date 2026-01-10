@@ -5,7 +5,31 @@
   <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #334E58; overflow: hidden; }
+    body { background: #FFFFFF; overflow: hidden; }
+
+    /* Splash screen - shown on startup */
+    #splash-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: #FFFFFF;
+      z-index: 100;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transition: opacity 1s ease-out;
+    }
+    #splash-screen.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    #splash-video {
+      max-width: 60%;
+      max-height: 60%;
+      object-fit: contain;
+    }
 
     /* Ambient video background - fullscreen, behind everything */
     #ambient-video {
@@ -36,7 +60,10 @@
       );
       z-index: 2;
       pointer-events: none;
+      opacity: 0;
+      transition: opacity 1s ease-in-out;
     }
+    #overlay.visible { opacity: 1; }
 
     /* Status text */
     #status {
@@ -44,17 +71,23 @@
       bottom: 40px;
       left: 50%;
       transform: translateX(-50%);
-      color: #FCBFB7;
+      color: #333;
       font-family: 'Segoe UI', sans-serif;
       font-size: 28px;
       font-weight: 300;
       text-align: center;
       z-index: 10;
-      text-shadow: 0 2px 20px rgba(0,0,0,0.5);
       padding: 12px 30px;
-      background: rgba(51, 78, 88, 0.6);
+      background: rgba(255, 255, 255, 0.9);
       border-radius: 50px;
       backdrop-filter: blur(10px);
+      box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+      transition: all 0.5s ease;
+    }
+    #status.streaming {
+      color: #FCBFB7;
+      background: rgba(51, 78, 88, 0.8);
+      text-shadow: 0 2px 10px rgba(0,0,0,0.3);
     }
 
     /* App branding - next to logo */
@@ -62,12 +95,16 @@
       position: fixed;
       top: 50px;
       left: 115px;
-      color: rgba(252, 191, 183, 0.9);
+      color: #334E58;
       font-family: 'Segoe UI', sans-serif;
       font-size: 22px;
       font-weight: 600;
       letter-spacing: 3px;
       z-index: 10;
+      transition: color 1s ease;
+    }
+    #branding.streaming {
+      color: rgba(252, 191, 183, 0.9);
       text-shadow: 0 2px 10px rgba(0,0,0,0.3);
     }
 
@@ -79,7 +116,6 @@
       width: 60px;
       height: 60px;
       z-index: 10;
-      filter: drop-shadow(0 2px 10px rgba(0,0,0,0.3));
     }
 
     /* Hide default cast player */
@@ -88,6 +124,13 @@
 </head>
 <body>
   <cast-media-player id="player"></cast-media-player>
+
+  <!-- Splash screen - first thing users see -->
+  <div id="splash-screen">
+    <video id="splash-video" autoplay loop muted playsinline>
+      <source src="https://kepners.github.io/pcnestspeaker/splash.mp4" type="video/mp4">
+    </video>
+  </div>
 
   <!-- Ambient video background -->
   <video id="ambient-video" muted autoplay playsinline crossorigin="anonymous"></video>
@@ -312,6 +355,29 @@
       if (player) player.style.display = 'none';
     }
 
+    // Transition from splash screen to streaming UI
+    let hasTransitioned = false;
+    function transitionToStreaming() {
+      if (hasTransitioned) return;
+      hasTransitioned = true;
+
+      console.log('[UI] Transitioning to streaming view...');
+
+      // Hide splash screen
+      const splash = document.getElementById('splash-screen');
+      if (splash) splash.classList.add('hidden');
+
+      // Show overlay for ambient videos
+      const overlay = document.getElementById('overlay');
+      if (overlay) overlay.classList.add('visible');
+
+      // Update UI elements for streaming mode
+      const status = document.getElementById('status');
+      const branding = document.getElementById('branding');
+      if (status) status.classList.add('streaming');
+      if (branding) branding.classList.add('streaming');
+    }
+
     // Retry configuration
     let retryCount = 0;
     const MAX_RETRIES = 5;
@@ -347,12 +413,14 @@
 
             audioElement.play().then(() => {
               log('Streaming audio...');
+              transitionToStreaming();
             }).catch(e => {
               audioElement.muted = true;
               audioElement.play().then(() => {
                 setTimeout(() => {
                   audioElement.muted = false;
                   log('Streaming audio...');
+                  transitionToStreaming();
                 }, 100);
               }).catch(e2 => log('Play failed'));
             });
@@ -369,6 +437,7 @@
         console.log('[WebRTC] Connection state:', state);
         if (state === 'connected') {
           log('Streaming audio...');
+          transitionToStreaming();
         } else if (state === 'failed') {
           log('Reconnecting...');
           setTimeout(() => {
