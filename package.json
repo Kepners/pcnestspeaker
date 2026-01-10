@@ -108,6 +108,9 @@
         "from": "dependencies/vbcable/",
         "to": "dependencies/vbcable",
         "filter": [
+          "vbMmeCable64_win10.inf",
+          "vbaudio_cable64_win10.sys",
+          "vbaudio_cable64_win10.cat",
           "VBCABLE_Setup_x64.exe",
           "VBCABLE_Setup.exe"
         ]

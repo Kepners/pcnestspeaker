@@ -4,7 +4,7 @@
  * VB-Cable is REQUIRED for PC Nest Speaker to work.
  * This module:
  * 1. Checks if VB-Cable is installed
- * 2. If missing, prompts user and runs installer with admin rights
+ * 2. If missing, uses pnputil for SILENT driver installation (no browser popup!)
  * 3. Requests restart after installation
  */
 
@@ -13,7 +13,20 @@ const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-// Path to bundled VB-Cable installer
+// Path to bundled VB-Cable driver .inf file (for silent pnputil install)
+function getVBCableDriverPath() {
+  // In development
+  let driverPath = path.join(__dirname, '../../dependencies/vbcable/vbMmeCable64_win10.inf');
+
+  // In production (packaged app)
+  if (!fs.existsSync(driverPath)) {
+    driverPath = path.join(process.resourcesPath, 'dependencies/vbcable/vbMmeCable64_win10.inf');
+  }
+
+  return driverPath;
+}
+
+// Path to bundled VB-Cable installer (legacy - only used if pnputil fails)
 function getVBCableInstallerPath() {
   // In development
   let installerPath = path.join(__dirname, '../../dependencies/vbcable/VBCABLE_Setup_x64.exe');
@@ -81,24 +94,26 @@ function isVBCableEnabled() {
 }
 
 /**
- * Repair/re-enable VB-Cable by running the installer again
- * This is more reliable than PowerShell Enable-PnpDevice which often fails
+ * Repair/re-enable VB-Cable using pnputil (SILENT - no browser popup!)
  */
 async function repairVBCable(mainWindow) {
-  console.log('[DependencyInstaller] Repairing VB-Cable...');
+  console.log('[DependencyInstaller] Repairing VB-Cable silently with pnputil...');
 
-  const installerPath = getVBCableInstallerPath();
+  const driverPath = getVBCableDriverPath();
 
-  if (!fs.existsSync(installerPath)) {
-    console.error('[DependencyInstaller] VB-Cable installer not found at:', installerPath);
+  if (!fs.existsSync(driverPath)) {
+    console.error('[DependencyInstaller] VB-Cable driver not found at:', driverPath);
     return false;
   }
 
   return new Promise((resolve) => {
-    console.log('[DependencyInstaller] Running VB-Cable installer to repair:', installerPath);
+    console.log('[DependencyInstaller] Running pnputil to reinstall driver:', driverPath);
 
-    // Use PowerShell to run with elevation (UAC prompt)
-    const psCommand = `Start-Process -FilePath "${installerPath}" -Verb RunAs -Wait`;
+    // Use pnputil for SILENT driver installation - no browser popup!
+    // /add-driver adds the driver package to the driver store
+    // /install installs matching devices
+    // /force forces reinstall even if already installed
+    const psCommand = `Start-Process -FilePath 'pnputil' -ArgumentList '/add-driver', '"${driverPath}"', '/install', '/force' -Verb RunAs -Wait -WindowStyle Hidden`;
 
     const installer = spawn('powershell', ['-Command', psCommand], {
       shell: true,
@@ -106,10 +121,10 @@ async function repairVBCable(mainWindow) {
     });
 
     installer.on('close', async (code) => {
-      console.log('[DependencyInstaller] Repair installer exited with code:', code);
+      console.log('[DependencyInstaller] pnputil repair exited with code:', code);
 
       // Wait a moment for driver to register
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 3000));
 
       // Check if it worked
       if (isVBCableEnabled()) {
@@ -129,17 +144,17 @@ async function repairVBCable(mainWindow) {
 }
 
 /**
- * Install VB-Cable with admin elevation
+ * Install VB-Cable with admin elevation using pnputil (SILENT - no browser popup!)
  * Returns a promise that resolves when installation completes
  */
 async function installVBCable(mainWindow) {
-  const installerPath = getVBCableInstallerPath();
+  const driverPath = getVBCableDriverPath();
 
-  if (!fs.existsSync(installerPath)) {
-    console.error('[DependencyInstaller] VB-Cable installer not found at:', installerPath);
+  if (!fs.existsSync(driverPath)) {
+    console.error('[DependencyInstaller] VB-Cable driver not found at:', driverPath);
     dialog.showErrorBox(
       'Installation Error',
-      'VB-Cable installer not found. Please reinstall PC Nest Speaker.'
+      'VB-Cable driver files not found. Please reinstall PC Nest Speaker.'
     );
     return false;
   }
@@ -149,7 +164,7 @@ async function installVBCable(mainWindow) {
     type: 'info',
     title: 'VB-Cable Required',
     message: 'VB-Cable virtual audio driver is required for PC Nest Speaker to work.',
-    detail: 'This is a one-time installation. The installer will open with Administrator privileges.\n\nAfter installation, you will need to restart your PC.',
+    detail: 'This is a one-time silent installation. You will see a UAC prompt for Administrator privileges.\n\nAfter installation, you will need to restart your PC.',
     buttons: ['Install VB-Cable', 'Cancel'],
     defaultId: 0,
     cancelId: 1
@@ -161,10 +176,12 @@ async function installVBCable(mainWindow) {
   }
 
   return new Promise((resolve) => {
-    console.log('[DependencyInstaller] Running VB-Cable installer:', installerPath);
+    console.log('[DependencyInstaller] Installing VB-Cable silently with pnputil:', driverPath);
 
-    // Use PowerShell to run with elevation (UAC prompt)
-    const psCommand = `Start-Process -FilePath "${installerPath}" -Verb RunAs -Wait`;
+    // Use pnputil for SILENT driver installation - no browser popup!
+    // /add-driver adds the driver package to the driver store
+    // /install installs matching devices
+    const psCommand = `Start-Process -FilePath 'pnputil' -ArgumentList '/add-driver', '"${driverPath}"', '/install' -Verb RunAs -Wait -WindowStyle Hidden`;
 
     const installer = spawn('powershell', ['-Command', psCommand], {
       shell: true,
@@ -172,11 +189,11 @@ async function installVBCable(mainWindow) {
     });
 
     installer.on('close', async (code) => {
-      console.log('[DependencyInstaller] Installer exited with code:', code);
+      console.log('[DependencyInstaller] pnputil install exited with code:', code);
 
       // Check if installation was successful
       // Wait a moment for driver to register
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 3000));
 
       if (isVBCableInstalled()) {
         // Success! Ask for restart
@@ -211,10 +228,10 @@ async function installVBCable(mainWindow) {
     });
 
     installer.on('error', (error) => {
-      console.error('[DependencyInstaller] Installer error:', error);
+      console.error('[DependencyInstaller] pnputil error:', error);
       dialog.showErrorBox(
         'Installation Error',
-        `Failed to run VB-Cable installer: ${error.message}`
+        `Failed to install VB-Cable driver: ${error.message}`
       );
       resolve(false);
     });
@@ -307,5 +324,6 @@ module.exports = {
   repairVBCable,
   installVBCable,
   checkAndInstallDependencies,
-  getVBCableInstallerPath
+  getVBCableInstallerPath,
+  getVBCableDriverPath
 };
