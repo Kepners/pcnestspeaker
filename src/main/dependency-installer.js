@@ -81,63 +81,51 @@ function isVBCableEnabled() {
 }
 
 /**
- * Enable VB-Cable device if it's disabled
- * Uses PowerShell Enable-PnpDevice (requires admin)
+ * Repair/re-enable VB-Cable by running the installer again
+ * This is more reliable than PowerShell Enable-PnpDevice which often fails
  */
-async function enableVBCable(mainWindow) {
-  console.log('[DependencyInstaller] Attempting to enable VB-Cable...');
+async function repairVBCable(mainWindow) {
+  console.log('[DependencyInstaller] Repairing VB-Cable...');
 
-  try {
-    // First, find the device instance ID
-    const findResult = execSync(
-      'powershell -Command "Get-PnpDevice -Class AudioEndpoint | Where-Object { $_.FriendlyName -like \'*CABLE*\' } | Select-Object -ExpandProperty InstanceId"',
-      { encoding: 'utf8', timeout: 10000 }
-    );
+  const installerPath = getVBCableInstallerPath();
 
-    const instanceIds = findResult.trim().split('\n').filter(id => id.trim());
-
-    if (instanceIds.length === 0) {
-      console.log('[DependencyInstaller] No VB-Cable devices found to enable');
-      return false;
-    }
-
-    console.log('[DependencyInstaller] Found VB-Cable devices:', instanceIds);
-
-    // Enable each device using PowerShell with elevation
-    for (const instanceId of instanceIds) {
-      const id = instanceId.trim();
-      if (!id) continue;
-
-      console.log('[DependencyInstaller] Enabling device:', id);
-
-      // Use Start-Process to run with elevation
-      const psCommand = `Start-Process powershell -ArgumentList '-Command', 'Enable-PnpDevice -InstanceId \\"${id}\\" -Confirm:$false' -Verb RunAs -Wait`;
-
-      try {
-        execSync(`powershell -Command "${psCommand}"`, {
-          encoding: 'utf8',
-          timeout: 30000
-        });
-      } catch (e) {
-        console.log('[DependencyInstaller] Enable command error (may still have worked):', e.message);
-      }
-    }
-
-    // Wait a moment for Windows to register the change
-    await new Promise(r => setTimeout(r, 2000));
-
-    // Check if it worked
-    if (isVBCableEnabled()) {
-      console.log('[DependencyInstaller] VB-Cable enabled successfully!');
-      return true;
-    }
-
-    console.log('[DependencyInstaller] VB-Cable still not enabled');
-    return false;
-  } catch (error) {
-    console.error('[DependencyInstaller] Error enabling VB-Cable:', error.message);
+  if (!fs.existsSync(installerPath)) {
+    console.error('[DependencyInstaller] VB-Cable installer not found at:', installerPath);
     return false;
   }
+
+  return new Promise((resolve) => {
+    console.log('[DependencyInstaller] Running VB-Cable installer to repair:', installerPath);
+
+    // Use PowerShell to run with elevation (UAC prompt)
+    const psCommand = `Start-Process -FilePath "${installerPath}" -Verb RunAs -Wait`;
+
+    const installer = spawn('powershell', ['-Command', psCommand], {
+      shell: true,
+      detached: true
+    });
+
+    installer.on('close', async (code) => {
+      console.log('[DependencyInstaller] Repair installer exited with code:', code);
+
+      // Wait a moment for driver to register
+      await new Promise(r => setTimeout(r, 2000));
+
+      // Check if it worked
+      if (isVBCableEnabled()) {
+        console.log('[DependencyInstaller] VB-Cable repaired and enabled!');
+        resolve(true);
+      } else {
+        console.log('[DependencyInstaller] VB-Cable still not enabled after repair');
+        resolve(false);
+      }
+    });
+
+    installer.on('error', (error) => {
+      console.error('[DependencyInstaller] Repair error:', error);
+      resolve(false);
+    });
+  });
 }
 
 /**
@@ -249,40 +237,62 @@ async function checkAndInstallDependencies(mainWindow) {
 
   // Check if VB-Cable is enabled
   if (!isVBCableEnabled()) {
-    console.log('[DependencyInstaller] VB-Cable installed but disabled - attempting to enable');
+    console.log('[DependencyInstaller] VB-Cable installed but disabled - will repair');
 
-    // Ask user permission to enable
+    // Ask user permission to repair
     const response = await dialog.showMessageBox(mainWindow, {
       type: 'info',
-      title: 'VB-Cable Disabled',
+      title: 'VB-Cable Needs Repair',
       message: 'VB-Cable is installed but disabled.',
-      detail: 'The app will enable it automatically. This requires Administrator permission.',
-      buttons: ['Enable VB-Cable', 'Skip (audio won\'t work)'],
+      detail: 'Click "Repair VB-Cable" to fix this. The installer will run with Administrator privileges.\n\nYou may need to restart your PC after repair.',
+      buttons: ['Repair VB-Cable', 'Skip (audio won\'t work)'],
       defaultId: 0,
       cancelId: 1
     });
 
     if (response.response === 0) {
-      // Try to enable automatically
-      const enabled = await enableVBCable(mainWindow);
+      // Run installer to repair
+      const repaired = await repairVBCable(mainWindow);
 
-      if (enabled) {
-        dialog.showMessageBox(mainWindow, {
+      if (repaired) {
+        // Success! Ask for restart
+        const restartResponse = await dialog.showMessageBox(mainWindow, {
           type: 'info',
-          title: 'VB-Cable Enabled',
-          message: 'VB-Cable has been enabled successfully!',
-          detail: 'Audio streaming should work now.',
-          buttons: ['OK']
+          title: 'VB-Cable Repaired',
+          message: 'VB-Cable has been repaired successfully!',
+          detail: 'A restart is recommended to ensure the driver works properly.\n\nRestart now?',
+          buttons: ['Restart Now', 'Continue Without Restart'],
+          defaultId: 0,
+          cancelId: 1
         });
+
+        if (restartResponse.response === 0) {
+          // Restart PC
+          spawn('shutdown', ['/r', '/t', '5', '/c', 'PC Nest Speaker: Restarting to complete VB-Cable repair'], {
+            shell: true,
+            detached: true
+          });
+          app.quit();
+        }
       } else {
-        // Auto-enable failed, show manual instructions
-        dialog.showMessageBox(mainWindow, {
+        // Repair failed, offer restart anyway (often fixes it)
+        const restartResponse = await dialog.showMessageBox(mainWindow, {
           type: 'warning',
-          title: 'Could Not Enable VB-Cable',
-          message: 'Automatic enable failed. Please enable manually:',
-          detail: '1. Right-click the speaker icon in taskbar\n2. Open Sound settings\n3. Find "CABLE Input" device\n4. Right-click → Enable\n\nOr try restarting your PC.',
-          buttons: ['OK']
+          title: 'VB-Cable Repair',
+          message: 'VB-Cable repair may require a restart.',
+          detail: 'If you completed the VB-Cable installer, try restarting your PC.\n\nRestart now?',
+          buttons: ['Restart Now', 'Continue Anyway'],
+          defaultId: 0,
+          cancelId: 1
         });
+
+        if (restartResponse.response === 0) {
+          spawn('shutdown', ['/r', '/t', '5', '/c', 'PC Nest Speaker: Restarting to complete VB-Cable repair'], {
+            shell: true,
+            detached: true
+          });
+          app.quit();
+        }
       }
     }
   }
@@ -294,7 +304,7 @@ async function checkAndInstallDependencies(mainWindow) {
 module.exports = {
   isVBCableInstalled,
   isVBCableEnabled,
-  enableVBCable,
+  repairVBCable,
   installVBCable,
   checkAndInstallDependencies,
   getVBCableInstallerPath
