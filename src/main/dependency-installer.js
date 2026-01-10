@@ -81,6 +81,66 @@ function isVBCableEnabled() {
 }
 
 /**
+ * Enable VB-Cable device if it's disabled
+ * Uses PowerShell Enable-PnpDevice (requires admin)
+ */
+async function enableVBCable(mainWindow) {
+  console.log('[DependencyInstaller] Attempting to enable VB-Cable...');
+
+  try {
+    // First, find the device instance ID
+    const findResult = execSync(
+      'powershell -Command "Get-PnpDevice -Class AudioEndpoint | Where-Object { $_.FriendlyName -like \'*CABLE*\' } | Select-Object -ExpandProperty InstanceId"',
+      { encoding: 'utf8', timeout: 10000 }
+    );
+
+    const instanceIds = findResult.trim().split('\n').filter(id => id.trim());
+
+    if (instanceIds.length === 0) {
+      console.log('[DependencyInstaller] No VB-Cable devices found to enable');
+      return false;
+    }
+
+    console.log('[DependencyInstaller] Found VB-Cable devices:', instanceIds);
+
+    // Enable each device using PowerShell with elevation
+    for (const instanceId of instanceIds) {
+      const id = instanceId.trim();
+      if (!id) continue;
+
+      console.log('[DependencyInstaller] Enabling device:', id);
+
+      // Use Start-Process to run with elevation
+      const psCommand = `Start-Process powershell -ArgumentList '-Command', 'Enable-PnpDevice -InstanceId \\"${id}\\" -Confirm:$false' -Verb RunAs -Wait`;
+
+      try {
+        execSync(`powershell -Command "${psCommand}"`, {
+          encoding: 'utf8',
+          timeout: 30000
+        });
+      } catch (e) {
+        console.log('[DependencyInstaller] Enable command error (may still have worked):', e.message);
+      }
+    }
+
+    // Wait a moment for Windows to register the change
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Check if it worked
+    if (isVBCableEnabled()) {
+      console.log('[DependencyInstaller] VB-Cable enabled successfully!');
+      return true;
+    }
+
+    console.log('[DependencyInstaller] VB-Cable still not enabled');
+    return false;
+  } catch (error) {
+    console.error('[DependencyInstaller] Error enabling VB-Cable:', error.message);
+    return false;
+  }
+}
+
+/**
  * Install VB-Cable with admin elevation
  * Returns a promise that resolves when installation completes
  */
@@ -189,15 +249,42 @@ async function checkAndInstallDependencies(mainWindow) {
 
   // Check if VB-Cable is enabled
   if (!isVBCableEnabled()) {
-    console.log('[DependencyInstaller] VB-Cable installed but may be disabled');
-    // Show warning but don't block
-    dialog.showMessageBox(mainWindow, {
-      type: 'warning',
+    console.log('[DependencyInstaller] VB-Cable installed but disabled - attempting to enable');
+
+    // Ask user permission to enable
+    const response = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
       title: 'VB-Cable Disabled',
-      message: 'VB-Cable appears to be disabled.',
-      detail: 'Go to Windows Sound Settings and enable "CABLE Input" device for PC Nest Speaker to work properly.',
-      buttons: ['OK']
+      message: 'VB-Cable is installed but disabled.',
+      detail: 'The app will enable it automatically. This requires Administrator permission.',
+      buttons: ['Enable VB-Cable', 'Skip (audio won\'t work)'],
+      defaultId: 0,
+      cancelId: 1
     });
+
+    if (response.response === 0) {
+      // Try to enable automatically
+      const enabled = await enableVBCable(mainWindow);
+
+      if (enabled) {
+        dialog.showMessageBox(mainWindow, {
+          type: 'info',
+          title: 'VB-Cable Enabled',
+          message: 'VB-Cable has been enabled successfully!',
+          detail: 'Audio streaming should work now.',
+          buttons: ['OK']
+        });
+      } else {
+        // Auto-enable failed, show manual instructions
+        dialog.showMessageBox(mainWindow, {
+          type: 'warning',
+          title: 'Could Not Enable VB-Cable',
+          message: 'Automatic enable failed. Please enable manually:',
+          detail: '1. Right-click the speaker icon in taskbar\n2. Open Sound settings\n3. Find "CABLE Input" device\n4. Right-click → Enable\n\nOr try restarting your PC.',
+          buttons: ['OK']
+        });
+      }
+    }
   }
 
   console.log('[DependencyInstaller] All dependencies OK');
@@ -207,6 +294,7 @@ async function checkAndInstallDependencies(mainWindow) {
 module.exports = {
   isVBCableInstalled,
   isVBCableEnabled,
+  enableVBCable,
   installVBCable,
   checkAndInstallDependencies,
   getVBCableInstallerPath
