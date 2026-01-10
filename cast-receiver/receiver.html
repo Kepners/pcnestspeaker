@@ -300,11 +300,11 @@
         log('Track received!');
 
         if (event.track.kind === 'audio') {
-          // Set low jitter buffer target for minimal latency (20ms)
+          // Set low jitter buffer target for minimal latency (50ms - balanced)
           // See: https://developer.mozilla.org/en-US/docs/Web/API/RTCRtpReceiver/jitterBufferTarget
           if (event.receiver && 'jitterBufferTarget' in event.receiver) {
-            event.receiver.jitterBufferTarget = 20; // 20ms target
-            console.log('[WebRTC] Set jitterBufferTarget to 20ms');
+            event.receiver.jitterBufferTarget = 50; // 50ms target (balanced)
+            console.log('[WebRTC] Set jitterBufferTarget to 50ms');
           }
 
           if (event.streams && event.streams[0]) {
