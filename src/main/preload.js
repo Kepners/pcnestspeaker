@@ -43,8 +43,8 @@ contextBridge.exposeInMainWorld('api', {
   updateSettings: (updates) => ipcRenderer.invoke('update-settings', updates),
   saveLastSpeaker: (speaker) => ipcRenderer.invoke('save-last-speaker', speaker),
 
-  // Cast Mode - controls audio routing (speakers only vs PC + speakers)
-  setCastMode: (mode) => ipcRenderer.invoke('set-cast-mode', mode),
+  // PC Audio toggle - enable/disable "Listen to this device" on VB-Cable
+  togglePCAudio: (enabled) => ipcRenderer.invoke('toggle-pc-audio', enabled),
 
   // Auto-start on Windows boot
   isAutoStartEnabled: () => ipcRenderer.invoke('is-auto-start-enabled'),
@@ -72,6 +72,11 @@ contextBridge.exposeInMainWorld('api', {
   getApoDevices: () => ipcRenderer.invoke('get-apo-devices'),
   launchApoConfigurator: () => ipcRenderer.invoke('launch-apo-configurator'),
   checkApoStatus: () => ipcRenderer.invoke('check-apo-status'),
+
+  // Auto-Sync (automatically adjusts sync delay based on network latency)
+  enableAutoSync: (speaker) => ipcRenderer.invoke('enable-auto-sync', speaker),
+  disableAutoSync: () => ipcRenderer.invoke('disable-auto-sync'),
+  getAutoSyncStatus: () => ipcRenderer.invoke('get-auto-sync-status'),
 
   // Quick Audio Output Switcher
   getAudioOutputs: () => ipcRenderer.invoke('get-audio-outputs'),
@@ -117,6 +122,11 @@ contextBridge.exposeInMainWorld('api', {
   // First-run setup event (triggered when app detects first run with real speakers)
   onFirstRunSetup: (callback) => {
     ipcRenderer.on('first-run-setup', (event, data) => callback(data));
+  },
+
+  // Auto-sync adjustment event (when network latency changes and delay is auto-adjusted)
+  onAutoSyncAdjusted: (callback) => {
+    ipcRenderer.on('auto-sync-adjusted', (event, data) => callback(data));
   },
 
   // Window controls (frameless window)

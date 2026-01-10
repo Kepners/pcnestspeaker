@@ -19,23 +19,28 @@ const autoStartToggle = document.getElementById('auto-start-toggle');
 const optionsCard = document.getElementById('options-card');
 const volumeBoostToggle = document.getElementById('volume-boost-toggle');
 
-// Cast mode elements
-const castSpeakersBtn = document.getElementById('cast-speakers-btn');
-const castAllBtn = document.getElementById('cast-all-btn');
-const castModeHint = document.getElementById('cast-mode-hint');
+// PC Audio toggle (simplified from cast mode)
+const pcAudioToggle = document.getElementById('pc-audio-toggle');
+const pcAudioHint = document.getElementById('pc-audio-hint');
 const syncCalibrateRow = document.getElementById('sync-calibrate-row');
 const apoStatus = document.getElementById('apo-status');
 const apoDevicesText = document.getElementById('apo-devices-text');
 const launchApoBtn = document.getElementById('launch-apo-btn');
-const refreshOutputsBtn = document.getElementById('refresh-outputs-btn');
 
 // Sync calibration elements
 const syncCalibrateBtn = document.getElementById('sync-calibrate-btn');
 const measureLatencyBtn = document.getElementById('measure-latency-btn');
 const syncDelaySlider = document.getElementById('sync-delay-slider');
 const syncDelayValue = document.getElementById('sync-delay-value');
-const syncVisual = document.getElementById('sync-visual');
+const syncBarsWrapper = document.getElementById('sync-bars-wrapper');
+const syncBars = document.getElementById('sync-bars');
 const syncHint = document.getElementById('sync-hint');
+const autoSyncToggle = document.getElementById('auto-sync-toggle');
+const autoSyncHint = document.getElementById('auto-sync-hint');
+
+// Number of visual bars for sync delay
+const SYNC_BAR_COUNT = 20;
+const SYNC_MAX_DELAY = 2000; // ms
 
 // Calibration state
 let isCalibrating = false;
@@ -61,14 +66,17 @@ let dependencies = {
 // Volume boost state (slider removed - Windows keys control volume)
 let volumeBoostEnabled = false; // When true, speaker stays at 100%
 
-// Cast mode state: 'speakers' = Nest only, 'all' = PC + Nest (shows delay)
-let castMode = 'speakers';
+// PC Audio state: true = also play on PC speakers (via Listen + APO delay)
+let pcAudioEnabled = false;
 
 // Sync delay state
 let currentSyncDelayMs = 0;
 let syncDelayTimeout = null; // Debounce timer
 let audioSyncAvailable = false;
 let audioSyncMethod = null;
+
+// Auto-sync state
+let autoSyncEnabled = false;
 
 // Stereo separation state
 let stereoMode = {
@@ -113,18 +121,42 @@ async function loadSettings() {
       log(`Volume boost: ${volumeBoostEnabled ? 'ON (100%)' : 'OFF'}`);
     }
 
-    // Apply sync delay slider state
+    // Apply sync delay slider state and visual bars
     if (syncDelaySlider && settings.syncDelayMs !== undefined) {
       currentSyncDelayMs = settings.syncDelayMs || 0;
       syncDelaySlider.value = currentSyncDelayMs;
       if (syncDelayValue) {
         syncDelayValue.textContent = `${currentSyncDelayMs}ms`;
       }
+      // Update visual bars after a small delay (DOM needs to be ready)
+      setTimeout(() => updateSyncBars(currentSyncDelayMs), 100);
       log(`Sync delay: ${currentSyncDelayMs}ms`);
+
+      // Apply saved delay to APO on startup (if non-zero)
+      if (currentSyncDelayMs > 0 && audioSyncAvailable) {
+        window.api.setSyncDelay(currentSyncDelayMs).then(result => {
+          if (result.success) {
+            log(`Restored sync delay: ${currentSyncDelayMs}ms`, 'info');
+          }
+        }).catch(() => {}); // Silent fail on startup
+      }
     }
 
-    // Apply cast mode state (default to 'speakers' if not set)
-    await setCastMode(settings.castMode || 'speakers');
+    // Apply PC audio toggle state (default to OFF)
+    if (pcAudioToggle) {
+      pcAudioToggle.checked = settings.pcAudioEnabled || false;
+      pcAudioEnabled = pcAudioToggle.checked;
+    }
+
+    // Apply auto-sync toggle state (default to OFF)
+    if (autoSyncToggle) {
+      autoSyncEnabled = settings.autoSyncEnabled || false;
+      autoSyncToggle.checked = autoSyncEnabled;
+      if (autoSyncHint && autoSyncEnabled) {
+        autoSyncHint.textContent = 'Monitoring network latency and auto-adjusting delay';
+      }
+      log(`Auto-sync: ${autoSyncEnabled ? 'ON' : 'OFF'}`);
+    }
   } catch (error) {
     log(`Failed to load settings: ${error.message}`, 'error');
   }
@@ -494,10 +526,9 @@ function setupEventListeners() {
     });
   }
 
-  // Cast mode toggle buttons
-  if (castSpeakersBtn && castAllBtn) {
-    castSpeakersBtn.addEventListener('click', () => setCastMode('speakers'));
-    castAllBtn.addEventListener('click', () => setCastMode('all'));
+  // PC Audio toggle (simple on/off)
+  if (pcAudioToggle) {
+    pcAudioToggle.addEventListener('change', () => togglePCAudio(pcAudioToggle.checked));
   }
 
   // Sync delay slider - adjust HDMI delay to match Cast latency
@@ -505,6 +536,50 @@ function setupEventListeners() {
     syncDelaySlider.addEventListener('input', (e) => {
       const delayMs = parseInt(e.target.value, 10);
       handleSyncDelayChange(delayMs);
+      updateSyncBars(delayMs);
+    });
+  }
+
+  // Initialize visual bars for sync delay
+  initSyncBars();
+
+  // Scroll wheel control for sync delay
+  if (syncBarsWrapper) {
+    syncBarsWrapper.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const step = 50; // 50ms per scroll step
+      const direction = e.deltaY < 0 ? 1 : -1; // Scroll up = increase, down = decrease
+      const currentVal = parseInt(syncDelaySlider?.value || 0, 10);
+      const newVal = Math.max(0, Math.min(SYNC_MAX_DELAY, currentVal + (step * direction)));
+
+      if (syncDelaySlider) {
+        syncDelaySlider.value = newVal;
+        handleSyncDelayChange(newVal);
+        updateSyncBars(newVal);
+      }
+    }, { passive: false });
+
+    // Keyboard control when focused
+    syncBarsWrapper.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const currentVal = parseInt(syncDelaySlider?.value || 0, 10);
+        const newVal = Math.max(0, currentVal - 50);
+        if (syncDelaySlider) {
+          syncDelaySlider.value = newVal;
+          handleSyncDelayChange(newVal);
+          updateSyncBars(newVal);
+        }
+      } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const currentVal = parseInt(syncDelaySlider?.value || 0, 10);
+        const newVal = Math.min(SYNC_MAX_DELAY, currentVal + 50);
+        if (syncDelaySlider) {
+          syncDelaySlider.value = newVal;
+          handleSyncDelayChange(newVal);
+          updateSyncBars(newVal);
+        }
+      }
     });
   }
 
@@ -540,6 +615,53 @@ function setupEventListeners() {
       }
     }
   });
+
+  // Listen for auto-sync adjustments
+  window.api.onAutoSyncAdjusted((data) => {
+    const { newDelay, oldDelay } = data;
+    log(`Auto-sync: adjusted ${oldDelay}ms → ${newDelay}ms`, 'info');
+
+    // Update the sync delay UI to reflect the new value
+    currentSyncDelayMs = newDelay;
+    if (syncDelaySlider) {
+      syncDelaySlider.value = newDelay;
+    }
+    if (syncDelayValue) {
+      syncDelayValue.textContent = `${newDelay}ms`;
+    }
+    updateSyncBars(newDelay);
+  });
+
+  // Auto-sync toggle handler
+  if (autoSyncToggle) {
+    autoSyncToggle.addEventListener('change', async (e) => {
+      autoSyncEnabled = e.target.checked;
+      log(`Auto-sync: ${autoSyncEnabled ? 'ON' : 'OFF'}`);
+
+      // Update hint
+      if (autoSyncHint) {
+        autoSyncHint.textContent = autoSyncEnabled
+          ? 'Monitoring network latency and auto-adjusting delay'
+          : 'Monitors network and auto-adjusts delay';
+      }
+
+      try {
+        if (autoSyncEnabled) {
+          // Get current speaker info for baseline measurement
+          const speakerInfo = selectedSpeaker !== null ? speakers[selectedSpeaker] : null;
+          const result = await window.api.enableAutoSync(speakerInfo);
+          if (result.success) {
+            log('Auto-sync enabled - will adjust when network changes', 'success');
+          }
+        } else {
+          await window.api.disableAutoSync();
+          log('Auto-sync disabled', 'info');
+        }
+      } catch (err) {
+        log(`Auto-sync error: ${err.message}`, 'error');
+      }
+    });
+  }
 
   // Purchase button - opens license modal
   if (purchaseBtn) {
@@ -677,59 +799,46 @@ async function showEqualizerApoPrompt() {
   }
 }
 
-// Set cast mode and update UI
-// "Speakers Only" = Virtual Desktop Audio (no local sound, audio only to Cast)
-// "PC + Speakers" = User's real speakers (local sound + Cast via loopback)
-async function setCastMode(mode) {
-  castMode = mode;
-  const modeLabel = mode === 'speakers' ? 'Speakers Only' : 'PC + Speakers';
-  log(`Cast mode: ${modeLabel}`);
-
-  // Update button states
-  if (castSpeakersBtn && castAllBtn) {
-    castSpeakersBtn.classList.toggle('active', mode === 'speakers');
-    castAllBtn.classList.toggle('active', mode === 'all');
-  }
+// Toggle PC Audio on/off (simplified from cast mode)
+// ON = Enable "Listen to this device" on VB-Cable + APO delay
+// OFF = Disable Listen, clear APO delay
+async function togglePCAudio(enabled) {
+  pcAudioEnabled = enabled;
+  log(`PC Audio: ${enabled ? 'ON' : 'OFF'}`);
 
   // Update hint text
-  if (castModeHint) {
-    if (mode === 'speakers') {
-      castModeHint.textContent = 'Audio only goes to Nest speakers';
-    } else {
-      castModeHint.textContent = 'PC speakers + Nest (install Equalizer APO for sync)';
-    }
+  if (pcAudioHint) {
+    pcAudioHint.textContent = enabled
+      ? 'Audio plays on PC speakers + Nest (sync with slider below)'
+      : 'Audio only goes to Nest speakers';
   }
 
-  // Show/hide audio output grid based on mode
-  const audioOutputList = document.getElementById('audio-output-list');
-  if (audioOutputList) {
-    if (mode === 'all') {
-      audioOutputList.style.display = 'flex';
-      // Refresh the list when switching to PC + Speakers mode
-      await loadAudioOutputs();
-    } else {
-      audioOutputList.style.display = 'none';
-    }
-  }
-
-  // Calibration is now in Settings tab - no need to show/hide based on mode
-  // Just stop calibration if mode changes to Speakers Only
-  if (mode !== 'all' && isCalibrating) {
+  // Stop calibration if turning off
+  if (!enabled && isCalibrating) {
     stopCalibration();
   }
 
-  // Save setting AND switch audio device if streaming
-  window.api.updateSettings({ castMode: mode });
+  // Save setting
+  window.api.updateSettings({ pcAudioEnabled: enabled });
 
-  // Call IPC handler to switch Windows audio device while streaming
+  // Call backend to toggle Listen + APO
   try {
-    const result = await window.api.setCastMode(mode);
-    if (result.switched) {
-      log(`Audio device switched for ${modeLabel} mode`, 'success');
+    const result = await window.api.togglePCAudio(enabled);
+    if (result.success) {
+      log(`PC Audio ${enabled ? 'enabled' : 'disabled'}`, 'success');
+    } else {
+      log(`PC Audio toggle failed: ${result.error}`, 'error');
     }
   } catch (err) {
-    log(`Mode switch error: ${err.message}`, 'error');
+    log(`PC Audio error: ${err.message}`, 'error');
   }
+}
+
+// Legacy alias for compatibility
+async function setCastMode(mode) {
+  const enabled = mode === 'all';
+  if (pcAudioToggle) pcAudioToggle.checked = enabled;
+  await togglePCAudio(enabled);
 }
 
 // Check all dependencies
@@ -2280,6 +2389,59 @@ function escapeHtml(text) {
 }
 
 /**
+ * Initialize visual bars for sync delay display
+ */
+function initSyncBars() {
+  if (!syncBars) return;
+
+  // Clear existing bars
+  syncBars.innerHTML = '';
+
+  // Create bars with varying heights for visual interest
+  for (let i = 0; i < SYNC_BAR_COUNT; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'sync-bar';
+    // Varying heights: shorter at edges, taller in middle (wave pattern)
+    const baseHeight = 0.3 + 0.7 * Math.sin((i / SYNC_BAR_COUNT) * Math.PI);
+    bar.style.height = `${baseHeight * 100}%`;
+    bar.dataset.index = i;
+    syncBars.appendChild(bar);
+  }
+
+  // Set initial state from current value
+  const initialValue = parseInt(syncDelaySlider?.value || 0, 10);
+  updateSyncBars(initialValue);
+}
+
+/**
+ * Update visual bars based on current delay value
+ * @param {number} delayMs - Current delay in milliseconds
+ */
+function updateSyncBars(delayMs) {
+  if (!syncBars) return;
+
+  const bars = syncBars.querySelectorAll('.sync-bar');
+  const activeBars = Math.round((delayMs / SYNC_MAX_DELAY) * SYNC_BAR_COUNT);
+
+  bars.forEach((bar, index) => {
+    bar.classList.remove('active', 'peak');
+
+    if (index < activeBars) {
+      bar.classList.add('active');
+      // Peak bar (rightmost active) gets special styling
+      if (index === activeBars - 1) {
+        bar.classList.add('peak');
+      }
+    }
+  });
+
+  // Update the value display
+  if (syncDelayValue) {
+    syncDelayValue.textContent = `${delayMs}ms`;
+  }
+}
+
+/**
  * Handle sync delay slider change
  * - Updates display immediately
  * - Plays dual ping (PC + Nest) if ping mode is enabled
@@ -2449,12 +2611,13 @@ async function startCalibration() {
       log(`Using first available speaker: ${speakers[0].name}`);
     }
 
-    // Step 3: Switch to PC + Speakers mode (this switches Windows audio device!)
-    if (syncHint) syncHint.textContent = 'Switching to PC + Speakers mode...';
+    // Step 3: Enable PC audio if not already (for calibration to work)
+    if (syncHint) syncHint.textContent = 'Enabling PC audio...';
 
-    if (castMode !== 'all') {
-      log('Switching to PC + Speakers mode...');
-      await setCastMode('all');
+    if (!pcAudioEnabled) {
+      log('Enabling PC audio for calibration...');
+      await togglePCAudio(true);
+      if (pcAudioToggle) pcAudioToggle.checked = true;
       // Wait for Windows audio device to switch
       await new Promise(r => setTimeout(r, 2000));
     }
