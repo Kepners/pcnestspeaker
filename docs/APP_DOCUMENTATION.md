@@ -22,7 +22,8 @@
 |---------|-------------|
 | **WebRTC Streaming** | Sub-second latency via MediaMTX + custom Cast receiver |
 | **HTTP/MP3 Fallback** | ~8 second latency for older devices |
-| **System Audio Capture** | Captures all PC audio via virtual-audio-capturer |
+| **System Audio Capture** | Captures all PC audio via VB-Cable |
+| **PC + Speakers Mode** | Simultaneous audio on Nest AND PC speakers |
 | **Stereo Mode** | Split L/R channels to separate speakers |
 | **Volume Boost** | +25% signal boost toggle (3% always-on hidden boost) |
 
@@ -90,7 +91,10 @@
 Windows Audio Output
         |
         v
-virtual-audio-capturer (DirectShow device)
+VB-Cable Input (Windows default playback)
+        |
+        v
+FFmpeg captures from "CABLE Output" (VB-Cable capture)
         |
         v
 FFmpeg (Opus encoding, RTSP output)
@@ -114,7 +118,10 @@ Google Nest Speaker
 Windows Audio Output
         |
         v
-virtual-audio-capturer
+VB-Cable Input (Windows default playback)
+        |
+        v
+FFmpeg captures from "CABLE Output"
         |
         v
 FFmpeg (MP3 encoding, 320kbps)
@@ -129,15 +136,39 @@ pychromecast (Default Media Receiver)
 Google Nest Speaker
 ```
 
+### PC + Speakers Mode Pipeline
+
+```
+Windows Audio Output
+        |
+        v
+VB-Cable Input (Windows default)
+        |
+        +---------------------------+
+        |                           |
+        v                           v
+FFmpeg (CABLE Output)         "Listen to this device"
+        |                     (CABLE Output → PC Speakers)
+        v                           |
+MediaMTX → WebRTC                   v
+        |                     Equalizer APO (delay)
+        v                           |
+Nest Speaker                        v
+(no delay, ~500ms network)    PC Speakers
+                              (delayed to sync with Nest)
+```
+
 ### Key Components
 
 | Component | Purpose | Port |
 |-----------|---------|------|
+| **VB-Cable** | Virtual audio routing (CABLE Input → CABLE Output) | N/A |
 | MediaMTX | RTSP to WebRTC bridge | 8554 (RTSP), 8889 (WHEP), 9997 (API) |
-| FFmpeg | Audio capture & encoding | N/A |
+| FFmpeg | Audio capture & encoding (from CABLE Output) | N/A |
 | Local HTTP | WebRTC WHEP endpoint | 8889 |
 | HTTP Server | MP3 streaming fallback | 8000 |
 | Python cast-helper | Chromecast control | N/A |
+| Equalizer APO | Audio delay for PC+Speakers sync (optional) | N/A |
 
 ---
 

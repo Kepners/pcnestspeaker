@@ -23,14 +23,21 @@ Stream Windows system audio to Google Nest speakers over Wi-Fi with sub-second l
 
 - Windows 10/11 (64-bit)
 - Google Nest speaker(s) on same Wi-Fi network
-- [screen-capture-recorder](https://github.com/rdp/screen-capture-recorder-to-video-windows-free/releases) (for virtual-audio-capturer)
+- **[VB-Cable](https://vb-audio.com/Cable/)** - Virtual audio cable (FREE)
+
+### Optional (for PC + Speakers mode)
+
+- **[Equalizer APO](https://sourceforge.net/projects/equalizerapo/)** - Audio delay for syncing PC speakers with Nest
 
 ### Installation
 
-1. Install [screen-capture-recorder](https://github.com/rdp/screen-capture-recorder-to-video-windows-free/releases) - provides the virtual audio capture device
-2. Download PC Nest Speaker from [releases](https://github.com/Kepners/pcnestspeaker/releases)
+1. **Install VB-Cable** - [Download from vb-audio.com](https://vb-audio.com/Cable/)
+   - Extract the zip file
+   - Right-click `VBCABLE_Setup_x64.exe` → Run as Administrator
+   - Restart your computer after installation
+2. **Download PC Nest Speaker** from [releases](https://github.com/Kepners/pcnestspeaker/releases)
 3. Run the installer or portable exe
-4. Done!
+4. Done! The app will automatically use VB-Cable for audio routing
 
 ### Usage
 
@@ -42,12 +49,27 @@ Stream Windows system audio to Google Nest speakers over Wi-Fi with sub-second l
 ## How It Works
 
 ```
-PC Audio -> virtual-audio-capturer -> FFmpeg (Opus) -> MediaMTX -> WebRTC -> Cast Receiver -> Nest Speaker
+PC Audio → VB-Cable Input → FFmpeg (captures from CABLE Output) → MediaMTX → WebRTC → Nest Speaker
 ```
 
-The app uses WebRTC for sub-second latency streaming. A custom Cast receiver running on your Nest speaker connects to your local MediaMTX server (port 8889) via WHEP protocol to receive the WebRTC stream.
+The app uses WebRTC for sub-second latency streaming:
+1. **VB-Cable** routes your PC audio through a virtual audio cable
+2. **FFmpeg** captures from "CABLE Output" and encodes to Opus
+3. **MediaMTX** bridges the RTSP stream to WebRTC
+4. **Custom Cast receiver** on Nest speaker connects via WHEP protocol
 
 For older devices that don't support custom receivers, the app falls back to HTTP/MP3 streaming (~8 second latency).
+
+### PC + Speakers Mode (Optional)
+
+Want audio on BOTH your Nest speakers AND your PC speakers simultaneously?
+
+1. Install [Equalizer APO](https://sourceforge.net/projects/equalizerapo/) on your PC speakers
+2. Enable "PC + Speakers" mode in the app
+3. The app enables "Listen to this device" on VB-Cable → your PC speakers
+4. Equalizer APO adds a delay (~500-700ms) to sync PC speakers with Nest
+
+This lets you hear your music on both at the same time, perfectly synced!
 
 ## Controls
 
@@ -89,9 +111,20 @@ Click a speaker, then Ctrl+click another speaker to create a stereo pair:
 - Restart the app
 
 ### No audio playing
+- **Verify VB-Cable is installed** - Check Sound settings for "CABLE Input" and "CABLE Output"
 - Verify Windows audio is playing (test with YouTube)
-- Check virtual-audio-capturer is installed
+- Check that the app set Windows default to "CABLE Input"
 - Try the HTTP/MP3 fallback mode
+
+### VB-Cable not showing up
+- Run installer as Administrator
+- Restart your computer after installation
+- Re-download from [vb-audio.com/Cable](https://vb-audio.com/Cable/)
+
+### PC + Speakers mode not working
+- VB-Cable must be installed (not Virtual Desktop Audio)
+- Install [Equalizer APO](https://sourceforge.net/projects/equalizerapo/) on your PC speakers
+- Open APO Configurator and check your speakers are enabled
 
 ### High latency
 - WebRTC mode provides sub-second latency
