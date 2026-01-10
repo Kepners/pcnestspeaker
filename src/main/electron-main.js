@@ -18,6 +18,7 @@ const volumeSync = require('./windows-volume-sync');
 const daemonManager = require('./daemon-manager');
 const audioSyncManager = require('./audio-sync-manager');
 const { setupFirewall } = require('./firewall-setup');
+const dependencyInstaller = require('./dependency-installer');
 
 // Keep global references
 let mainWindow = null;
@@ -3013,6 +3014,13 @@ app.whenReady().then(async () => {
 
   // Create system tray
   trayManager.createTray(mainWindow);
+
+  // Check and install dependencies (VB-Cable required!)
+  // This will prompt user to install VB-Cable if missing
+  const depsOk = await dependencyInstaller.checkAndInstallDependencies(mainWindow);
+  if (!depsOk) {
+    sendLog('VB-Cable not installed - audio streaming will not work!', 'warning');
+  }
 
   // Start Cast daemon for instant volume control
   daemonManager.startDaemon().then(() => {

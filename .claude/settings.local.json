@@ -161,7 +161,11 @@
       "Bash(more:*)",
       "Bash(\"soundvolumeview\\\\SoundVolumeView.exe\" /scomma \"C:\\\\temp\\\\svv_devices.csv\")",
       "Bash(soundvolumeviewSoundVolumeView.exe /SetListenToThisDevice \"Virtual Desktop Audio\" 1 \"ASUS VG32V\")",
-      "Bash(Select-Object -First 30)"
+      "Bash(Select-Object -First 30)",
+      "mcp__substack-api__create_draft_post",
+      "Bash(.svclsvcl.exe /stdout /scomma)",
+      "Bash(\"svcl\\\\SoundVolumeView.exe\" /SetListenToThisDevice \"Virtual Desktop Audio\\\\Device\\\\Virtual Desktop Audio\\\\Capture\" 1 \"NVIDIA High Definition Audio\\\\Device\\\\ASUS VG32V\\\\Render\")",
+      "mcp__playwright__browser_navigate"
     ]
   }
 }

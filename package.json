@@ -103,6 +103,14 @@
           "nircmd.exe",
           "nircmdc.exe"
         ]
+      },
+      {
+        "from": "dependencies/vbcable/",
+        "to": "dependencies/vbcable",
+        "filter": [
+          "VBCABLE_Setup_x64.exe",
+          "VBCABLE_Setup.exe"
+        ]
       }
     ],
     "files": [
