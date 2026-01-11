@@ -5,9 +5,11 @@
   <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #FFFFFF; overflow: hidden; }
+    body { background: #0a0a0a; overflow: hidden; }
 
-    /* Splash screen - shown on startup */
+    /* ========================================
+       SPLASH SCREEN - PC NEST SPEAKER BRANDING
+       ======================================== */
     #splash-screen {
       position: fixed;
       top: 0;
@@ -20,34 +22,89 @@
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      transition: opacity 1s ease-out;
     }
-    #splash-screen.hidden {
-      opacity: 0;
-      pointer-events: none;
+
+    /* Logo animation */
+    #splash-logo {
+      width: 150px;
+      height: 150px;
+      animation: pulse 2s ease-in-out infinite;
     }
-    #splash-video {
-      max-width: 50%;
-      max-height: 50%;
-      object-fit: contain;
-      border-radius: 20px;
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.9; }
+      50% { transform: scale(1.05); opacity: 1; }
     }
+
     #splash-title {
       color: #FCBFB7;
       font-family: 'Segoe UI', sans-serif;
-      font-size: 48px;
+      font-size: 64px;
       font-weight: 300;
-      letter-spacing: 8px;
+      letter-spacing: 12px;
       margin-top: 40px;
-      text-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      text-shadow: 0 4px 30px rgba(252, 191, 183, 0.4);
+      animation: fadeIn 1s ease-out;
     }
     #splash-subtitle {
-      color: rgba(255,255,255,0.6);
+      color: rgba(255,255,255,0.7);
       font-family: 'Segoe UI', sans-serif;
-      font-size: 18px;
+      font-size: 22px;
       font-weight: 300;
-      letter-spacing: 4px;
-      margin-top: 10px;
+      letter-spacing: 6px;
+      margin-top: 15px;
+      animation: fadeIn 1.5s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ========================================
+       GEORGE LUCAS WIPE TRANSITION
+       Classic Star Wars horizontal wipe effect
+       ======================================== */
+    #wipe-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: linear-gradient(135deg, #334E58 0%, #1a2a30 50%, #33261D 100%);
+      z-index: 99;
+      transform: translateX(0);
+      pointer-events: none;
+    }
+    #wipe-overlay.wipe-out {
+      animation: wipeLeft 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+    @keyframes wipeLeft {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-100%); }
+    }
+
+    /* Alternative: Iris wipe (circle reveal) - Star Wars style */
+    #iris-wipe {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: #0a0a0a;
+      z-index: 98;
+      clip-path: circle(0% at 50% 50%);
+      pointer-events: none;
+    }
+    #iris-wipe.reveal {
+      animation: irisReveal 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+    @keyframes irisReveal {
+      0% { clip-path: circle(0% at 50% 50%); }
+      100% { clip-path: circle(150% at 50% 50%); }
+    }
+
+    /* Splash hidden state */
+    #splash-screen.hidden {
+      display: none;
     }
 
     /* Ambient video background - fullscreen, behind everything */
@@ -159,18 +216,47 @@
 <body>
   <cast-media-player id="player"></cast-media-player>
 
-  <!-- Splash screen - first thing users see -->
+  <!-- George Lucas wipe transition overlay -->
+  <div id="wipe-overlay"></div>
+
+  <!-- Splash screen - PC NEST SPEAKER BRANDING (5 seconds) -->
   <div id="splash-screen">
-    <video id="splash-video" autoplay loop muted playsinline>
-      <source src="https://kepners.github.io/pcnestspeaker/splash.mp4" type="video/mp4">
-    </video>
+    <!-- Large animated logo -->
+    <svg id="splash-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="splashLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#FCBFB7"/>
+          <stop offset="100%" style="stop-color:#A69888"/>
+        </linearGradient>
+        <filter id="glow">
+          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+          <feMerge>
+            <feMergeNode in="coloredBlur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+      <!-- Speaker icon with glow -->
+      <rect x="15" y="30" width="25" height="40" rx="4" fill="url(#splashLogoGrad)" filter="url(#glow)"/>
+      <path d="M40 30 L60 15 L60 85 L40 70 Z" fill="url(#splashLogoGrad)" filter="url(#glow)"/>
+      <!-- Sound waves animated -->
+      <path d="M68 35 Q80 50 68 65" stroke="#FCBFB7" stroke-width="4" fill="none" opacity="0.8">
+        <animate attributeName="opacity" values="0.8;0.3;0.8" dur="1.5s" repeatCount="indefinite"/>
+      </path>
+      <path d="M76 25 Q95 50 76 75" stroke="#FCBFB7" stroke-width="4" fill="none" opacity="0.5">
+        <animate attributeName="opacity" values="0.5;0.2;0.5" dur="1.5s" repeatCount="indefinite" begin="0.3s"/>
+      </path>
+    </svg>
     <div id="splash-title">PC NEST SPEAKER</div>
-    <div id="splash-subtitle">STREAMING AUDIO</div>
+    <div id="splash-subtitle">STREAMING YOUR WORLD</div>
   </div>
 
   <!-- Ambient video background -->
   <video id="ambient-video" muted autoplay playsinline crossorigin="anonymous"></video>
   <div id="overlay"></div>
+
+  <!-- Background music (ambient/chill) -->
+  <audio id="background-music" loop preload="auto"></audio>
 
   <!-- UI elements -->
   <!-- Logo in corner - using inline SVG for reliability -->
@@ -198,37 +284,40 @@
     const WEBRTC_NAMESPACE = 'urn:x-cast:com.pcnestspeaker.webrtc';
 
     // ===================
-    // Ambient Video System - Free CC0 videos from Pexels (CORS-enabled)
+    // SPLASH & TRANSITION TIMING
+    // ===================
+    const SPLASH_DURATION = 5000;  // 5 seconds branded splash
+    const WIPE_DURATION = 1200;    // George Lucas wipe transition
+    let splashComplete = false;
+
+    // ===================
+    // Ambient Video System - Mixkit Sky Videos (Free, high quality)
     // ===================
     const ambientVideos = [
-      // TRUE 4K UHD videos (3840x2160) for high-quality TV display
-      // Ocean & Water
-      'https://videos.pexels.com/video-files/3571264/3571264-uhd_3840_2160_30fps.mp4',
-      'https://videos.pexels.com/video-files/1093662/1093662-uhd_3840_2160_30fps.mp4',
-      'https://videos.pexels.com/video-files/2098989/2098989-uhd_3840_2160_30fps.mp4',
-      'https://videos.pexels.com/video-files/1409899/1409899-uhd_3840_2160_25fps.mp4',
-
-      // Clouds & Sky
-      'https://videos.pexels.com/video-files/1918465/1918465-uhd_3840_2160_24fps.mp4',
-      'https://videos.pexels.com/video-files/2491284/2491284-uhd_3840_2160_24fps.mp4',
-
-      // Forest & Nature
-      'https://videos.pexels.com/video-files/3125908/3125908-uhd_3840_2160_30fps.mp4',
-      'https://videos.pexels.com/video-files/2871916/2871916-uhd_3840_2160_24fps.mp4',
-
-      // Mountains & Space
-      'https://videos.pexels.com/video-files/1448735/1448735-uhd_3840_2160_24fps.mp4',
-      'https://videos.pexels.com/video-files/3015510/3015510-uhd_3840_2160_24fps.mp4',
-      'https://videos.pexels.com/video-files/1851190/1851190-uhd_3840_2160_30fps.mp4',
-
-      // Fire & Abstract
-      'https://videos.pexels.com/video-files/2795173/2795173-uhd_3840_2160_25fps.mp4',
-      'https://videos.pexels.com/video-files/3129671/3129671-uhd_3840_2160_30fps.mp4',
-
-      // Underwater
-      'https://videos.pexels.com/video-files/4812204/4812204-uhd_3840_2160_25fps.mp4',
-      'https://videos.pexels.com/video-files/2556126/2556126-uhd_3840_2160_30fps.mp4',
+      // Beautiful sky & clouds from Mixkit
+      'https://assets.mixkit.co/videos/1370/1370-720.mp4',   // Flying above clouds
+      'https://assets.mixkit.co/videos/4747/4747-720.mp4',   // Sunset sky clouds
+      'https://assets.mixkit.co/videos/4877/4877-720.mp4',   // Puffy clouds blue sky
+      'https://assets.mixkit.co/videos/5065/5065-720.mp4',   // Calm sky gradient
+      'https://assets.mixkit.co/videos/27697/27697-720.mp4', // Dreamy clouds
+      'https://assets.mixkit.co/videos/5186/5186-720.mp4',   // Peaceful sky
+      'https://assets.mixkit.co/videos/4730/4730-720.mp4',   // Moving clouds
+      'https://assets.mixkit.co/videos/5200/5200-720.mp4',   // Soft cloud motion
+      'https://assets.mixkit.co/videos/3794/3794-720.mp4',   // Golden hour sky
+      'https://assets.mixkit.co/videos/4699/4699-720.mp4',   // Blue sky clouds
     ];
+
+    // ===================
+    // Background Music - Ambient/Chill tracks from Pixabay (royalty-free)
+    // ===================
+    const backgroundTracks = [
+      'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3',  // Ambient relaxing
+      'https://cdn.pixabay.com/download/audio/2022/03/10/audio_bf8e9fa5eb.mp3',  // Soft piano
+      'https://cdn.pixabay.com/download/audio/2021/11/25/audio_91b32e02f9.mp3',  // Chill vibes
+      'https://cdn.pixabay.com/download/audio/2022/10/25/audio_946ac0e44a.mp3',  // Calm atmosphere
+    ];
+
+    const backgroundMusic = document.getElementById('background-music');
 
     let currentVideoIndex = 0;
     let videoLoadTimeout = null;
@@ -409,17 +498,52 @@
              url.toLowerCase().includes('mpegurl');
     }
 
-    // Transition from splash screen to streaming UI
+    // ===================
+    // GEORGE LUCAS WIPE TRANSITION
+    // Shows splash for 5 seconds, then wipes to ambient videos
+    // ===================
     let hasTransitioned = false;
-    function transitionToStreaming() {
+
+    function startSplashSequence() {
+      console.log('[UI] Starting PC Nest Speaker splash sequence (5 seconds)...');
+
+      // Start background music immediately (plays during splash)
+      startBackgroundMusic();
+
+      // After SPLASH_DURATION, do the George Lucas wipe
+      setTimeout(() => {
+        doGeorgeLucasWipe();
+      }, SPLASH_DURATION);
+    }
+
+    function doGeorgeLucasWipe() {
+      console.log('[UI] Starting George Lucas wipe transition...');
+
+      const splash = document.getElementById('splash-screen');
+      const wipeOverlay = document.getElementById('wipe-overlay');
+
+      // 1. Trigger the wipe animation (slides left, revealing content behind)
+      if (wipeOverlay) {
+        wipeOverlay.classList.add('wipe-out');
+      }
+
+      // 2. Hide splash screen as wipe starts
+      setTimeout(() => {
+        if (splash) splash.classList.add('hidden');
+      }, 100);
+
+      // 3. After wipe completes, remove the overlay
+      setTimeout(() => {
+        if (wipeOverlay) wipeOverlay.style.display = 'none';
+        finishTransition();
+      }, WIPE_DURATION);
+    }
+
+    function finishTransition() {
       if (hasTransitioned) return;
       hasTransitioned = true;
 
-      console.log('[UI] Transitioning to streaming view...');
-
-      // Hide splash screen
-      const splash = document.getElementById('splash-screen');
-      if (splash) splash.classList.add('hidden');
+      console.log('[UI] Transition complete - showing ambient videos');
 
       // Show overlay for ambient videos
       const overlay = document.getElementById('overlay');
@@ -430,6 +554,67 @@
       const branding = document.getElementById('branding');
       if (status) status.classList.add('streaming');
       if (branding) branding.classList.add('streaming');
+
+      // Fade out splash music (real audio streaming will start)
+      fadeOutMusic(2000);
+    }
+
+    function transitionToStreaming() {
+      // If splash sequence hasn't started, start it now
+      if (!splashComplete) {
+        splashComplete = true;
+        startSplashSequence();
+      }
+    }
+
+    // ===================
+    // BACKGROUND MUSIC (only during splash, stops when streaming)
+    // ===================
+    let musicPlaying = false;
+
+    function startBackgroundMusic() {
+      if (!backgroundMusic || musicPlaying) return;
+
+      // Pick random track
+      const trackIndex = Math.floor(Math.random() * backgroundTracks.length);
+      backgroundMusic.src = backgroundTracks[trackIndex];
+      backgroundMusic.volume = 0.3;  // Audible during splash
+
+      backgroundMusic.play().then(() => {
+        console.log('[Music] Background music started');
+        musicPlaying = true;
+      }).catch(e => {
+        console.log('[Music] Autoplay blocked:', e.message);
+      });
+    }
+
+    function stopBackgroundMusic() {
+      if (!backgroundMusic) return;
+      backgroundMusic.pause();
+      backgroundMusic.currentTime = 0;
+      musicPlaying = false;
+      console.log('[Music] Background music stopped for streaming');
+    }
+
+    // Fade out music smoothly
+    function fadeOutMusic(duration = 2000) {
+      if (!backgroundMusic || !musicPlaying) return;
+
+      const startVolume = backgroundMusic.volume;
+      const steps = 20;
+      const stepTime = duration / steps;
+      const volumeStep = startVolume / steps;
+
+      let currentStep = 0;
+      const fadeInterval = setInterval(() => {
+        currentStep++;
+        backgroundMusic.volume = Math.max(0, startVolume - (volumeStep * currentStep));
+
+        if (currentStep >= steps) {
+          clearInterval(fadeInterval);
+          stopBackgroundMusic();
+        }
+      }, stepTime);
     }
 
     // Retry configuration
