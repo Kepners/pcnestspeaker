@@ -436,6 +436,32 @@
 
     playerManager.setPlaybackConfig(playbackConfig);
 
+    // Add player state listeners for HLS debugging
+    playerManager.addEventListener(cast.framework.events.EventType.PLAYER_LOADING, () => {
+      console.log('[Cast Player] LOADING');
+      log('Loading stream...');
+    });
+    playerManager.addEventListener(cast.framework.events.EventType.PLAYER_LOAD_COMPLETE, () => {
+      console.log('[Cast Player] LOAD COMPLETE');
+      log('Stream loaded!');
+    });
+    playerManager.addEventListener(cast.framework.events.EventType.PLAYING, () => {
+      console.log('[Cast Player] PLAYING');
+      log('Streaming audio...');
+      transitionToStreaming();
+    });
+    playerManager.addEventListener(cast.framework.events.EventType.BUFFERING, () => {
+      console.log('[Cast Player] BUFFERING');
+      log('Buffering...');
+    });
+    playerManager.addEventListener(cast.framework.events.EventType.ERROR, (event) => {
+      console.error('[Cast Player] ERROR:', event.detailedErrorCode, event.error);
+      log('Error: ' + (event.error || event.detailedErrorCode));
+    });
+    playerManager.addEventListener(cast.framework.events.EventType.MEDIA_STATUS, (event) => {
+      console.log('[Cast Player] MEDIA_STATUS:', event.mediaStatus?.playerState);
+    });
+
     // ===================
     // WebRTC via MediaMTX WHEP
     // ===================
