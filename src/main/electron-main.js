@@ -35,6 +35,9 @@ const audioSyncManager = require('./audio-sync-manager');
 const autoSyncManager = require('./auto-sync-manager');
 const { setupFirewall } = require('./firewall-setup');
 const dependencyInstaller = require('./dependency-installer');
+const audioRouting = require('./audio-routing');  // Universal audio device control (SoundVolumeView)
+const pcSpeakerDelay = require('./pc-speaker-delay');  // APO delay config writer
+const hlsDirectServer = require('./hls-direct-server');  // Direct HLS bypass for TVs (avoids MediaMTX LL-HLS 7-segment requirement)
 
 // Keep global references
 let mainWindow = null;
@@ -95,13 +98,12 @@ const DISABLE_CLOUDFLARE = true;
 // ===================
 // Cast Receiver App IDs
 // ===================
-// Two receivers registered in Cast SDK Console:
+// Two receivers registered in Cast SDK Console (cast.google.com/publish):
 // - AUDIO_APP_ID: Lean audio-only receiver for Nest speakers and groups (~260 lines)
-// - VISUAL_APP_ID: Full receiver with ambient videos for TVs/Shields
-// TEMP: Using VISUAL receiver for ALL devices until AUDIO receiver propagates
-// const AUDIO_APP_ID = '4B876246';   // PC Nest Speaker Audio (lean, no visuals) - FAILING
-const AUDIO_APP_ID = 'FCAA4619';     // TEMP: Use visual receiver for testing
-const VISUAL_APP_ID = 'FCAA4619';  // PC Nest Speaker (visual, ambient videos)
+// - VISUAL_APP_ID: Full receiver with ambient videos for TVs
+// Both MUST be published for all Cast devices to work!
+const AUDIO_APP_ID = '4B876246';   // PC Nest Speaker Audio (lean, no visuals)
+const VISUAL_APP_ID = 'FCAA4619';  // PC Nest Speaker Visual (ambient videos)
 
 /**
  * Determine which Cast receiver App ID to use based on device type.
@@ -477,6 +479,26 @@ function cleanup() {
   usageTracker.stopTracking(); // Stop tracking usage time
   volumeSync.stopMonitoring(); // Stop Windows volume sync
 
+  // Reset PC audio mode
+  if (pcAudioEnabled) {
+    pcAudioEnabled = false;
+    volumeSync.setPCSpeakerDevice(null);
+    // Disable "Listen to this device" to restore normal audio routing
+    audioRouting.disablePCSpeakersMode().catch(() => {});
+  }
+
+  // Restore original Windows audio output device (SYNC to ensure it completes before exit)
+  try {
+    const result = audioRouting.restoreOriginalDeviceSync();
+    if (result.success) {
+      sendLog(`Restored original audio output device: ${result.device}`);
+    } else {
+      sendLog(`Could not restore audio device: ${result.error}`, 'warning');
+    }
+  } catch (e) {
+    sendLog(`Audio restore failed: ${e.message}`, 'warning');
+  }
+
   // Reset APO sync delay to 0 (so PC speakers have no delay when app is closed)
   try {
     audioSyncManager.cleanup(); // This sets delay to 0
@@ -487,28 +509,25 @@ function cleanup() {
 
   // CRITICAL: Disconnect Cast devices FIRST (before killing processes)
   // This ensures all Cast devices (TVs, speakers) properly stop playing
+  // MUST use sync call - async daemon calls won't complete before app exits!
   if (currentConnectedSpeakers.length > 0) {
     sendLog(`Disconnecting ${currentConnectedSpeakers.length} speaker(s)...`);
     for (const speaker of currentConnectedSpeakers) {
       try {
         sendLog(`Disconnecting "${speaker.name}"...`);
-        if (daemonManager.isDaemonRunning()) {
-          // Use daemon for instant disconnect (don't await - cleanup should be fast)
-          daemonManager.disconnectSpeaker(speaker.name).catch(() => {});
-        } else {
-          // Fallback: spawn Python process to stop (sync call for cleanup)
-          try {
-            const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
-            const scriptPath = path.join(__dirname, 'cast-helper.py');
-            execSync(`${pythonPath} "${scriptPath}" stop "${speaker.name}"`, {
-              timeout: 5000,
-              windowsHide: true,
-              stdio: 'ignore'
-            });
-          } catch (e) {
-            // Ignore errors - best effort disconnect
-          }
-        }
+        // ALWAYS use sync Python call for cleanup - daemon async won't complete before exit!
+        const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+        const scriptPath = path.join(__dirname, 'cast-helper.py');
+        // Use stop-fast if we have IP (faster), otherwise stop (slower but works)
+        const stopCmd = speaker.ip
+          ? `${pythonPath} "${scriptPath}" stop-fast "${speaker.name}" "${speaker.ip}"`
+          : `${pythonPath} "${scriptPath}" stop "${speaker.name}"`;
+        execSync(stopCmd, {
+          timeout: 5000,
+          windowsHide: true,
+          stdio: 'ignore'
+        });
+        sendLog(`Disconnected "${speaker.name}"`);
       } catch (e) {
         sendLog(`Failed to disconnect "${speaker.name}": ${e.message}`, 'warning');
       }
@@ -566,6 +585,12 @@ function cleanup() {
     // Process may already be dead
   }
 
+  // Stop direct HLS server (used for TV streaming bypass)
+  if (hlsDirectServer.isRunning()) {
+    sendLog('Stopping direct HLS server...');
+    hlsDirectServer.stop();
+  }
+
   // Stop localtunnel
   if (localTunnelProcess) {
     sendLog('Stopping localtunnel...');
@@ -578,14 +603,8 @@ function cleanup() {
     tunnelUrl = null;
   }
 
-  // Restore original Windows audio device
-  try {
-    audioDeviceManager.restoreOriginalDevice().catch(() => {
-      // Ignore errors on cleanup
-    });
-  } catch (e) {
-    // Ignore errors on cleanup
-  }
+  // Note: audioRouting.restoreOriginalDeviceSync() already called earlier in cleanup
+  // audioDeviceManager is legacy - don't call its restore to avoid conflicts
 
   // CRITICAL: Disable "Listen to this device" to prevent audio routing issues
   // This ensures PC audio returns to normal when app closes
@@ -615,9 +634,8 @@ async function checkAllDependencies() {
     if (!audioStreamer) audioStreamer = new AudioStreamer();
     const devices = await audioStreamer.getAudioDevices();
 
-    // VB-CABLE is REQUIRED - check for CABLE Output (capture device)
+    // VB-CABLE is REQUIRED - check for VB-Audio specifically (not VoiceMeeter's CABLE 16, etc.)
     deps.vbcable = devices.some(d =>
-      d.toLowerCase().includes('cable output') ||
       d.toLowerCase().includes('vb-audio virtual cable')
     );
 
@@ -1001,6 +1019,29 @@ async function preStartWebRTCPipeline() {
   sendLog('Pre-starting WebRTC pipeline in background...');
 
   try {
+    // Save the user's current default audio device BEFORE we do anything
+    // This will be restored when the app exits
+    await audioRouting.saveOriginalDevice();
+
+    // CRITICAL: Switch Windows audio to VB-Cable Input so audio flows through the virtual cable
+    // FFmpeg captures from CABLE Output, so Windows must render to CABLE Input
+    const vbCableInput = await audioRouting.findVirtualDevice();
+    if (vbCableInput) {
+      const deviceName = vbCableInput.name || vbCableInput;
+      const switchResult = await audioRouting.setDefaultDevice(deviceName);
+      if (switchResult.success) {
+        sendLog(`[Background] Windows audio switched to: ${deviceName}`);
+        // Notify renderer to refresh audio output list (pill should show VB-Cable as active)
+        if (mainWindow && mainWindow.webContents) {
+          mainWindow.webContents.send('audio-device-changed', deviceName);
+        }
+      } else {
+        sendLog(`[Background] WARNING: Failed to switch to VB-Cable: ${switchResult.error}`, 'warning');
+      }
+    } else {
+      sendLog('[Background] WARNING: VB-Cable Input not found - audio may not stream!', 'warning');
+    }
+
     // Find the best audio device
     if (!audioStreamer) {
       audioStreamer = new AudioStreamer();
@@ -1009,8 +1050,12 @@ async function preStartWebRTCPipeline() {
     const devices = await audioStreamer.getAudioDevices();
     let audioDevice = 'CABLE Output (VB-Audio Virtual Cable)';
 
-    // Prefer VB-CABLE (REQUIRED for PC+Speakers mode), fallback to virtual-audio-capturer
-    const vbDevice = devices.find(d => d.toLowerCase().includes('cable output'));
+    // Prefer standard VB-CABLE (not 16ch variant or VoiceMeeter's CABLE 16)
+    // First try non-16ch, then fallback to any VB-Audio output
+    const vbDevice = devices.find(d => {
+      const lower = d.toLowerCase();
+      return lower.includes('vb-audio') && lower.includes('output') && !lower.includes('16');
+    }) || devices.find(d => d.toLowerCase().includes('vb-audio') && d.toLowerCase().includes('output'));
     if (vbDevice) {
       audioDevice = vbDevice;
     } else {
@@ -1145,8 +1190,8 @@ ipcMain.handle('discover-devices', async () => {
 // Start streaming to a speaker
 ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, streamingMode = 'http') => {
   try {
-    // Check if trial has expired
-    if (usageTracker.isTrialExpired()) {
+    // Check if trial has expired (bypass in dev mode)
+    if (app.isPackaged && usageTracker.isTrialExpired()) {
       const usage = usageTracker.getUsage();
       return {
         success: false,
@@ -1158,6 +1203,13 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
     sendLog(`Starting ${streamingMode} stream to "${speakerName}"...`);
     currentStreamingMode = streamingMode;
+
+    // Stop direct HLS server if running (from previous TV streaming)
+    // This prevents TV from auto-picking up HLS stream when we're streaming to speakers
+    if (hlsDirectServer.isRunning()) {
+      sendLog('Stopping previous HLS server (switching from TV to speaker)...');
+      hlsDirectServer.stop();
+    }
 
     // Debug: Log discovered speakers and currently connected
     const targetSpeaker = discoveredSpeakers.find(s => s.name === speakerName);
@@ -1241,6 +1293,10 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
               } else {
                 runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
               }
+              // Also set PC speaker volume if PC audio mode is on
+              if (pcAudioEnabled) {
+                volumeSync.setPCSpeakerVolume(volume).catch(() => {});
+              }
             }
           );
 
@@ -1256,9 +1312,13 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
             }).catch(() => {});
           }
 
-          // Start auto-sync if enabled (monitors network and adjusts delay)
-          if (autoSyncEnabled && speaker?.ip) {
+          // Start auto-sync if PC speaker mode is ON (they're coupled)
+          if ((autoSyncEnabled || pcAudioEnabled) && speaker?.ip) {
+            autoSyncEnabled = true; // Ensure flag is set
             autoSyncManager.start({ name: speaker.name, ip: speaker.ip });
+            // Set baseline from current delay - CRITICAL for auto-sync to work!
+            await autoSyncManager.setBaseline();
+            sendLog(`Auto-sync monitoring "${speaker.name}" for sync drift`);
           }
         }
 
@@ -1301,13 +1361,16 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         const devices = await audioStreamer.getAudioDevices();
         sendLog(`Available DirectShow audio devices: ${devices.join(', ')}`);
 
-        // Prefer VB-CABLE (REQUIRED for PC+Speakers mode)
-        const vbDevice = devices.find(d => d.toLowerCase().includes('cable output'));
+        // Prefer standard VB-CABLE (not 16ch variant or VoiceMeeter's CABLE 16)
+        const vbDevice = devices.find(d => {
+          const lower = d.toLowerCase();
+          return lower.includes('vb-audio') && lower.includes('output') && !lower.includes('16');
+        }) || devices.find(d => d.toLowerCase().includes('vb-audio') && d.toLowerCase().includes('output'));
         if (vbDevice) {
           audioDeviceName = vbDevice;
           sendLog(`Found VB-CABLE: "${audioDeviceName}"`);
         } else {
-          sendLog('[WARNING] VB-CABLE not found! PC+Speakers mode will NOT work.', 'warning');
+          sendLog('[WARNING] VB-CABLE (VB-Audio Virtual Cable) not found! PC+Speakers mode will NOT work.', 'warning');
           // Fallback to virtual-audio-capturer (Cast Only mode will work)
           const vacDevice = devices.find(d =>
             d.toLowerCase().includes('virtual-audio-capturer') ||
@@ -1355,102 +1418,78 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
       let result;
 
-      // TVs: Try Visual receiver first (for ambient videos), fall back to HLS
-      // Many modern TVs (Chromecast with Google TV, Android TV) support custom receivers!
-      if (isTv && !isShield) {
+      // TVs (including NVIDIA Shield): Use HLS with Visual receiver (WebRTC doesn't work on TVs)
+      // ChromeCast/TVs don't support WebRTC in receivers - only HLS/DASH/MP4
+      // BYPASS: Use direct FFmpeg HLS output to avoid MediaMTX's LL-HLS 7-segment requirement
+      if (isTv) {
         const tvVisualsEnabled = settingsManager.getSetting('tvVisualsEnabled') !== false; // Default ON
-        sendLog(`📺 Detected TV device: "${speakerName}" (${speakerModel})`, 'info');
+        const deviceIcon = isShield ? '🎮' : '📺';
+        const deviceType = isShield ? 'NVIDIA Shield' : 'TV';
+        sendLog(`${deviceIcon} Detected ${deviceType}: "${speakerName}" (${speakerModel})`, 'info');
 
-        // FIRST: Try Visual receiver with WebRTC (for ambient videos)
-        if (tvVisualsEnabled) {
-          sendLog(`📺 Trying Visual receiver for ambient videos...`);
+        // TVs don't support WebRTC in Cast receivers - use HLS
+        // Visual receiver now supports HLS with ambient videos!
+        const useVisualReceiver = tvVisualsEnabled;
+        const receiverMode = useVisualReceiver ? 'Visual receiver (ambient videos)' : 'Default Media Receiver';
+        sendLog(`${deviceIcon} Using direct HLS with ${receiverMode} (bypassing MediaMTX LL-HLS)...`);
 
-          // FFmpeg should already be running with Opus (started above)
-          // Try launching Visual receiver
-          const tvAppId = VISUAL_APP_ID;
-          const tvArgs = ['webrtc-launch', speakerName, webrtcUrl];
-          if (speakerIp) tvArgs.push(speakerIp);
-          tvArgs.push('pcaudio');
-          tvArgs.push(tvAppId);
-
-          const visualResult = await runPython(tvArgs);
-
-          if (visualResult.success) {
-            sendLog(`📺 Visual receiver launched! Ambient videos enabled.`, 'success');
-            trayManager.updateTrayState(true);
-            usageTracker.startTracking();
-
-            // Track connected speaker for volume sync
-            currentConnectedSpeakers = [{ name: speaker.name, ip: speaker.ip }];
-
-            // Start Windows volume sync
-            volumeSync.startMonitoring(
-              currentConnectedSpeakers,
-              (volume) => {
-                if (settingsManager.getSetting('volumeBoost')) return;
-                if (daemonManager.isDaemonRunning()) {
-                  daemonManager.setVolumeFast(speaker.name, volume / 100, speaker.ip || null).catch(() => {});
-                } else {
-                  runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
-                }
-              }
-            );
-
-            // Start auto-sync if enabled
-            if (autoSyncEnabled && speaker?.ip) {
-              autoSyncManager.start({ name: speaker.name, ip: speaker.ip });
-            }
-
-            return { success: true, mode: 'webrtc-visual', url: webrtcUrl };
-          }
-
-          // Visual receiver failed - fall back to HLS
-          sendLog(`📺 Visual receiver failed (${visualResult.error || 'unknown'}), falling back to HLS...`, 'warning');
-        } else {
-          sendLog(`📺 Ambient visuals disabled, using HLS directly...`);
-        }
-
-        // FALLBACK: HLS streaming (no ambient videos, but works on all TVs)
-        sendLog(`📺 Using HLS streaming (Default Media Receiver)...`);
-
-        // CRITICAL: HLS requires AAC codec, not Opus!
-        // FFmpeg was started with Opus for WebRTC - restart with AAC for TV
+        // Kill any existing FFmpeg process
         if (ffmpegWebrtcProcess) {
-          sendLog('📺 Restarting FFmpeg with AAC codec for HLS compatibility...');
+          sendLog('📺 Stopping previous FFmpeg...');
           try {
             ffmpegWebrtcProcess.kill('SIGTERM');
           } catch (e) {}
           ffmpegWebrtcProcess = null;
-          await new Promise(r => setTimeout(r, 500)); // Wait for clean shutdown
+          await new Promise(r => setTimeout(r, 500));
         }
 
-        // Start FFmpeg with AAC codec (HLS compatible)
+        // Start direct HLS server (bypasses MediaMTX's LL-HLS segment requirements)
+        const hlsServer = hlsDirectServer.start();
+        const hlsOutputDir = hlsDirectServer.getOutputDir();
+        sendLog(`📺 Direct HLS server started on port ${hlsServer.port}`);
+
+        // Start FFmpeg with DIRECT HLS output (not via RTSP→MediaMTX)
+        // This completely bypasses MediaMTX for TV streaming
         const ffmpegPath = getFFmpegPath();
         const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
         const boostLevel = volumeBoostEnabled ? 1.25 : 1.03;
 
-        // Get audio device
+        // Get audio device - prefer standard VB-Audio (not 16ch or VoiceMeeter)
         if (!audioStreamer) audioStreamer = new AudioStreamer();
         const tvDevices = await audioStreamer.getAudioDevices();
-        const tvVbDevice = tvDevices.find(d => d.toLowerCase().includes('cable output'));
+        const tvVbDevice = tvDevices.find(d => {
+          const lower = d.toLowerCase();
+          return lower.includes('vb-audio') && lower.includes('output') && !lower.includes('16');
+        }) || tvDevices.find(d => d.toLowerCase().includes('vb-audio') && d.toLowerCase().includes('output'));
         const tvAudioDevice = tvVbDevice || 'CABLE Output (VB-Audio Virtual Cable)';
         sendLog(`📺 Audio device: ${tvAudioDevice}`);
 
+        const hlsOutputPath = path.join(hlsOutputDir, 'stream.m3u8');
+
+        // FFmpeg direct HLS output - bypasses MediaMTX entirely for TVs
+        // Settings tuned for TV playback (not ultra-low-latency like speakers)
         const ffmpegArgs = [
           '-hide_banner', '-stats',
+          // Input: DirectShow audio capture
           '-f', 'dshow',
           '-i', `audio=${tvAudioDevice}`,
+          // Audio processing
           '-af', `volume=${boostLevel}`,
-          '-c:a', 'aac',  // AAC for HLS compatibility (NOT Opus!)
+          // AAC codec for HLS compatibility
+          '-c:a', 'aac',
           '-b:a', '128k',
           '-ar', '48000',
           '-ac', '2',
-          '-f', 'rtsp',
-          '-rtsp_transport', 'tcp',
-          'rtsp://localhost:8554/pcaudio'
+          // HLS output settings (NOT going through MediaMTX)
+          '-f', 'hls',
+          '-hls_time', '2',           // 2 second segments
+          '-hls_list_size', '5',      // Keep 5 segments in playlist
+          '-hls_flags', 'delete_segments+append_list',  // Clean up old segments
+          '-hls_segment_filename', path.join(hlsOutputDir, 'segment%03d.ts'),
+          hlsOutputPath
         ];
 
-        sendLog(`📺 FFmpeg: ${ffmpegPath} ${ffmpegArgs.slice(0, 5).join(' ')}...`);
+        sendLog(`📺 FFmpeg direct HLS: ${ffmpegPath} ... -f hls ${hlsOutputPath}`);
         ffmpegWebrtcProcess = spawn(ffmpegPath, ffmpegArgs, {
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true
@@ -1464,20 +1503,23 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           }
         });
 
-        // Wait for FFmpeg to start publishing
-        await new Promise(r => setTimeout(r, 2000));
+        // Wait for FFmpeg to create initial HLS segments
+        sendLog('📺 Waiting for HLS segments to be created...');
+        await new Promise(r => setTimeout(r, 4000)); // HLS needs time to create segments
 
         const localIp = getLocalIp();
-        const hlsUrl = `http://${localIp}:8888/pcaudio/index.m3u8`;
-        sendLog(`📺 HLS URL: ${hlsUrl}`);
+        const hlsUrl = hlsDirectServer.getHlsUrl(localIp);
+        sendLog(`📺 Direct HLS URL: ${hlsUrl}`);
 
-        // Cast HLS to TV using Default Media Receiver (no custom receiver needed)
-        // Args: hls-cast <name> <url> <ip|''> <model>
-        const args = ['hls-cast', speakerName, hlsUrl, speakerIp || '', speakerModel || 'unknown'];
+        // Cast HLS to TV - use Visual receiver for ambient videos or Default Media Receiver
+        // Args: hls-cast <name> <url> <ip|''> <model> <app_id>
+        const hlsReceiverAppId = useVisualReceiver ? VISUAL_APP_ID : 'CC1AD845';
+        const args = ['hls-cast', speakerName, hlsUrl, speakerIp || '', speakerModel || 'unknown', hlsReceiverAppId];
         result = await runPython(args);
 
         if (result.success) {
-          sendLog(`📺 HLS streaming to TV started!`, 'success');
+          const modeDesc = useVisualReceiver ? 'HLS with ambient videos' : 'HLS (Default Media Receiver)';
+          sendLog(`${deviceIcon} Streaming to ${deviceType} started! (${modeDesc})`, 'success');
           trayManager.updateTrayState(true);
           usageTracker.startTracking();
 
@@ -1493,9 +1535,17 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
                 } else {
                   runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
                 }
+                // Also set PC speaker volume if PC audio mode is on
+                if (pcAudioEnabled) {
+                  volumeSync.setPCSpeakerVolume(volume).catch(() => {});
+                }
               }
             );
           }
+
+          // CRITICAL: Add TV to connected speakers so it gets disconnected when switching!
+          currentConnectedSpeakers = [{ name: speakerName, ip: speakerIp }];
+          sendLog(`📺 TV added to connected speakers for proper cleanup on switch`);
 
           return { success: true, mode: 'hls', url: hlsUrl };
         } else {
@@ -1503,11 +1553,7 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         }
       }
 
-      // SHIELD: Treat like a speaker - use WebRTC with custom receiver (supports it!)
-      if (isShield) {
-        sendLog(`🎮 Detected NVIDIA Shield: "${speakerName}" - using WebRTC (supports custom receivers)`, 'info');
-        // Falls through to normal WebRTC handling below
-      }
+      // SHIELD: Now handled above with TVs - uses HLS fallback when Visual receiver fails
 
       if (isGroup) {
         // Cast Groups don't work with custom receivers - only leader plays!
@@ -1547,10 +1593,13 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
           const boostLevel = volumeBoostEnabled ? 1.25 : 1.03;
 
-          // Determine audio device - prefer VB-CABLE
+          // Determine audio device - prefer standard VB-Audio (not 16ch or VoiceMeeter)
           if (!audioStreamer) audioStreamer = new AudioStreamer();
           const availableDevices = await audioStreamer.getAudioDevices();
-          const vbDevice = availableDevices.find(d => d.toLowerCase().includes('cable output'));
+          const vbDevice = availableDevices.find(d => {
+            const lower = d.toLowerCase();
+            return lower.includes('vb-audio') && lower.includes('output') && !lower.includes('16');
+          }) || availableDevices.find(d => d.toLowerCase().includes('vb-audio') && d.toLowerCase().includes('output'));
           const stereoAudioDevice = vbDevice || 'CABLE Output (VB-Audio Virtual Cable)';
           sendLog(`Stereo audio device: ${stereoAudioDevice}`);
 
@@ -1721,7 +1770,7 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
                 return; // Skip sync when boost is on
               }
               sendLog(`[VolumeSync] Windows volume: ${volume}%`);
-              // Set volume on all speakers
+              // Set volume on all Nest speakers
               speakersToSync.forEach(spk => {
                 if (daemonManager.isDaemonRunning()) {
                   daemonManager.setVolumeFast(spk.name, volume / 100, spk.ip || null).catch(() => {});
@@ -1729,6 +1778,10 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
                   runPython(['set-volume-fast', spk.name, (volume / 100).toString(), spk.ip || '']).catch(() => {});
                 }
               });
+              // Also set PC speaker volume if PC audio mode is on
+              if (pcAudioEnabled) {
+                volumeSync.setPCSpeakerVolume(volume).catch(() => {});
+              }
             }
           );
 
@@ -1746,11 +1799,14 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
             }).catch(() => {});
           }
 
-          // Start auto-sync if enabled (monitors network and adjusts delay)
+          // Start auto-sync if PC speaker mode is ON (they're coupled)
           // Use first speaker with IP for monitoring
           const speakerForSync = speakersToSync.find(s => s.ip) || speaker;
-          if (autoSyncEnabled && speakerForSync?.ip) {
+          if ((autoSyncEnabled || pcAudioEnabled) && speakerForSync?.ip) {
+            autoSyncEnabled = true;
             autoSyncManager.start({ name: speakerForSync.name, ip: speakerForSync.ip });
+            await autoSyncManager.setBaseline();
+            sendLog(`Auto-sync monitoring "${speakerForSync.name}" for sync drift`);
           }
         }
 
@@ -1778,10 +1834,13 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           audioStreamer = new AudioStreamer();
         }
 
-        // Determine audio device - prefer VB-CABLE
+        // Determine audio device - prefer standard VB-Audio (not 16ch or VoiceMeeter)
         let fallbackAudioDevice = 'CABLE Output (VB-Audio Virtual Cable)';
         const fbDevices = await audioStreamer.getAudioDevices();
-        const fbVbDevice = fbDevices.find(d => d.toLowerCase().includes('cable output'));
+        const fbVbDevice = fbDevices.find(d => {
+          const lower = d.toLowerCase();
+          return lower.includes('vb-audio') && lower.includes('output') && !lower.includes('16');
+        }) || fbDevices.find(d => d.toLowerCase().includes('vb-audio') && d.toLowerCase().includes('output'));
         if (fbVbDevice) fallbackAudioDevice = fbVbDevice;
 
         sendLog(`Audio source: ${fallbackAudioDevice}`);
@@ -1813,6 +1872,10 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
                   daemonManager.setVolumeFast(speaker.name, volume / 100, speaker.ip || null).catch(() => {});
                 } else {
                   runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
+                }
+                // Also set PC speaker volume if PC audio mode is on
+                if (pcAudioEnabled) {
+                  volumeSync.setPCSpeakerVolume(volume).catch(() => {});
                 }
               }
             );
@@ -1868,6 +1931,10 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
                     daemonManager.setVolumeFast(speaker.name, volume / 100, speaker.ip || null).catch(() => {});
                   } else {
                     runPython(['set-volume-fast', speaker.name, (volume / 100).toString(), speaker.ip || '']).catch(() => {});
+                  }
+                  // Also set PC speaker volume if PC audio mode is on
+                  if (pcAudioEnabled) {
+                    volumeSync.setPCSpeakerVolume(volume).catch(() => {});
                   }
                 }
               );
@@ -1958,6 +2025,12 @@ ipcMain.handle('stop-streaming', async (event, speakerName) => {
     // Stop auto-sync monitoring (no longer streaming to any speaker)
     autoSyncManager.stop();
 
+    // Stop direct HLS server if running (used for TV streaming)
+    if (hlsDirectServer.isRunning()) {
+      sendLog('Stopping direct HLS server...');
+      hlsDirectServer.stop();
+    }
+
     return { success: true };
   } catch (error) {
     sendLog(`Stop error: ${error.message}`, 'error');
@@ -1983,10 +2056,13 @@ ipcMain.handle('restart-ffmpeg', async () => {
       return { success: false, error: 'Not streaming' };
     }
 
-    // Determine audio device - prefer VB-CABLE
+    // Determine audio device - prefer standard VB-Audio (not 16ch or VoiceMeeter)
     if (!audioStreamer) audioStreamer = new AudioStreamer();
     const restartDevices = await audioStreamer.getAudioDevices();
-    const restartVbDevice = restartDevices.find(d => d.toLowerCase().includes('cable output'));
+    const restartVbDevice = restartDevices.find(d => {
+      const lower = d.toLowerCase();
+      return lower.includes('vb-audio') && lower.includes('output') && !lower.includes('16');
+    }) || restartDevices.find(d => d.toLowerCase().includes('vb-audio') && d.toLowerCase().includes('output'));
     const audioDevice = restartVbDevice || 'CABLE Output (VB-Audio Virtual Cable)';
     sendLog('Restarting FFmpeg with new settings...');
 
@@ -2236,6 +2312,13 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
   try {
     sendLog(`Starting stereo separation: L="${leftSpeaker.name}", R="${rightSpeaker.name}"`);
 
+    // Save stereo speakers for auto-connect on next startup
+    settingsManager.setSetting('lastStereoSpeakers', {
+      left: leftSpeaker,
+      right: rightSpeaker
+    });
+    settingsManager.setSetting('lastMode', 'stereo');
+
     // DISCONNECT any currently connected speakers BEFORE connecting new L/R pair
     if (currentConnectedSpeakers.length > 0) {
       sendLog(`Disconnecting ${currentConnectedSpeakers.length} previous speaker(s)...`);
@@ -2300,10 +2383,13 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
     const boostLevel = volumeBoostEnabled ? 1.25 : 1.03; // 3% hidden, 25% with boost
 
-    // Determine audio device - prefer VB-CABLE
+    // Determine audio device - prefer standard VB-Audio (not 16ch or VoiceMeeter)
     if (!audioStreamer) audioStreamer = new AudioStreamer();
     const stereoDevices2 = await audioStreamer.getAudioDevices();
-    const stereoVbDevice2 = stereoDevices2.find(d => d.toLowerCase().includes('cable output'));
+    const stereoVbDevice2 = stereoDevices2.find(d => {
+      const lower = d.toLowerCase();
+      return lower.includes('vb-audio') && lower.includes('output') && !lower.includes('16');
+    }) || stereoDevices2.find(d => d.toLowerCase().includes('vb-audio') && d.toLowerCase().includes('output'));
     const stereoDevice2 = stereoVbDevice2 || 'CABLE Output (VB-Audio Virtual Cable)';
     sendLog(`Stereo audio device: ${stereoDevice2}`);
 
@@ -2434,6 +2520,10 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
           runPython(['set-volume-fast', leftSpeaker.name, volumeStr, leftSpeaker.ip || '']).catch(() => {});
           runPython(['set-volume-fast', rightSpeaker.name, volumeStr, rightSpeaker.ip || '']).catch(() => {});
         }
+        // Also set PC speaker volume if PC audio mode is on
+        if (pcAudioEnabled) {
+          volumeSync.setPCSpeakerVolume(volume).catch(() => {});
+        }
       }
     );
 
@@ -2451,6 +2541,15 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
           runPython(['set-volume-fast', rightSpeaker.name, volumeStr, rightSpeaker.ip || '']).catch(() => {});
         }
       }).catch(() => {});
+    }
+
+    // Start auto-sync if PC speaker mode is ON (they're coupled)
+    // Use left speaker for latency monitoring
+    if ((autoSyncEnabled || pcAudioEnabled) && leftSpeaker?.ip) {
+      autoSyncEnabled = true;
+      autoSyncManager.start({ name: leftSpeaker.name, ip: leftSpeaker.ip });
+      await autoSyncManager.setBaseline();
+      sendLog(`Auto-sync monitoring "${leftSpeaker.name}" for sync drift (stereo mode)`);
     }
 
     // Reset the switching flag - stereo is now fully set up
@@ -2550,8 +2649,8 @@ let tvStreamDevice = null;
 
 ipcMain.handle('start-tv-streaming', async (event, deviceName, deviceIp = null) => {
   try {
-    // Check if trial has expired
-    if (usageTracker.isTrialExpired()) {
+    // Check if trial has expired (bypass in dev mode)
+    if (app.isPackaged && usageTracker.isTrialExpired()) {
       const usage = usageTracker.getUsage();
       return {
         success: false,
@@ -2580,10 +2679,13 @@ ipcMain.handle('start-tv-streaming', async (event, deviceName, deviceIp = null) 
       const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
       const boostLevel = volumeBoostEnabled ? 1.25 : 1.03;
 
-      // Determine audio device - prefer VB-CABLE
+      // Determine audio device - prefer standard VB-Audio (not 16ch or VoiceMeeter)
       if (!audioStreamer) audioStreamer = new AudioStreamer();
       const hlsDevices = await audioStreamer.getAudioDevices();
-      const hlsVbDevice = hlsDevices.find(d => d.toLowerCase().includes('cable output'));
+      const hlsVbDevice = hlsDevices.find(d => {
+        const lower = d.toLowerCase();
+        return lower.includes('vb-audio') && lower.includes('output') && !lower.includes('16');
+      }) || hlsDevices.find(d => d.toLowerCase().includes('vb-audio') && d.toLowerCase().includes('output'));
       const hlsAudioDevice = hlsVbDevice || 'CABLE Output (VB-Audio Virtual Cable)';
       sendLog(`HLS audio device: ${hlsAudioDevice}`);
 
@@ -2701,6 +2803,43 @@ ipcMain.handle('get-tv-streaming-status', () => {
 });
 
 // ========================================
+// URL Casting (user provides URL, TV plays it directly)
+// ========================================
+ipcMain.handle('cast-url', async (event, deviceName, url, contentType = null, deviceIp = null) => {
+  try {
+    sendLog(`Casting URL to ${deviceName}...`);
+    sendLog(`URL: ${url}`);
+
+    // Validate URL format
+    if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+      sendLog('Invalid URL - must start with http:// or https://', 'error');
+      return { success: false, error: 'Invalid URL format. Must start with http:// or https://' };
+    }
+
+    // Call Python cast-url command
+    const args = ['cast-url', deviceName, url];
+    if (contentType) args.push(contentType);
+    else args.push('');  // Empty string for auto-detect
+    if (deviceIp) args.push(deviceIp);
+
+    const result = await runPython(args);
+
+    if (result.success) {
+      sendLog(`URL casting started on ${deviceName}!`, 'success');
+      sendLog(`Content-Type: ${result.content_type}`);
+    } else {
+      sendLog(`URL casting failed: ${result.error}`, 'error');
+    }
+
+    return result;
+
+  } catch (error) {
+    sendLog(`Cast URL failed: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+// ========================================
 // Settings management
 // ========================================
 ipcMain.handle('get-settings', () => {
@@ -2733,26 +2872,78 @@ ipcMain.handle('update-settings', (event, updates) => {
 // OFF: Disable Listen, audio only goes to Nest speakers
 ipcMain.handle('toggle-pc-audio', async (event, enabled) => {
   console.log(`[Main] PC Audio toggle: ${enabled ? 'ON' : 'OFF'}`);
-  const audioRouting = require('./audio-routing.js');
-  const pcSpeakerDelay = require('./pc-speaker-delay.js');
 
   try {
     if (enabled) {
       // Enable PC speakers (Listen to this device + APO delay)
       const result = await audioRouting.enablePCSpeakersMode();
       if (result.success) {
+        pcAudioEnabled = true;  // Track that PC audio is on
         sendLog(`PC audio enabled: ${result.device || 'PC Speakers'}`, 'success');
+
+        // Set PC speaker device for volume control
+        if (result.device) {
+          volumeSync.setPCSpeakerDevice(result.device);
+          // Set PC speaker to current Windows volume immediately
+          volumeSync.getWindowsVolume().then((volume) => {
+            volumeSync.setPCSpeakerVolume(volume).catch(() => {});
+          }).catch(() => {});
+        }
+
         // Restore saved APO delay for sync
+        // Auto-correct OLD high delays (>300ms) from before latency optimization
+        // NEW slider max is 300ms, so values <= 300 are intentional user settings
         const settings = await settingsManager.loadSettings();
+        const OLD_STREAMING_THRESHOLD = 300; // Values above this were from old slow streaming
+        const CORRECTED_DELAY = 100; // Reset to safe middle value for optimized WebRTC
         if (settings.syncDelayMs > 0) {
-          await pcSpeakerDelay.setDelay(settings.syncDelayMs);
+          let actualDelay = settings.syncDelayMs;
+          // Only auto-correct values that are clearly from old streaming (> 300ms)
+          if (settings.syncDelayMs > OLD_STREAMING_THRESHOLD) {
+            actualDelay = CORRECTED_DELAY;
+            sendLog(`[Sync] Auto-corrected delay: ${settings.syncDelayMs}ms → ${actualDelay}ms (WebRTC optimized)`, 'info');
+            settingsManager.setSetting('syncDelayMs', actualDelay);
+            // Notify renderer to update UI slider
+            if (mainWindow && mainWindow.webContents) {
+              mainWindow.webContents.send('sync-delay-corrected', actualDelay);
+            }
+          }
+          await pcSpeakerDelay.setDelay(actualDelay);
+          // CRITICAL: Also update audioSyncManager's internal state for auto-sync baseline!
+          // Without this, auto-sync thinks delay is 0 and doesn't adjust properly
+          await audioSyncManager.setDelay(actualDelay);
+        }
+
+        // AUTO-SYNC: PC speaker and sync are coupled - when PC speaker is ON, auto-sync starts
+        if (currentConnectedSpeakers.length > 0) {
+          const speakerForSync = currentConnectedSpeakers[0]; // Use first speaker for latency monitoring
+          if (speakerForSync?.ip) {
+            autoSyncEnabled = true;
+            settingsManager.setSetting('autoSyncEnabled', true);
+            autoSyncManager.start(speakerForSync);
+            await autoSyncManager.setBaseline();
+            sendLog(`Auto-sync started for "${speakerForSync.name}" (coupled with PC speaker mode)`);
+          }
         }
       }
       return { success: result.success, device: result.device, error: result.error };
     } else {
       // Disable PC speakers (turn off Listen, clear APO delay)
+      pcAudioEnabled = false;  // Track that PC audio is off
+      volumeSync.setPCSpeakerDevice(null);  // Clear PC speaker volume control
       const result = await audioRouting.disablePCSpeakersMode();
       await pcSpeakerDelay.clearDelay().catch(() => {});
+      // Also clear audioSyncManager state
+      await audioSyncManager.setDelay(0).catch(() => {});
+
+      // AUTO-SYNC: Stop when PC speaker is disabled (they're coupled)
+      if (autoSyncEnabled) {
+        autoSyncEnabled = false;
+        settingsManager.setSetting('autoSyncEnabled', false);
+        autoSyncManager.stop();
+        sendLog(`Auto-sync stopped (PC speaker mode disabled)`);
+      }
+
       if (result.success) {
         sendLog(`PC audio disabled`, 'success');
       }
@@ -2766,6 +2957,7 @@ ipcMain.handle('toggle-pc-audio', async (event, enabled) => {
 
 ipcMain.handle('save-last-speaker', (event, speaker) => {
   settingsManager.saveLastSpeaker(speaker);
+  settingsManager.setSetting('lastMode', 'single');
   return { success: true };
 });
 
@@ -2817,6 +3009,13 @@ ipcMain.handle('set-sync-delay', async (event, delayMs) => {
       // Save to settings
       settingsManager.setSetting('syncDelayMs', delayMs);
 
+      // CRITICAL: Update auto-sync baseline to prevent it from "correcting" manual changes
+      // This ensures auto-sync adjusts relative to user's new chosen delay
+      if (autoSyncEnabled) {
+        await autoSyncManager.updateBaseline(delayMs);
+        console.log(`[Main] Auto-sync baseline updated to ${delayMs}ms`);
+      }
+
       // Verify the file was written correctly
       const fs = require('fs');
       const apoConfigPath = 'C:\\Program Files\\EqualizerAPO\\config\\pcnestspeaker-sync.txt';
@@ -2839,6 +3038,23 @@ ipcMain.handle('get-sync-delay', () => {
     method: audioSyncManager.getMethod(),
     available: audioSyncManager.isAvailable()
   };
+});
+
+// Calibrate smart default sync delay using ping measurement
+// Returns: { success, delay, rtt, pipelineDelay } or { success: false, error }
+ipcMain.handle('calibrate-smart-default', async () => {
+  try {
+    const result = await autoSyncManager.calibrateSmartDefault();
+    if (result.success) {
+      sendLog(`Smart default: ${result.delay}ms (ping: ${result.rtt}ms + processing: ${result.pipelineDelay}ms)`, 'success');
+      // Save the calibrated delay
+      settingsManager.setSetting('syncDelayMs', result.delay);
+    }
+    return result;
+  } catch (error) {
+    sendLog(`Smart calibration failed: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
 });
 
 // Measure latency from Cast receiver
@@ -2977,20 +3193,23 @@ ipcMain.handle('check-apo-status', async () => {
 });
 
 // ═══════════════════════════════════════════════════════════
-// QUICK AUDIO OUTPUT SWITCHER (via Python pycaw + IPolicyConfig)
+// QUICK AUDIO OUTPUT SWITCHER (via SoundVolumeView for universal support)
 // ═══════════════════════════════════════════════════════════
 
-// Get list of all audio output devices using Python pycaw
+// Get list of all audio output devices using SoundVolumeView (same source as switching)
+// This ensures device names match exactly between listing and switching
 ipcMain.handle('get-audio-outputs', async () => {
   try {
-    sendLog('Getting audio output devices via Python...', 'info');
-    const result = await runPython(['get-audio-outputs']);
-    if (result.success) {
-      return { success: true, devices: result.devices || [] };
-    } else {
-      sendLog(`Failed to list audio outputs: ${result.error}`, 'error');
-      return { success: false, error: result.error, devices: [] };
-    }
+    sendLog('Getting audio output devices...', 'info');
+    const devices = await audioRouting.getRenderDevices();
+
+    // Transform to UI format: { name, isDefault }
+    const uiDevices = devices.map(d => ({
+      name: d.name,  // Use 'name' field for matching (same as setDefaultDevice uses)
+      isDefault: d.isDefault
+    }));
+
+    return { success: true, devices: uiDevices };
   } catch (error) {
     sendLog(`Failed to list audio outputs: ${error.message}`, 'error');
     return { success: false, error: error.message, devices: [] };
@@ -2998,16 +3217,16 @@ ipcMain.handle('get-audio-outputs', async () => {
 });
 
 // Switch to a specific audio output device
-// In PC + Speakers mode: Changes the Listen TARGET (keeps Windows default on Virtual Desktop Audio)
+// Uses audio-routing.js (SoundVolumeView) for universal Windows support
+// In PC + Speakers mode: Changes the Listen TARGET (keeps Windows default on VB-Cable)
 // In Speakers Only mode: Changes the Windows default device
 ipcMain.handle('switch-audio-output', async (event, deviceName) => {
   try {
     if (pcAudioEnabled && virtualCaptureCmdId) {
       // PC Audio enabled: Change Listen TARGET, not Windows default
-      // Windows default stays on Virtual Desktop Audio (for FFmpeg capture)
-      // Listen routes audio from VDA CAPTURE → user-selected speaker
+      // Windows default stays on VB-Cable (for FFmpeg capture)
+      // Listen routes audio from CABLE Output → user-selected speaker
       sendLog(`PC + Speakers: Routing Listen to ${deviceName}`, 'info');
-      const audioRouting = require('./audio-routing.js');
       const result = await audioRouting.enableListenToDeviceWithCmdId(virtualCaptureCmdId, deviceName);
       if (result.success) {
         sendLog(`Listen routed to: ${deviceName}`, 'success');
@@ -3017,9 +3236,10 @@ ipcMain.handle('switch-audio-output', async (event, deviceName) => {
         return { success: false, error: result.error };
       }
     } else {
-      // Speakers Only mode: Change Windows default device
-      sendLog(`Switching audio output to: ${deviceName} (via Python)`, 'info');
-      const result = await runPython(['set-audio-output', deviceName]);
+      // Speakers Only mode: Change Windows default device using SoundVolumeView
+      // This works universally across all Windows setups
+      sendLog(`Switching Windows audio output to: ${deviceName}`, 'info');
+      const result = await audioRouting.setDefaultDevice(deviceName);
       if (result.success) {
         sendLog(`Audio output switched to: ${result.device}`, 'success');
         return { success: true, device: result.device, mode: 'default' };
@@ -3274,35 +3494,45 @@ app.whenReady().then(async () => {
   }, 1000); // Wait 1s for window to load
 
   // Auto-discover speakers and audio devices in background
-  // This populates the UI without user having to click "Discover"
-  setTimeout(() => {
-    autoDiscoverDevices().catch(err => {
-      console.log('[Main] Auto-discovery failed:', err.message);
-    });
-  }, 1500); // Wait 1.5s for window to load
+  // Chain: discover → pipeline → auto-connect (proper sequencing, no race conditions)
+  setTimeout(async () => {
+    try {
+      // Step 1: Discover speakers (can take 4-8 seconds)
+      await autoDiscoverDevices();
 
-  // Start WebRTC pipeline in background after discovery completes
-  // This makes streaming near-instant when user clicks "Start"
-  setTimeout(() => {
-    preStartWebRTCPipeline().catch(err => {
-      console.log('[Main] Background pipeline failed:', err.message);
-    });
-  }, 3000); // Wait 3s (after discovery)
+      // Step 2: Start pipeline AFTER discovery completes
+      await preStartWebRTCPipeline().catch(err => {
+        console.log('[Main] Background pipeline failed:', err.message);
+      });
 
-  // Auto-connect to last speaker if enabled (wait for pipeline to be ready)
-  setTimeout(() => {
-    const settings = settingsManager.getAllSettings();
-    if (settings.autoConnect && settings.lastSpeaker) {
-      console.log('[Main] Auto-connecting to last speaker:', settings.lastSpeaker.name);
-      sendLog(`Auto-connecting to ${settings.lastSpeaker.name}...`, 'info');
+      // Step 3: Auto-connect AFTER pipeline is ready
+      const settings = settingsManager.getAllSettings();
+      if (settings.autoConnect) {
+        // Check if stereo mode was last used
+        if (settings.lastMode === 'stereo' && settings.lastStereoSpeakers) {
+          const { left, right } = settings.lastStereoSpeakers;
+          console.log('[Main] Auto-connecting stereo mode: L=' + left.name + ', R=' + right.name);
+          sendLog(`Auto-connecting stereo: L="${left.name}", R="${right.name}"...`, 'info');
 
-      // Auto-start streaming to last speaker
-      // We'll send a message to the renderer to trigger this
-      if (mainWindow && mainWindow.webContents) {
-        mainWindow.webContents.send('auto-connect', settings.lastSpeaker);
+          // Send stereo auto-connect event to renderer
+          if (mainWindow && mainWindow.webContents) {
+            mainWindow.webContents.send('auto-connect-stereo', { left, right });
+          }
+        } else if (settings.lastSpeaker) {
+          // Single speaker mode
+          console.log('[Main] Auto-connecting to last speaker:', settings.lastSpeaker.name);
+          sendLog(`Auto-connecting to ${settings.lastSpeaker.name}...`, 'info');
+
+          // Send to renderer to trigger streaming
+          if (mainWindow && mainWindow.webContents) {
+            mainWindow.webContents.send('auto-connect', settings.lastSpeaker);
+          }
+        }
       }
+    } catch (err) {
+      console.log('[Main] Startup sequence failed:', err.message);
     }
-  }, 5000); // Wait 5s (after pipeline is ready)
+  }, 1500); // Wait 1.5s for window to load, then run sequence
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
