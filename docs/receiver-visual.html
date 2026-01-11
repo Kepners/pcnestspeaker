@@ -137,8 +137,23 @@
       z-index: 10;
     }
 
-    /* Hide default cast player */
-    #player { display: none; }
+    /* Cast media player - hidden for WebRTC, shown for HLS */
+    #player {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0;  /* Behind ambient video */
+    }
+    #player.active {
+      display: block;
+    }
+    /* For HLS mode, hide the video element from cast-media-player */
+    #player.audio-only ::part(video) {
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -373,7 +388,25 @@
 
     function hideDefaultPlayer() {
       const player = document.getElementById('player');
-      if (player) player.style.display = 'none';
+      if (player) {
+        player.classList.remove('active');
+        player.classList.remove('audio-only');
+      }
+    }
+
+    function showDefaultPlayer(audioOnly = true) {
+      const player = document.getElementById('player');
+      if (player) {
+        player.classList.add('active');
+        if (audioOnly) player.classList.add('audio-only');
+      }
+    }
+
+    // Check if URL is HLS format
+    function isHlsUrl(url) {
+      if (!url) return false;
+      return url.toLowerCase().includes('.m3u8') ||
+             url.toLowerCase().includes('mpegurl');
     }
 
     // Transition from splash screen to streaming UI
@@ -637,23 +670,62 @@
             connectToMediaMTX(httpsUrl, streamName);
             return null;
           }
+
+          // *** HLS MODE FOR TVs/SHIELD ***
+          // If URL is HLS (.m3u8), use built-in Cast player with ambient visuals
+          if (isHlsUrl(contentId)) {
+            console.log('[Cast] HLS mode - using built-in player with ambient visuals');
+            console.log('[Cast] HLS URL:', contentId);
+
+            // Show cast-media-player (audio-only mode hides video, shows ambient instead)
+            showDefaultPlayer(true);
+
+            // Start ambient videos
+            startAmbientVideos();
+
+            // Transition UI
+            setTimeout(() => {
+              transitionToStreaming();
+              log('Streaming audio...');
+            }, 1000);
+
+            // Let the LOAD flow through to Cast player
+            if (request.media) {
+              request.media.streamType = cast.framework.messages.StreamType.LIVE;
+              request.autoplay = true;
+              request.currentTime = 0;
+            }
+            return request;
+          }
         }
 
         if (request.media && request.media.customData && request.media.customData.webrtcUrl) {
+          hideDefaultPlayer();
           connectToMediaMTX(request.media.customData.webrtcUrl, request.media.customData.stream || 'pcaudio');
           return null;
         }
 
         if (request.customData && request.customData.webrtcUrl) {
+          hideDefaultPlayer();
           connectToMediaMTX(request.customData.webrtcUrl, request.customData.stream || 'pcaudio');
           return null;
         }
 
+        // Default: assume HLS or other media format
+        console.log('[Cast] Default LOAD - passing to Cast player');
         if (request.media) {
           request.media.streamType = cast.framework.messages.StreamType.LIVE;
           request.autoplay = true;
           request.currentTime = 0;
         }
+
+        // Start ambient videos for any media
+        startAmbientVideos();
+        setTimeout(() => {
+          transitionToStreaming();
+          log('Streaming audio...');
+        }, 1000);
+
         return request;
       }
     );
