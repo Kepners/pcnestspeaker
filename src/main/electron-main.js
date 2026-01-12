@@ -1664,16 +1664,12 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         const hlsUrl = hlsDirectServer.getHlsUrl(localIp);
         sendLog(`📺 Direct HLS URL: ${hlsUrl}`);
 
-        // Cast HLS to TV - use Visual Receiver for branding/splash (Python handles Shield fallback)
+        // Cast HLS to TV - use Visual Receiver for branding/splash
         // Visual Receiver hosted at: https://kepners.github.io/pcnestspeaker/receiver-visual.html
         // Args: hls-cast <name> <url> <ip|''> <model> <app_id>
-        // Note: Shield doesn't support custom receivers - Python will auto-switch to Default Media Receiver
-        const hlsReceiverAppId = VISUAL_APP_ID;  // Request Visual, but Shield gets Default Media Receiver
-        if (isShield) {
-          sendLog(`🎮 Shield detected - will use Default Media Receiver (Visual not supported)`);
-        } else {
-          sendLog(`📺 Using Visual Receiver (${VISUAL_APP_ID}) - splash + ambient photos`);
-        }
+        // Python handles timeout fallback to Default Media Receiver if Visual hangs
+        const hlsReceiverAppId = VISUAL_APP_ID;
+        sendLog(`${deviceIcon} Using Visual Receiver (${VISUAL_APP_ID}) - splash + ambient photos`);
         const args = ['hls-cast', speakerName, hlsUrl, speakerIp || '', speakerModel || 'unknown', hlsReceiverAppId];
         result = await runPython(args);
 

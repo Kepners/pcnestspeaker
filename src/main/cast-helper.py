@@ -1293,30 +1293,51 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None, ap
         # CRITICAL: Shield needs longer timeout when booting from cold (10s too short)
         cast.wait(timeout=30)
 
-        # SHIELD FIX: Visual Receiver hangs on Shield - use Default Media Receiver directly
-        # Custom receivers don't work reliably on Shield - skip straight to DMR
+        # Shield: Try Visual Receiver (user confirmed custom receivers CAN work on Shield)
         is_shield = 'shield' in model
-        if is_shield and receiver_id == VISUAL_APP_ID:
-            print(f"[HLS-TV] Shield detected - using Default Media Receiver (Visual not supported)", file=sys.stderr)
-            receiver_id = DEFAULT_MEDIA_RECEIVER
+        if is_shield:
+            print(f"[HLS-TV] Shield detected - attempting Visual Receiver...", file=sys.stderr)
 
-        # Check standby status and launch receiver
+        # Check standby status and launch receiver with threading-based timeout
         print(f"[HLS-TV] Launching receiver {receiver_id}...", file=sys.stderr)
-        try:
-            # ENSURE CHIME: Quit any existing app first for fresh session
-            try:
-                cast.quit_app()
-                time.sleep(0.5)
-            except:
-                pass
 
-            # Launch receiver with proper timeout handling
-            # Note: pychromecast timeout doesn't always work, so we add explicit check
-            cast.start_app(receiver_id, timeout=30)
-            time.sleep(3)  # Give receiver time to load
-            print(f"[HLS-TV] Receiver {receiver_id} launched!", file=sys.stderr)
-        except Exception as e:
-            print(f"[HLS-TV] Receiver launch failed: {e}", file=sys.stderr)
+        import threading
+        launch_success = [False]
+        launch_error = [None]
+
+        def launch_receiver():
+            try:
+                # ENSURE CHIME: Quit any existing app first for fresh session
+                try:
+                    cast.quit_app()
+                    time.sleep(0.5)
+                except:
+                    pass
+                cast.start_app(receiver_id)
+                time.sleep(2)  # Give receiver time to load
+                launch_success[0] = True
+            except Exception as e:
+                launch_error[0] = e
+
+        # Use thread with timeout to prevent indefinite hang
+        launch_thread = threading.Thread(target=launch_receiver)
+        launch_thread.start()
+        launch_thread.join(timeout=15)  # 15 second timeout for receiver launch
+
+        if launch_thread.is_alive():
+            print(f"[HLS-TV] Receiver launch TIMED OUT after 15s", file=sys.stderr)
+            # Thread is still running (hung) - fall back to Default Media Receiver
+            if receiver_id != DEFAULT_MEDIA_RECEIVER:
+                print(f"[HLS-TV] Falling back to Default Media Receiver...", file=sys.stderr)
+                try:
+                    cast.start_app(DEFAULT_MEDIA_RECEIVER, timeout=10)
+                    receiver_id = DEFAULT_MEDIA_RECEIVER
+                    time.sleep(2)
+                    print(f"[HLS-TV] Fallback to DMR successful!", file=sys.stderr)
+                except Exception as e2:
+                    print(f"[HLS-TV] Fallback also failed: {e2}", file=sys.stderr)
+        elif launch_error[0]:
+            print(f"[HLS-TV] Receiver launch failed: {launch_error[0]}", file=sys.stderr)
             # Fall back to Default Media Receiver if Visual fails
             if receiver_id != DEFAULT_MEDIA_RECEIVER:
                 print(f"[HLS-TV] Falling back to Default Media Receiver...", file=sys.stderr)
@@ -1326,6 +1347,8 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None, ap
                     time.sleep(2)
                 except Exception as e2:
                     print(f"[HLS-TV] Fallback also failed: {e2}", file=sys.stderr)
+        else:
+            print(f"[HLS-TV] Receiver {receiver_id} launched!", file=sys.stderr)
 
         mc = cast.media_controller
 
