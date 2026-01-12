@@ -1313,26 +1313,28 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None, ap
                     time.sleep(0.5)
                 except:
                     pass
-                cast.start_app(receiver_id)
+                # CRITICAL: Shield needs 30s timeout for cold boot (default 10s is too short!)
+                cast.start_app(receiver_id, timeout=30)
                 time.sleep(2)  # Give receiver time to load
                 launch_success[0] = True
             except Exception as e:
                 launch_error[0] = e
 
         # Use thread with timeout to prevent indefinite hang
+        # Timeout is 35s (5s buffer after start_app's 30s timeout)
         launch_thread = threading.Thread(target=launch_receiver)
         launch_thread.start()
-        launch_thread.join(timeout=15)  # 15 second timeout for receiver launch
+        launch_thread.join(timeout=35)
 
         if launch_thread.is_alive():
-            print(f"[HLS-TV] Receiver launch TIMED OUT after 15s", file=sys.stderr)
+            print(f"[HLS-TV] Receiver launch TIMED OUT after 35s (hung)", file=sys.stderr)
             # Thread is still running (hung) - fall back to Default Media Receiver
             if receiver_id != DEFAULT_MEDIA_RECEIVER:
                 print(f"[HLS-TV] Falling back to Default Media Receiver...", file=sys.stderr)
                 try:
-                    cast.start_app(DEFAULT_MEDIA_RECEIVER, timeout=10)
+                    cast.start_app(DEFAULT_MEDIA_RECEIVER, timeout=15)
                     receiver_id = DEFAULT_MEDIA_RECEIVER
-                    time.sleep(2)
+                    time.sleep(3)  # Give DMR more time to stabilize
                     print(f"[HLS-TV] Fallback to DMR successful!", file=sys.stderr)
                 except Exception as e2:
                     print(f"[HLS-TV] Fallback also failed: {e2}", file=sys.stderr)
@@ -1342,13 +1344,14 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None, ap
             if receiver_id != DEFAULT_MEDIA_RECEIVER:
                 print(f"[HLS-TV] Falling back to Default Media Receiver...", file=sys.stderr)
                 try:
-                    cast.start_app(DEFAULT_MEDIA_RECEIVER)
+                    cast.start_app(DEFAULT_MEDIA_RECEIVER, timeout=15)
                     receiver_id = DEFAULT_MEDIA_RECEIVER
-                    time.sleep(2)
+                    time.sleep(3)  # Give DMR more time to stabilize
+                    print(f"[HLS-TV] Fallback to DMR successful!", file=sys.stderr)
                 except Exception as e2:
                     print(f"[HLS-TV] Fallback also failed: {e2}", file=sys.stderr)
         else:
-            print(f"[HLS-TV] Receiver {receiver_id} launched!", file=sys.stderr)
+            print(f"[HLS-TV] Receiver {receiver_id} launched successfully!", file=sys.stderr)
 
         mc = cast.media_controller
 
@@ -1364,13 +1367,43 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None, ap
             autoplay=True,
             current_time=0
         )
-        mc.block_until_active(timeout=30)
+
+        # Wait for media controller to become active
+        try:
+            mc.block_until_active(timeout=30)
+        except Exception as block_err:
+            print(f"[HLS-TV] Warning: block_until_active failed: {block_err}", file=sys.stderr)
+
+        # Check actual media status
+        time.sleep(2)  # Give it a moment to update status
+        status = mc.status
+        print(f"[HLS-TV] Media status after play:", file=sys.stderr)
+        if status:
+            print(f"[HLS-TV]   player_state: {status.player_state}", file=sys.stderr)
+            print(f"[HLS-TV]   content_id: {status.content_id}", file=sys.stderr)
+            if hasattr(status, 'idle_reason'):
+                print(f"[HLS-TV]   idle_reason: {status.idle_reason}", file=sys.stderr)
+        else:
+            print(f"[HLS-TV]   status is None!", file=sys.stderr)
 
         if browser:
             browser.stop_discovery()
 
-        print("[HLS-TV] Playback started!", file=sys.stderr)
-        return {"success": True, "state": "PLAYING", "mode": "hls"}
+        # Verify playback actually started
+        if status and status.player_state == "PLAYING":
+            print("[HLS-TV] Playback CONFIRMED!", file=sys.stderr)
+            return {"success": True, "state": "PLAYING", "mode": "hls"}
+        elif status and status.player_state == "BUFFERING":
+            print("[HLS-TV] Playback buffering (should start soon)...", file=sys.stderr)
+            return {"success": True, "state": "BUFFERING", "mode": "hls"}
+        elif status and status.player_state == "IDLE":
+            idle_reason = getattr(status, 'idle_reason', 'unknown')
+            print(f"[HLS-TV] Playback FAILED - IDLE (reason: {idle_reason})", file=sys.stderr)
+            return {"success": False, "error": f"Playback failed: {idle_reason}", "mode": "hls"}
+        else:
+            state = status.player_state if status else 'unknown'
+            print(f"[HLS-TV] Playback state unknown: {state}", file=sys.stderr)
+            return {"success": True, "state": state, "mode": "hls"}
 
     except Exception as e:
         import traceback

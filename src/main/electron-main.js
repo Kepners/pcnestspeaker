@@ -1673,8 +1673,14 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         const args = ['hls-cast', speakerName, hlsUrl, speakerIp || '', speakerModel || 'unknown', hlsReceiverAppId];
         result = await runPython(args);
 
+        // Log detailed result from Python (helps debug TV streaming issues)
+        sendLog(`📺 HLS cast result: success=${result.success}, state=${result.state || 'N/A'}, mode=${result.mode || 'N/A'}`);
+        if (result.error) {
+          sendLog(`📺 HLS cast error: ${result.error}`, 'warning');
+        }
+
         if (result.success) {
-          const modeDesc = 'HLS (Visual Receiver with splash/ambient)';
+          const modeDesc = `HLS (${result.state || 'started'})`;
           sendLog(`${deviceIcon} Streaming to ${deviceType} started! (${modeDesc})`, 'success');
           trayManager.updateTrayState(true);
           usageTracker.startTracking();
