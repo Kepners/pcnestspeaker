@@ -66,13 +66,20 @@ function getWindowsVolume() {
   });
 }
 
+// Path helper for nircmd in production vs development
+function getNircmdPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'nircmd', 'nircmd.exe')
+    : path.join(__dirname, '..', '..', 'nircmd', 'nircmd.exe');
+}
+
 /**
  * Fallback method using nircmd
  */
 function getWindowsVolumeFallback() {
   return new Promise((resolve, reject) => {
     // Use nircmd to get volume (returns 0-65535)
-    const nircmdPath = path.join(__dirname, '..', '..', 'nircmd', 'nircmd.exe');
+    const nircmdPath = getNircmdPath();
     exec(`"${nircmdPath}" setsysvolume 0`, { windowsHide: true }, (error) => {
       // nircmd doesn't have a get volume command, so we'll poll
       resolve(50); // Default to 50% if we can't get it

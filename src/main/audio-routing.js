@@ -39,11 +39,8 @@ function getAudioctlPath() {
     : path.join(__dirname, '..', '..', 'audioctl', 'audioctl.exe');
 }
 
-// Legacy constants for compatibility (use functions above for production builds)
-const SVV_DIR = path.join(__dirname, '..', '..', 'soundvolumeview');
-const SVV_PATH = path.join(SVV_DIR, 'SoundVolumeView.exe');
-const AUDIOCTL_DIR = path.join(__dirname, '..', '..', 'audioctl');
-const AUDIOCTL_PATH = path.join(AUDIOCTL_DIR, 'audioctl.exe');
+// NOTE: Legacy constants removed - use getSoundVolumeViewPath() and getAudioctlPath() functions
+// These functions handle both dev and production (packaged) paths correctly
 
 // Store original default device for restoration
 let originalDefaultDevice = null;
