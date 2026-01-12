@@ -233,6 +233,21 @@
     <video id="splash-video" autoplay loop muted playsinline>
       <source src="https://kepners.github.io/pcnestspeaker/splash.mp4" type="video/mp4">
     </video>
+    <!-- Fallback logo if video doesn't load -->
+    <svg id="splash-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="display:none;">
+      <defs>
+        <linearGradient id="splashGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#FCBFB7"/>
+          <stop offset="100%" style="stop-color:#A69888"/>
+        </linearGradient>
+      </defs>
+      <!-- Speaker icon -->
+      <rect x="15" y="30" width="25" height="40" rx="4" fill="url(#splashGrad)"/>
+      <path d="M40 30 L60 15 L60 85 L40 70 Z" fill="url(#splashGrad)"/>
+      <!-- Sound waves -->
+      <path d="M68 35 Q80 50 68 65" stroke="#FCBFB7" stroke-width="4" fill="none" opacity="0.8"/>
+      <path d="M76 25 Q95 50 76 75" stroke="#FCBFB7" stroke-width="4" fill="none" opacity="0.5"/>
+    </svg>
     <div id="splash-title">PC NEST SPEAKER</div>
     <div id="splash-subtitle">STREAMING YOUR WORLD</div>
   </div>
@@ -344,16 +359,16 @@
       videoErrorCount = 0; // Reset error count on success
 
       ambientVideo.play().then(() => {
-        console.log('[Ambient] Video playing!');
-        ambientVideo.classList.add('visible');
+        console.log('[Ambient] Video playing (will show after wipe)');
+        // DON'T make visible here - wait for finishTransition() after wipe!
       }).catch(e => {
         console.log('[Ambient] Play blocked:', e.message);
         // Try again with user interaction simulation
         setTimeout(() => {
           ambientVideo.muted = true;
           ambientVideo.play().then(() => {
-            console.log('[Ambient] Video playing (muted retry)');
-            ambientVideo.classList.add('visible');
+            console.log('[Ambient] Video playing (muted retry, will show after wipe)');
+            // DON'T make visible here - wait for finishTransition()!
           }).catch(e2 => {
             console.log('[Ambient] Retry failed:', e2.message);
             loadNextAmbientVideo();
@@ -540,6 +555,10 @@
       hasTransitioned = true;
 
       console.log('[UI] Transition complete - showing ambient videos');
+
+      // NOW make ambient video visible (wipe is complete)
+      const ambientVideo = document.getElementById('ambient-video');
+      if (ambientVideo) ambientVideo.classList.add('visible');
 
       // Show overlay for ambient videos
       const overlay = document.getElementById('overlay');
@@ -869,6 +888,30 @@
     });
 
     log('Waiting for connection...');
+
+    // ===================
+    // SPLASH VIDEO FALLBACK
+    // If splash.mp4 fails to load, show the SVG logo instead
+    // ===================
+    const splashVideo = document.getElementById('splash-video');
+    const splashLogo = document.getElementById('splash-logo');
+
+    if (splashVideo) {
+      splashVideo.addEventListener('error', () => {
+        console.log('[Splash] Video failed to load, showing fallback logo');
+        splashVideo.style.display = 'none';
+        if (splashLogo) splashLogo.style.display = 'block';
+      });
+
+      // Also handle case where video never starts (loadeddata doesn't fire)
+      setTimeout(() => {
+        if (splashVideo.readyState < 2 && splashLogo) {
+          console.log('[Splash] Video not ready after 2s, showing fallback');
+          splashVideo.style.display = 'none';
+          splashLogo.style.display = 'block';
+        }
+      }, 2000);
+    }
   </script>
 </body>
 </html>
