@@ -324,7 +324,7 @@
     let rttSamples = [];
     const RTT_SAMPLE_COUNT = 5;
     const RTT_POLL_INTERVAL = 2000; // 2 seconds
-    const BUFFER_OFFSET_MS = 500; // Estimated buffer delay
+    const BUFFER_OFFSET_MS = 160; // Pipeline: FFmpeg 50ms + Opus 20ms + Jitter 50ms + Decode 10ms + Speaker 30ms
 
     async function measureRTT() {
       if (!peerConnection || peerConnection.connectionState !== 'connected') {
