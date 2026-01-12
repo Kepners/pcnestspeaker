@@ -1525,9 +1525,13 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         // Settings tuned for TV playback (not ultra-low-latency like speakers)
         const ffmpegArgs = [
           '-hide_banner', '-stats',
-          // Input: DirectShow audio capture
+          // Input: DirectShow audio capture with proper buffer settings
+          // CRITICAL: -audio_buffer_size prevents capture issues (default 500ms is too high)
           '-f', 'dshow',
+          '-audio_buffer_size', '100',  // 100ms buffer for stability (TV doesn't need ultra-low)
           '-i', `audio=${tvAudioDevice}`,
+          // Ensure monotonic timestamps under CPU load
+          '-async', '1',
           // Audio processing
           '-af', `volume=${boostLevel}`,
           // AAC codec for HLS compatibility
@@ -1567,16 +1571,23 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
         // IMPROVED: Log ALL FFmpeg HLS output for debugging
         let hlsSegmentCreated = false;
+        let ffmpegStartupLineCount = 0;
         ffmpegWebrtcProcess.stderr.on('data', (data) => {
           const msg = data.toString().trim();
           if (streamStats) streamStats.parseFfmpegOutput(msg);
+
+          // Log FIRST 10 lines to see FFmpeg startup info
+          ffmpegStartupLineCount++;
+          if (ffmpegStartupLineCount <= 10) {
+            sendLog(`[FFmpeg HLS] ${msg.substring(0, 200)}`);
+          }
 
           // Log all HLS-related messages
           if (msg.includes('segment') || msg.includes('.ts') || msg.includes('.m3u8')) {
             sendLog(`[FFmpeg HLS] ${msg}`);
             hlsSegmentCreated = true;
           }
-          if (msg.includes('Error') || msg.includes('error')) {
+          if (msg.includes('Error') || msg.includes('error') || msg.includes('Invalid') || msg.includes('not found')) {
             sendLog(`[FFmpeg HLS ERROR] ${msg}`, 'error');
           }
           // Log input/output info
@@ -1646,6 +1657,13 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           // CRITICAL: Add TV to connected speakers so it gets disconnected when switching!
           currentConnectedSpeakers = [{ name: speakerName, ip: speakerIp }];
           sendLog(`📺 TV added to connected speakers for proper cleanup on switch`);
+
+          // WALL OF SOUND FIX: Re-enable PC speakers if they were on
+          // Switching devices can disrupt "Listen to this device" - ensure it's restored
+          if (pcAudioEnabled) {
+            sendLog(`📺 Restoring Wall of Sound (PC speakers)...`);
+            await audioRouting.enablePCSpeakersMode();
+          }
 
           return { success: true, mode: 'hls', url: hlsUrl };
         } else {
@@ -1912,6 +1930,13 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
             await autoSyncManager.setBaseline();
             sendLog(`Auto-sync monitoring "${speakerForSync.name}" for sync drift`);
           }
+        }
+
+        // WALL OF SOUND FIX: Re-enable PC speakers if they were on
+        // Switching devices can disrupt "Listen to this device" - ensure it's restored
+        if (pcAudioEnabled) {
+          sendLog(`Restoring Wall of Sound (PC speakers)...`);
+          await audioRouting.enablePCSpeakersMode();
         }
 
         return {
