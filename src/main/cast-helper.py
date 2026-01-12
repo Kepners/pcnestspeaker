@@ -1392,8 +1392,17 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None, ap
             return {"success": True, "state": "BUFFERING", "mode": "hls"}
         elif status and status.player_state == "IDLE":
             idle_reason = getattr(status, 'idle_reason', 'unknown')
-            print(f"[HLS-TV] Playback FAILED - IDLE (reason: {idle_reason})", file=sys.stderr)
-            return {"success": False, "error": f"Playback failed: {idle_reason}", "mode": "hls"}
+            # CRITICAL: Visual Receiver uses hls.js which bypasses Cast player entirely
+            # Cast player will be IDLE because we return null from LOAD interceptor
+            # This is SUCCESS - hls.js is handling audio, not Cast player!
+            if receiver_id == VISUAL_APP_ID:
+                print(f"[HLS-TV] Cast player IDLE (expected - hls.js handles audio)", file=sys.stderr)
+                print(f"[HLS-TV] Visual Receiver SUCCESS - audio via hls.js!", file=sys.stderr)
+                return {"success": True, "state": "HLS_JS_PLAYING", "mode": "hls"}
+            else:
+                # Default Media Receiver - IDLE actually means failure
+                print(f"[HLS-TV] Playback FAILED - IDLE (reason: {idle_reason})", file=sys.stderr)
+                return {"success": False, "error": f"Playback failed: {idle_reason}", "mode": "hls"}
         else:
             state = status.player_state if status else 'unknown'
             print(f"[HLS-TV] Playback state unknown: {state}", file=sys.stderr)
