@@ -26,9 +26,11 @@
 
     /* Logo animation */
     #splash-logo {
-      width: 150px;
-      height: 150px;
+      width: 200px;
+      height: 200px;
+      border-radius: 30px;
       animation: pulse 2s ease-in-out infinite;
+      box-shadow: 0 10px 60px rgba(0,0,0,0.4);
     }
     @keyframes pulse {
       0%, 100% { transform: scale(1); opacity: 0.9; }
@@ -229,25 +231,12 @@
 
   <!-- Splash screen - PC NEST SPEAKER BRANDING (5 seconds) -->
   <div id="splash-screen">
-    <!-- Your branded splash video -->
-    <video id="splash-video" autoplay loop muted playsinline>
+    <!-- App logo (PNG) -->
+    <img id="splash-logo" src="https://kepners.github.io/pcnestspeaker/logo.png" alt="PC Nest Speaker" />
+    <!-- Your branded splash video (backup) -->
+    <video id="splash-video" autoplay loop muted playsinline style="display:none;">
       <source src="https://kepners.github.io/pcnestspeaker/splash.mp4" type="video/mp4">
     </video>
-    <!-- Fallback logo if video doesn't load -->
-    <svg id="splash-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="display:none;">
-      <defs>
-        <linearGradient id="splashGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style="stop-color:#FCBFB7"/>
-          <stop offset="100%" style="stop-color:#A69888"/>
-        </linearGradient>
-      </defs>
-      <!-- Speaker icon -->
-      <rect x="15" y="30" width="25" height="40" rx="4" fill="url(#splashGrad)"/>
-      <path d="M40 30 L60 15 L60 85 L40 70 Z" fill="url(#splashGrad)"/>
-      <!-- Sound waves -->
-      <path d="M68 35 Q80 50 68 65" stroke="#FCBFB7" stroke-width="4" fill="none" opacity="0.8"/>
-      <path d="M76 25 Q95 50 76 75" stroke="#FCBFB7" stroke-width="4" fill="none" opacity="0.5"/>
-    </svg>
     <div id="splash-title">PC NEST SPEAKER</div>
     <div id="splash-subtitle">STREAMING YOUR WORLD</div>
   </div>
@@ -889,29 +878,22 @@
 
     log('Waiting for connection...');
 
-    // ===================
-    // SPLASH VIDEO FALLBACK
-    // If splash.mp4 fails to load, show the SVG logo instead
-    // ===================
-    const splashVideo = document.getElementById('splash-video');
+    // Logo image error handler (shows gradient fallback if logo fails)
     const splashLogo = document.getElementById('splash-logo');
-
-    if (splashVideo) {
-      splashVideo.addEventListener('error', () => {
-        console.log('[Splash] Video failed to load, showing fallback logo');
-        splashVideo.style.display = 'none';
-        if (splashLogo) splashLogo.style.display = 'block';
+    if (splashLogo) {
+      splashLogo.addEventListener('error', () => {
+        console.log('[Splash] Logo failed to load');
+        splashLogo.style.display = 'none';
       });
-
-      // Also handle case where video never starts (loadeddata doesn't fire)
-      setTimeout(() => {
-        if (splashVideo.readyState < 2 && splashLogo) {
-          console.log('[Splash] Video not ready after 2s, showing fallback');
-          splashVideo.style.display = 'none';
-          splashLogo.style.display = 'block';
-        }
-      }, 2000);
     }
+
+    // Debug: Log ambient video state periodically
+    setInterval(() => {
+      const av = document.getElementById('ambient-video');
+      if (av && av.src) {
+        console.log(`[Ambient Debug] readyState=${av.readyState}, paused=${av.paused}, currentTime=${av.currentTime.toFixed(1)}, error=${av.error?.message || 'none'}`);
+      }
+    }, 5000);
   </script>
 </body>
 </html>
