@@ -1609,16 +1609,16 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         const hlsUrl = hlsDirectServer.getHlsUrl(localIp);
         sendLog(`📺 Direct HLS URL: ${hlsUrl}`);
 
-        // Cast HLS to TV - FORCE Default Media Receiver for reliability
-        // Visual Receiver has issues with HLS timing - use Default until fixed
+        // Cast HLS to TV - ALWAYS use Custom Visual Receiver for branding/splash
+        // Visual Receiver hosted at: https://kepners.github.io/pcnestspeaker/receiver-visual.html
         // Args: hls-cast <name> <url> <ip|''> <model> <app_id>
-        const hlsReceiverAppId = 'CC1AD845';  // Force Default Media Receiver
-        sendLog(`📺 Using Default Media Receiver (CC1AD845) for reliable HLS playback`);
+        const hlsReceiverAppId = VISUAL_APP_ID;  // Always use Visual Receiver (FCAA4619)
+        sendLog(`📺 Using Visual Receiver (${VISUAL_APP_ID}) - splash + ambient photos`);
         const args = ['hls-cast', speakerName, hlsUrl, speakerIp || '', speakerModel || 'unknown', hlsReceiverAppId];
         result = await runPython(args);
 
         if (result.success) {
-          const modeDesc = 'HLS (Default Media Receiver)';
+          const modeDesc = 'HLS (Visual Receiver with splash/ambient)';
           sendLog(`${deviceIcon} Streaming to ${deviceType} started! (${modeDesc})`, 'success');
           trayManager.updateTrayState(true);
           usageTracker.startTracking();
