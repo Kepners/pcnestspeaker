@@ -10,11 +10,16 @@
 const { spawn, exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { app } = require('electron');
 
 // NirCmd is a tiny (47KB) command-line utility for Windows
 // Download from: https://www.nirsoft.net/utils/nircmd.html
 // We'll bundle it with the app
-const NIRCMD_PATH = path.join(__dirname, '../../nircmd', 'nircmd.exe');
+function getNircmdPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'nircmd', 'nircmd.exe')
+    : path.join(__dirname, '../../nircmd', 'nircmd.exe');
+}
 
 let originalAudioDevice = null;
 
@@ -131,14 +136,14 @@ public static class AudioDevice {
 function setDefaultAudioDevice(deviceName) {
   return new Promise((resolve, reject) => {
     console.log(`[AudioDeviceManager] setDefaultAudioDevice called with: "${deviceName}"`);
-    console.log(`[AudioDeviceManager] NirCmd path: ${NIRCMD_PATH}`);
-    console.log(`[AudioDeviceManager] NirCmd exists: ${fs.existsSync(NIRCMD_PATH)}`);
+    console.log(`[AudioDeviceManager] NirCmd path: ${getNircmdPath()}`);
+    console.log(`[AudioDeviceManager] NirCmd exists: ${fs.existsSync(getNircmdPath())}`);
 
     // Try NirCmd first (faster)
-    if (fs.existsSync(NIRCMD_PATH)) {
+    if (fs.existsSync(getNircmdPath())) {
       const args = ['setdefaultsounddevice', deviceName, '1'];
       console.log(`[AudioDeviceManager] Running: nircmd ${args.join(' ')}`);
-      const process = spawn(NIRCMD_PATH, args, {
+      const process = spawn(getNircmdPath(), args, {
         windowsHide: true,
         stdio: 'pipe'
       });

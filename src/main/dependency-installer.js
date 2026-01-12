@@ -117,7 +117,8 @@ async function repairVBCable(mainWindow) {
 
     const installer = spawn('powershell', ['-Command', psCommand], {
       shell: true,
-      detached: true
+      detached: true,
+      windowsHide: true
     });
 
     installer.on('close', async (code) => {
@@ -185,7 +186,8 @@ async function installVBCable(mainWindow) {
 
     const installer = spawn('powershell', ['-Command', psCommand], {
       shell: true,
-      detached: true
+      detached: true,
+      windowsHide: true
     });
 
     installer.on('close', async (code) => {
@@ -211,7 +213,8 @@ async function installVBCable(mainWindow) {
           // Restart PC
           spawn('shutdown', ['/r', '/t', '5', '/c', 'PC Nest Speaker: Restarting to complete VB-Cable installation'], {
             shell: true,
-            detached: true
+            detached: true,
+            windowsHide: true
           });
           app.quit();
         }
@@ -287,7 +290,8 @@ async function checkAndInstallDependencies(mainWindow) {
           // Restart PC
           spawn('shutdown', ['/r', '/t', '5', '/c', 'PC Nest Speaker: Restarting to complete VB-Cable repair'], {
             shell: true,
-            detached: true
+            detached: true,
+            windowsHide: true
           });
           app.quit();
         }
@@ -306,7 +310,8 @@ async function checkAndInstallDependencies(mainWindow) {
         if (restartResponse.response === 0) {
           spawn('shutdown', ['/r', '/t', '5', '/c', 'PC Nest Speaker: Restarting to complete VB-Cable repair'], {
             shell: true,
-            detached: true
+            detached: true,
+            windowsHide: true
           });
           app.quit();
         }

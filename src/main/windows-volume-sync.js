@@ -7,6 +7,14 @@
 
 const { exec, spawn } = require('child_process');
 const path = require('path');
+const { app } = require('electron');
+
+// Path helper for production vs development
+function getSoundVolumeViewPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'soundvolumeview', 'SoundVolumeView.exe')
+    : path.join(__dirname, '..', '..', 'soundvolumeview', 'SoundVolumeView.exe');
+}
 
 // Debounce to avoid spamming the speaker
 let volumeDebounceTimer = null;
@@ -395,18 +403,18 @@ async function switchToPCSpeakersMode() {
  */
 function setDeviceVolume(deviceName, volume) {
   return new Promise((resolve, reject) => {
-    const SVV_PATH = path.join(__dirname, '..', '..', 'soundvolumeview', 'SoundVolumeView.exe');
+    const svvPath = getSoundVolumeViewPath();
     const fs = require('fs');
 
-    if (!fs.existsSync(SVV_PATH)) {
-      console.error('[VolumeSync] SoundVolumeView not found:', SVV_PATH);
+    if (!fs.existsSync(svvPath)) {
+      console.error('[VolumeSync] SoundVolumeView not found:', svvPath);
       reject(new Error('SoundVolumeView not found'));
       return;
     }
 
     // SoundVolumeView syntax: /SetVolume "DeviceName" <percent>
     const volumePercent = Math.max(0, Math.min(100, volume));
-    const cmd = `"${SVV_PATH}" /SetVolume "${deviceName}" ${volumePercent}`;
+    const cmd = `"${svvPath}" /SetVolume "${deviceName}" ${volumePercent}`;
 
     exec(cmd, { windowsHide: true, timeout: 5000 }, (error, stdout, stderr) => {
       if (error) {

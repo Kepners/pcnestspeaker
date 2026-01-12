@@ -108,6 +108,13 @@
         ]
       },
       {
+        "from": "soundvolumeview/",
+        "to": "soundvolumeview",
+        "filter": [
+          "SoundVolumeView.exe"
+        ]
+      },
+      {
         "from": "dependencies/vbcable/",
         "to": "dependencies/vbcable",
         "filter": [

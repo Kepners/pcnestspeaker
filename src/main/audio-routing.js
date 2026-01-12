@@ -21,13 +21,27 @@
 const { exec, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { app } = require('electron');
 const settingsManager = require('./settings-manager');
 
-// Path to NirSoft SoundVolumeView (RELIABLE device switching)
+// Path helpers for production vs development
+// In dev: tools in project root (e.g., soundvolumeview/)
+// In production: tools in resources folder (e.g., resources/soundvolumeview/)
+function getSoundVolumeViewPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'soundvolumeview', 'SoundVolumeView.exe')
+    : path.join(__dirname, '..', '..', 'soundvolumeview', 'SoundVolumeView.exe');
+}
+
+function getAudioctlPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'audioctl', 'audioctl.exe')
+    : path.join(__dirname, '..', '..', 'audioctl', 'audioctl.exe');
+}
+
+// Legacy constants for compatibility (use functions above for production builds)
 const SVV_DIR = path.join(__dirname, '..', '..', 'soundvolumeview');
 const SVV_PATH = path.join(SVV_DIR, 'SoundVolumeView.exe');
-
-// Path to WindowsAudioControl-CLI (audioctl) tool for "Listen to this device"
 const AUDIOCTL_DIR = path.join(__dirname, '..', '..', 'audioctl');
 const AUDIOCTL_PATH = path.join(AUDIOCTL_DIR, 'audioctl.exe');
 
@@ -133,7 +147,8 @@ function restoreOriginalDeviceSync() {
     console.log(`[AudioRouting] Using cached cmdId: ${originalDefaultDeviceCmdId}`);
 
     // Use execSync with SoundVolumeView - blocks until complete
-    const cmd = `powershell -Command "& '${SVV_PATH}' /SetDefault '${originalDefaultDeviceCmdId}' all"`;
+    const svvPath = getSoundVolumeViewPath();
+    const cmd = `powershell -Command "& '${svvPath}' /SetDefault '${originalDefaultDeviceCmdId}' all"`;
     execSync(cmd, { windowsHide: true, timeout: 5000, stdio: 'ignore' });
 
     console.log(`[AudioRouting] SYNC restored default device to: ${originalDefaultDevice}`);
@@ -161,16 +176,17 @@ function getOriginalDevice() {
  * Check if SoundVolumeView is available (bundled with app)
  */
 function isAvailable() {
-  return fs.existsSync(SVV_PATH);
+  return fs.existsSync(getSoundVolumeViewPath());
 }
 
 /**
  * Check if WindowsAudioControl-CLI (audioctl) is available
  */
 function isAudioctlAvailable() {
-  const available = fs.existsSync(AUDIOCTL_PATH);
+  const audioctlPath = getAudioctlPath();
+  const available = fs.existsSync(audioctlPath);
   if (!available) {
-    console.log(`[AudioRouting] audioctl.exe not found at: ${AUDIOCTL_PATH}`);
+    console.log(`[AudioRouting] audioctl.exe not found at: ${audioctlPath}`);
     console.log('[AudioRouting] Download from: https://github.com/Mr5niper/WindowsAudioControl-CLI-wGUI/releases');
   }
   return available;
@@ -187,7 +203,8 @@ async function runAudioctl(args) {
   }
 
   return new Promise((resolve, reject) => {
-    const cmd = `"${AUDIOCTL_PATH}" ${args}`;
+    const audioctlPath = getAudioctlPath();
+    const cmd = `"${audioctlPath}" ${args}`;
     console.log(`[AudioRouting] Running: ${cmd}`);
 
     exec(cmd, { windowsHide: true, timeout: 15000 }, (error, stdout, stderr) => {
@@ -220,7 +237,8 @@ async function runSVV(args) {
 
   return new Promise((resolve, reject) => {
     // Use PowerShell for reliable execution with proper escaping
-    const cmd = `powershell -Command "& '${SVV_PATH}' ${args}"`;
+    const svvPath = getSoundVolumeViewPath();
+    const cmd = `powershell -Command "& '${svvPath}' ${args}"`;
     console.log(`[AudioRouting] Running: ${cmd}`);
 
     exec(cmd, { windowsHide: true, timeout: 15000 }, (error, stdout, stderr) => {
