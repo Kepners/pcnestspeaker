@@ -13,38 +13,70 @@ Claude will remember context from previous sessions in this project.
 
 ---
 
-## Architecture: Streaming Modes
+## Architecture: Streaming Modes (UPDATED January 2025)
 
 ### Device Types (`cast_type`)
-| Type | Devices | Streaming Method | Receiver |
-|------|---------|------------------|----------|
-| `audio` | Nest Mini, Nest Audio | WebRTC (Opus) | Custom Audio Receiver |
-| `group` | Cast Groups, Stereo Pairs | WebRTC multicast | Custom Audio Receiver |
-| `cast` | TVs, Chromecast, Shield | HLS (AAC) | Default Media Receiver |
+| Type | Devices | Streaming Method | Receiver | Audio Handler |
+|------|---------|------------------|----------|---------------|
+| `audio` | Nest Mini, Nest Audio | WebRTC (Opus) | Audio Receiver (4B876246) | WebRTC native |
+| `group` | Cast Groups, Stereo Pairs | WebRTC multicast (L/R split) | Audio Receiver (4B876246) | WebRTC native |
+| `cast` | TVs, Chromecast, Shield | HLS (AAC) | Visual Receiver (FCAA4619) | **hls.js** |
 
 ### Receivers (Cast App IDs)
-- **AUDIO_APP_ID** (`4B876246`): Lean audio-only receiver for speakers
-- **VISUAL_APP_ID** (`FCAA4619`): Full receiver with ambient videos for TVs
-- **Default Media Receiver** (`CC1AD845`): Google's built-in receiver for HLS
+- **AUDIO_APP_ID** (`4B876246`): Lean audio-only receiver for speakers (WebRTC)
+- **VISUAL_APP_ID** (`FCAA4619`): Full receiver with splash + ambient photos for TVs (hls.js audio)
+- **Default Media Receiver** (`CC1AD845`): Google's built-in receiver - NOT USED (can't play audio-only HLS)
 
-### Flow: Speaker Streaming (Nest Mini, Audio, Groups)
+### Flow: Speaker Streaming (Nest Mini, Nest Audio)
 ```
-1. User clicks speaker → startStreamingToSpeaker()
-2. Renderer calls window.api.startStreaming()
-3. electron-main: startMediaMTX() → startFFmpegWebRTC() [Opus codec]
-4. cast-helper.py: webrtc_launch() → starts custom receiver
-5. Receiver connects to MediaMTX via WebRTC
+Windows Audio → VB-Cable Input → VB-Cable Output → FFmpeg (Opus)
+                                                        ↓
+                                              RTSP → MediaMTX → WebRTC
+                                                                   ↓
+                                              Nest Speaker ← Audio Receiver (4B876246)
 ```
+**Steps:**
+1. User clicks speaker → `startStreamingToSpeaker()`
+2. `electron-main.js`: Start MediaMTX + FFmpeg (Opus codec)
+3. `cast-helper.py`: `webrtc_launch()` → launches Audio Receiver
+4. Receiver connects to `http://<local-ip>:8889/pcaudio/whep` (WebRTC WHEP)
+5. Audio plays instantly via WebRTC
 
-### Flow: TV Streaming (Chromecast, TVs)
+### Flow: Cast Group (Stereo Separation)
 ```
-1. User clicks TV → startStreamingToSpeaker()
-2. Renderer calls window.api.startStreaming()
-3. electron-main detects isTv (cast_type === 'cast')
-4. FFmpeg restarts with AAC codec (HLS compatible)
-5. cast-helper.py: hls_cast_to_tv() → Default Media Receiver
-6. TV plays HLS stream: http://<local-ip>:8888/pcaudio/index.m3u8
+Windows Audio → VB-Cable → FFmpeg (splits L/R channels)
+                               ↓
+                    RTSP 'left' stream → MediaMTX → WebRTC → Left Speaker
+                    RTSP 'right' stream → MediaMTX → WebRTC → Right Speaker
 ```
+**Steps:**
+1. User clicks Cast Group → detect 2-member group
+2. `electron-main.js`: Start FFmpeg with `-map_channel` for L/R split
+3. Publish to `rtsp://localhost:8554/left` and `rtsp://localhost:8554/right`
+4. `cast-helper.py`: Connect BOTH speakers in **parallel** (`Promise.all`)
+5. Each speaker gets its channel via WebRTC
+
+### Flow: TV/Shield Streaming (Visual Receiver + hls.js)
+```
+Windows Audio → VB-Cable Input → VB-Cable Output → FFmpeg (AAC)
+                                                        ↓
+                                              Direct HLS Server (port 8890)
+                                                        ↓
+                                              TV ← Visual Receiver (FCAA4619)
+                                                        ↓
+                                              hls.js plays audio (NOT Cast player!)
+```
+**Steps:**
+1. User clicks TV → detect `cast_type === 'cast'`
+2. `electron-main.js`: Start Direct HLS server (port 8890)
+3. FFmpeg outputs HLS segments to temp folder (AAC codec)
+4. `cast-helper.py`: `hls_cast_to_tv()` → launches Visual Receiver (FCAA4619)
+5. Visual Receiver shows splash (5s) → George Lucas wipe → ambient photos
+6. `playHlsAudio()` uses **hls.js** library to play `http://<local-ip>:8890/stream.m3u8`
+7. Audio plays via hls.js (Cast SDK player is IDLE - expected!)
+
+**CRITICAL**: Cast SDK's built-in `cast-media-player` CANNOT play audio-only HLS!
+We use hls.js library which handles HLS natively in the receiver's browser.
 
 ---
 
@@ -76,34 +108,56 @@ Claude will remember context from previous sessions in this project.
 
 ---
 
-## TV Streaming: Technical Details
+## TV Streaming: Technical Details (FIXED January 2025)
 
 ### Why TVs Need Different Handling
-1. **Custom receivers don't work on TVs** - Only NVIDIA Shield supports them
-2. **TVs use Default Media Receiver** - Google's CC1AD845 app
-3. **HLS requires AAC codec** - Opus (used for WebRTC) won't play
+1. **WebRTC doesn't work on most TVs** - Only Shield supports custom receivers
+2. **Shield DOES support Visual Receiver** - Our custom receiver with hls.js works!
+3. **Cast SDK player can't do audio-only HLS** - We use hls.js library instead
+4. **HLS requires AAC codec** - Opus (used for WebRTC) won't play in HLS
 
-### HLS URL Structure
+### HLS URL Structure (Direct HLS Server)
 ```
-http://<local-ip>:8888/pcaudio/index.m3u8
-                │      │        └── HLS playlist
-                │      └── Stream name (from RTSP)
-                └── MediaMTX HLS port
+http://<local-ip>:8890/stream.m3u8
+                │      └── HLS playlist (FFmpeg outputs directly here)
+                └── Direct HLS server port (NOT MediaMTX!)
 ```
 
-### MediaMTX Pipeline
+**Note**: We bypass MediaMTX's HLS (port 8888) because it requires 7 segments minimum.
+Direct HLS server serves FFmpeg's output immediately with only 2-second segments.
+
+### Direct HLS Pipeline (Current Working Solution)
 ```
-FFmpeg → RTSP (8554) → MediaMTX → HLS (8888)
-         └── Opus or AAC          └── Always AAC segments
+FFmpeg (AAC) → HLS segments → Direct Server (8890) → hls.js in Visual Receiver
 ```
+
+### Why hls.js?
+Cast SDK's `cast-media-player` element **CANNOT play audio-only HLS streams**.
+It throws `idle_reason: ERROR` when trying. Solution:
+1. Load hls.js library from CDN in Visual Receiver
+2. Create hidden `<audio>` element
+3. Use hls.js to parse m3u8 and play segments
+4. Return `null` from LOAD interceptor to block Cast SDK player
 
 ### Codec Requirements
-| Target | Codec | Format |
-|--------|-------|--------|
-| Speakers (WebRTC) | Opus | RTSP → WebRTC |
-| TVs (HLS) | AAC | RTSP → HLS |
+| Target | Codec | Server | Port | Handler |
+|--------|-------|--------|------|---------|
+| Speakers | Opus | MediaMTX WebRTC | 8889 | WebRTC native |
+| TVs | AAC | Direct HLS | 8890 | hls.js library |
 
-**IMPORTANT**: MediaMTX transcodes RTSP to HLS, but codec compatibility matters!
+### Key Files for TV Streaming
+| File | Purpose |
+|------|---------|
+| `hls-direct-server.js` | HTTP server serving FFmpeg's HLS output |
+| `docs/receiver-visual.html` | Visual Receiver with hls.js integration |
+| `cast-helper.py` | `hls_cast_to_tv()` function |
+
+### Visual Receiver Features
+1. **Splash screen** (5 seconds) - PC Nest Speaker branding
+2. **George Lucas wipe** - Star Wars style horizontal transition
+3. **Ambient photos** - Unsplash nature photos cycling every 10 seconds
+4. **hls.js audio** - Plays HLS stream in background
+5. **Status pill** - Shows "Streaming audio..." at bottom
 
 ---
 
