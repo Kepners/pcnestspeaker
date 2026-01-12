@@ -1290,7 +1290,8 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None, ap
         # Use passed model from discovery, fall back to querying device
         model = device_model.lower() if device_model else (cast.cast_info.model_name.lower() if cast.cast_info.model_name else '')
         print(f"[HLS-TV] Connecting to {host} (model: {model})...", file=sys.stderr)
-        cast.wait(timeout=10)
+        # CRITICAL: Shield needs longer timeout when booting from cold (10s too short)
+        cast.wait(timeout=30)
 
         # Check standby status and launch receiver
         print(f"[HLS-TV] Launching receiver {receiver_id}...", file=sys.stderr)
@@ -1303,7 +1304,8 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None, ap
                 pass
 
             # Launch our receiver (Visual or Default Media)
-            cast.start_app(receiver_id)
+            # CRITICAL: Shield takes ~10 seconds to boot from cold - use 30s timeout
+            cast.start_app(receiver_id, timeout=30)
             time.sleep(3)  # Give receiver time to load
             print(f"[HLS-TV] Receiver {receiver_id} launched!", file=sys.stderr)
         except Exception as e:
