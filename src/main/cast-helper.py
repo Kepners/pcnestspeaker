@@ -1326,32 +1326,26 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None, ap
         launch_thread.start()
         launch_thread.join(timeout=35)
 
+        # NOTE: pychromecast timeout doesn't mean receiver failed!
+        # Visual Receiver shows splash even when pychromecast reports "timeout"
+        # DO NOT fall back to DMR - stick with Visual Receiver (user confirmed it works!)
         if launch_thread.is_alive():
-            print(f"[HLS-TV] Receiver launch TIMED OUT after 35s (hung)", file=sys.stderr)
-            # Thread is still running (hung) - fall back to Default Media Receiver
-            if receiver_id != DEFAULT_MEDIA_RECEIVER:
-                print(f"[HLS-TV] Falling back to Default Media Receiver...", file=sys.stderr)
-                try:
-                    cast.start_app(DEFAULT_MEDIA_RECEIVER, timeout=15)
-                    receiver_id = DEFAULT_MEDIA_RECEIVER
-                    time.sleep(3)  # Give DMR more time to stabilize
-                    print(f"[HLS-TV] Fallback to DMR successful!", file=sys.stderr)
-                except Exception as e2:
-                    print(f"[HLS-TV] Fallback also failed: {e2}", file=sys.stderr)
+            print(f"[HLS-TV] Receiver still launching (35s) - proceeding anyway", file=sys.stderr)
+            print(f"[HLS-TV] Visual Receiver splash is likely showing on TV", file=sys.stderr)
         elif launch_error[0]:
-            print(f"[HLS-TV] Receiver launch failed: {launch_error[0]}", file=sys.stderr)
-            # Fall back to Default Media Receiver if Visual fails
-            if receiver_id != DEFAULT_MEDIA_RECEIVER:
-                print(f"[HLS-TV] Falling back to Default Media Receiver...", file=sys.stderr)
-                try:
-                    cast.start_app(DEFAULT_MEDIA_RECEIVER, timeout=15)
-                    receiver_id = DEFAULT_MEDIA_RECEIVER
-                    time.sleep(3)  # Give DMR more time to stabilize
-                    print(f"[HLS-TV] Fallback to DMR successful!", file=sys.stderr)
-                except Exception as e2:
-                    print(f"[HLS-TV] Fallback also failed: {e2}", file=sys.stderr)
+            error_msg = str(launch_error[0])
+            print(f"[HLS-TV] Receiver reported: {error_msg}", file=sys.stderr)
+            # "timed out" from pychromecast doesn't mean receiver failed!
+            if 'timed out' in error_msg.lower():
+                print(f"[HLS-TV] Timeout is normal - Visual Receiver splash is showing!", file=sys.stderr)
+            else:
+                print(f"[HLS-TV] Continuing with Visual Receiver despite error", file=sys.stderr)
         else:
-            print(f"[HLS-TV] Receiver {receiver_id} launched successfully!", file=sys.stderr)
+            print(f"[HLS-TV] Receiver {receiver_id} launched!", file=sys.stderr)
+
+        # Give receiver extra time to fully load after splash
+        print(f"[HLS-TV] Waiting 3s for receiver to be ready for audio...", file=sys.stderr)
+        time.sleep(3)
 
         mc = cast.media_controller
 

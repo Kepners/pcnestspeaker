@@ -1544,6 +1544,16 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
             if (mainWindow && mainWindow.webContents) {
               mainWindow.webContents.send('audio-device-changed', deviceName);
             }
+
+            // WALL OF SOUND: Enable PC speakers IMMEDIATELY after VB-Cable switch
+            // This ensures user hears audio while TV is connecting (can take 30+ seconds!)
+            if (pcAudioEnabled) {
+              sendLog(`📺 Enabling Wall of Sound early (PC speakers)...`);
+              const earlyWosResult = await audioRouting.enablePCSpeakersMode();
+              if (earlyWosResult.success) {
+                sendLog(`📺 Wall of Sound active: ${earlyWosResult.device}`, 'success');
+              }
+            }
           } else {
             sendLog(`📺 WARNING: Failed to switch to VB-Cable: ${switchResult.error}`, 'warning');
           }
