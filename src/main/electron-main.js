@@ -83,7 +83,8 @@ function getMediaMTXConfig() {
 
 // MediaMTX process reference
 let mediamtxProcess = null;
-let ffmpegWebrtcProcess = null;
+let ffmpegWebrtcProcess = null;  // For mono speaker streaming (WebRTC/Opus)
+let ffmpegTvProcess = null;       // For TV streaming (HLS/AAC) - SEPARATE to prevent collisions
 
 // Flag to prevent cleanup when intentionally switching to stereo mode
 let switchingToStereoMode = false;
@@ -548,7 +549,7 @@ function cleanup() {
     pythonCastProcess = null;
   }
 
-  // Stop FFmpeg WebRTC publishing process
+  // Stop FFmpeg WebRTC publishing process (mono speakers)
   if (ffmpegWebrtcProcess) {
     sendLog('Stopping FFmpeg WebRTC stream...');
     try {
@@ -558,6 +559,18 @@ function cleanup() {
     }
     ffmpegWebrtcProcess = null;
   }
+
+  // Stop FFmpeg TV/HLS process (separate from WebRTC)
+  if (ffmpegTvProcess) {
+    sendLog('Stopping FFmpeg TV/HLS stream...');
+    try {
+      ffmpegTvProcess.kill();
+    } catch (e) {
+      // Process may already be dead
+    }
+    ffmpegTvProcess = null;
+  }
+
   // Also force kill ALL FFmpeg processes to ensure cleanup
   try {
     if (process.platform === 'win32') {
@@ -1475,15 +1488,22 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         const receiverMode = useVisualReceiver ? 'Visual receiver (ambient videos)' : 'Default Media Receiver';
         sendLog(`${deviceIcon} Using direct HLS with ${receiverMode} (bypassing MediaMTX LL-HLS)...`);
 
-        // Kill any existing FFmpeg process
+        // Kill any existing FFmpeg processes (mono speaker OR previous TV)
         if (ffmpegWebrtcProcess) {
-          sendLog('📺 Stopping previous FFmpeg...');
+          sendLog('📺 Stopping previous mono FFmpeg...');
           try {
             ffmpegWebrtcProcess.kill('SIGTERM');
           } catch (e) {}
           ffmpegWebrtcProcess = null;
-          await new Promise(r => setTimeout(r, 500));
         }
+        if (ffmpegTvProcess) {
+          sendLog('📺 Stopping previous TV FFmpeg...');
+          try {
+            ffmpegTvProcess.kill('SIGTERM');
+          } catch (e) {}
+          ffmpegTvProcess = null;
+        }
+        await new Promise(r => setTimeout(r, 500));
 
         // Start direct HLS server (bypasses MediaMTX's LL-HLS segment requirements)
         const hlsServer = hlsDirectServer.start();
@@ -1558,28 +1578,30 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         // Log FULL command for debugging
         sendLog(`📺 FFmpeg HLS command: ${ffmpegPath} ${ffmpegArgs.join(' ')}`);
 
-        ffmpegWebrtcProcess = spawn(ffmpegPath, ffmpegArgs, {
+        ffmpegTvProcess = spawn(ffmpegPath, ffmpegArgs, {
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true
         });
 
         // CRITICAL: Handle spawn errors (missing ffmpeg, permissions, etc.)
-        ffmpegWebrtcProcess.on('error', (err) => {
+        ffmpegTvProcess.on('error', (err) => {
           sendLog(`📺 FFmpeg SPAWN ERROR: ${err.message}`, 'error');
           tvStreamingInProgress = false;
+          ffmpegTvProcess = null;
         });
 
         // CRITICAL: Handle unexpected exits
-        ffmpegWebrtcProcess.on('close', (code) => {
+        ffmpegTvProcess.on('close', (code) => {
           if (code !== 0 && code !== null) {
             sendLog(`📺 FFmpeg exited unexpectedly with code ${code}`, 'warning');
           }
+          ffmpegTvProcess = null;
         });
 
         // IMPROVED: Log ALL FFmpeg HLS output for debugging
         let hlsSegmentCreated = false;
         let ffmpegStartupLineCount = 0;
-        ffmpegWebrtcProcess.stderr.on('data', (data) => {
+        ffmpegTvProcess.stderr.on('data', (data) => {
           const msg = data.toString().trim();
           if (streamStats) streamStats.parseFfmpegOutput(msg);
 
@@ -2828,9 +2850,9 @@ ipcMain.handle('start-tv-streaming', async (event, deviceName, deviceIp = null) 
     }
 
     // 2. Start FFmpeg to publish to RTSP (MediaMTX will create HLS from this)
-    // Use same audio capture as WebRTC mode
-    if (!ffmpegWebrtcProcess) {
-      sendLog('Starting FFmpeg for HLS stream...');
+    // Use SEPARATE ffmpegTvProcess to avoid collision with speaker streaming
+    if (!ffmpegTvProcess) {
+      sendLog('Starting FFmpeg for HLS stream (MediaMTX mode)...');
       const ffmpegPath = getFFmpegPath();
       const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
       const boostLevel = volumeBoostEnabled ? 1.25 : 1.03;
@@ -2845,7 +2867,7 @@ ipcMain.handle('start-tv-streaming', async (event, deviceName, deviceIp = null) 
       const hlsAudioDevice = hlsVbDevice || 'CABLE Output (VB-Audio Virtual Cable)';
       sendLog(`HLS audio device: ${hlsAudioDevice}`);
 
-      ffmpegWebrtcProcess = spawn(ffmpegPath, [
+      ffmpegTvProcess = spawn(ffmpegPath, [
         '-hide_banner', '-stats',
         '-f', 'dshow',
         '-i', `audio=${hlsAudioDevice}`,
@@ -2859,7 +2881,20 @@ ipcMain.handle('start-tv-streaming', async (event, deviceName, deviceIp = null) 
         'rtsp://localhost:8554/pcaudio'
       ], { stdio: 'pipe', windowsHide: true });
 
-      ffmpegWebrtcProcess.stderr.on('data', (data) => {
+      // Error handling for spawn
+      ffmpegTvProcess.on('error', (err) => {
+        sendLog(`FFmpeg HLS SPAWN ERROR: ${err.message}`, 'error');
+        ffmpegTvProcess = null;
+      });
+
+      ffmpegTvProcess.on('close', (code) => {
+        if (code !== 0 && code !== null) {
+          sendLog(`FFmpeg HLS exited unexpectedly with code ${code}`, 'warning');
+        }
+        ffmpegTvProcess = null;
+      });
+
+      ffmpegTvProcess.stderr.on('data', (data) => {
         const msg = data.toString();
         if (streamStats) {
           streamStats.parseFfmpegOutput(msg);
@@ -2924,10 +2959,10 @@ ipcMain.handle('stop-tv-streaming', async (event) => {
       tvStreamDevice = null;
     }
 
-    // Stop FFmpeg (but keep MediaMTX running for potential speaker streaming)
-    if (ffmpegWebrtcProcess) {
-      ffmpegWebrtcProcess.kill('SIGTERM');
-      ffmpegWebrtcProcess = null;
+    // Stop FFmpeg TV process (but keep MediaMTX running for potential speaker streaming)
+    if (ffmpegTvProcess) {
+      ffmpegTvProcess.kill('SIGTERM');
+      ffmpegTvProcess = null;
     }
 
     // Stop stream stats
