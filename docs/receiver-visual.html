@@ -3,6 +3,8 @@
 <head>
   <title>PC Nest Speaker - WebRTC Receiver</title>
   <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+  <!-- HLS.js for audio-only HLS streaming (Cast SDK player doesn't handle it well) -->
+  <script src="//cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #0a0a0a; overflow: hidden; }
@@ -491,6 +493,92 @@
     }
 
     // ===================
+    // HLS AUDIO PLAYBACK (using hls.js)
+    // Cast SDK's built-in player fails on audio-only HLS
+    // ===================
+    let hlsInstance = null;
+
+    function playHlsAudio(hlsUrl) {
+      console.log('[HLS] Starting HLS audio playback:', hlsUrl);
+
+      // Stop any existing HLS playback
+      if (hlsInstance) {
+        hlsInstance.destroy();
+        hlsInstance = null;
+      }
+
+      if (Hls.isSupported()) {
+        console.log('[HLS] Using hls.js for playback');
+        hlsInstance = new Hls({
+          debug: false,
+          enableWorker: true,
+          lowLatencyMode: true,
+          backBufferLength: 30
+        });
+
+        hlsInstance.loadSource(hlsUrl);
+        hlsInstance.attachMedia(audioElement);
+
+        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+          console.log('[HLS] Manifest parsed, starting playback...');
+          audioElement.muted = false;
+          audioElement.volume = 1.0;
+          audioElement.play()
+            .then(() => {
+              console.log('[HLS] Audio playing!');
+              log('HLS audio streaming...');
+            })
+            .catch(e => {
+              console.error('[HLS] Play failed:', e);
+              // Try muted first then unmute
+              audioElement.muted = true;
+              audioElement.play().then(() => {
+                setTimeout(() => { audioElement.muted = false; }, 100);
+              });
+            });
+        });
+
+        hlsInstance.on(Hls.Events.ERROR, (event, data) => {
+          console.error('[HLS] Error:', data.type, data.details);
+          if (data.fatal) {
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                console.log('[HLS] Network error, trying to recover...');
+                hlsInstance.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                console.log('[HLS] Media error, trying to recover...');
+                hlsInstance.recoverMediaError();
+                break;
+              default:
+                console.error('[HLS] Fatal error, cannot recover');
+                hlsInstance.destroy();
+                break;
+            }
+          }
+        });
+      } else if (audioElement.canPlayType('application/vnd.apple.mpegurl')) {
+        // Native HLS support (Safari, some Android)
+        console.log('[HLS] Using native HLS support');
+        audioElement.src = hlsUrl;
+        audioElement.play().catch(e => console.error('[HLS] Native play failed:', e));
+      } else {
+        console.error('[HLS] HLS not supported on this device!');
+        log('HLS not supported');
+      }
+    }
+
+    function stopHlsAudio() {
+      if (hlsInstance) {
+        hlsInstance.destroy();
+        hlsInstance = null;
+        console.log('[HLS] Stopped');
+      }
+      audioElement.src = '';
+      audioElement.srcObject = null;
+    }
+
+    // ===================
     // GEORGE LUCAS WIPE TRANSITION
     // Shows splash for 5 seconds, then wipes to ambient videos
     // ===================
@@ -796,30 +884,28 @@
           }
 
           // *** HLS MODE FOR TVs/SHIELD ***
-          // If URL is HLS (.m3u8), use built-in Cast player with ambient visuals
+          // Cast SDK's built-in player fails on audio-only HLS with idle_reason: ERROR
+          // Use hls.js to handle HLS playback directly
           if (isHlsUrl(contentId)) {
-            console.log('[Cast] HLS mode - using built-in player with ambient visuals');
+            console.log('[Cast] HLS mode - using hls.js for audio playback');
             console.log('[Cast] HLS URL:', contentId);
 
-            // Show cast-media-player (audio-only mode hides video, shows ambient instead)
-            showDefaultPlayer(true);
+            // Hide Cast player - we handle HLS ourselves
+            hideDefaultPlayer();
 
-            // Start ambient videos
+            // Start ambient photos slideshow
             startAmbientVideos();
 
-            // Transition UI
+            // Use hls.js to play the HLS stream
+            playHlsAudio(contentId);
+
+            // Transition UI after brief delay
             setTimeout(() => {
               transitionToStreaming();
-              log('Streaming audio...');
             }, 1000);
 
-            // Let the LOAD flow through to Cast player
-            if (request.media) {
-              request.media.streamType = cast.framework.messages.StreamType.LIVE;
-              request.autoplay = true;
-              request.currentTime = 0;
-            }
-            return request;
+            // Return null to block Cast SDK player (we're handling playback with hls.js)
+            return null;
           }
         }
 
