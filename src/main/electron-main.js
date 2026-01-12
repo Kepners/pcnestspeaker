@@ -1769,8 +1769,23 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         // Solution: Get group members and use STEREO for 2-member groups, multicast for 3+
         sendLog(`Detected Cast Group: "${speakerName}"...`);
 
-        // Get group members
-        const membersResult = await runPython(['get-group-members', speakerName]);
+        // FAST PATH: Use cached members from discovery (resolved at boot)
+        // SLOW PATH: Fall back to get-group-members if cache is empty (re-discovers)
+        let membersResult;
+        if (speaker.members && speaker.members.length > 0) {
+          // Cached members available - INSTANT!
+          sendLog(`Using cached group members (${speaker.members.length} members)`, 'success');
+          membersResult = {
+            success: true,
+            members: speaker.members,
+            count: speaker.members.length
+          };
+        } else {
+          // No cached members - fall back to slow discovery
+          sendLog(`No cached members, querying group (this may take ~10s)...`, 'warning');
+          membersResult = await runPython(['get-group-members', speakerName]);
+        }
+
         if (!membersResult.success || !membersResult.members || membersResult.members.length === 0) {
           sendLog(`Could not get group members: ${membersResult.error || 'No members found'}`, 'warning');
           sendLog('Falling back to single cast (will only play on leader)...', 'warning');

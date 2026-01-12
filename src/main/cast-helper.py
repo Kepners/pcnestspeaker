@@ -61,7 +61,13 @@ def discover_speakers(timeout=12):
 
     Default timeout increased to 12s for devices like NVIDIA SHIELD
     that may take longer to respond to mDNS discovery.
+
+    Groups are detected and their member speakers are resolved during discovery,
+    so group connections don't need a second discovery phase.
     """
+    from pychromecast.controllers.multizone import MultizoneController
+    import time
+
     try:
         print(f"Scanning network (timeout: {timeout}s)...", file=sys.stderr)
 
@@ -70,19 +76,65 @@ def discover_speakers(timeout=12):
 
         print(f"Raw discovery returned {len(chromecasts)} device(s)", file=sys.stderr)
 
+        # First pass: collect all devices and identify groups
         speakers = []
+        groups = []  # Cast groups to resolve members for
+        cc_by_uuid = {}  # For quick UUID -> device lookup
+
         for cc in chromecasts:
-            # pychromecast 13+ uses cast_info for host/port
             info = cc.cast_info
+            cc_by_uuid[str(cc.uuid)] = cc
             device_data = {
                 "name": cc.name,
                 "model": info.model_name or "Chromecast",
                 "ip": info.host,
                 "port": info.port,
-                "cast_type": info.cast_type  # "audio", "cast", or "group"
+                "cast_type": info.cast_type,  # "audio", "cast", or "group"
+                "uuid": str(cc.uuid)
             }
+            if info.cast_type == 'group':
+                device_data["members"] = []  # Will be populated below
+                groups.append((cc, device_data))
             speakers.append(device_data)
             print(f"Found: {cc.name} | Model: {info.model_name} | IP: {info.host} | Type: {info.cast_type}", file=sys.stderr)
+
+        # Second pass: resolve group members (fast - uses cached chromecasts, no re-discovery)
+        for group_cc, group_data in groups:
+            try:
+                print(f"[GroupResolve] Resolving members for '{group_data['name']}'...", file=sys.stderr)
+                group_cc.wait(timeout=5)  # Quick connect to group
+
+                mz = MultizoneController(group_cc.uuid)
+                group_cc.register_handler(mz)
+                mz.update_members()
+                time.sleep(0.5)  # Brief wait for response (was 2s)
+
+                # Get member UUIDs
+                member_uuids = []
+                if hasattr(mz, 'members'):
+                    if isinstance(mz.members, dict):
+                        member_uuids = list(mz.members.keys())
+                    elif isinstance(mz.members, list):
+                        member_uuids = mz.members
+
+                # Match to discovered devices (instant - no network calls)
+                for uuid in member_uuids:
+                    uuid_str = str(uuid)
+                    if uuid_str in cc_by_uuid:
+                        member_cc = cc_by_uuid[uuid_str]
+                        member_info = member_cc.cast_info
+                        group_data["members"].append({
+                            "name": member_cc.name,
+                            "ip": member_info.host,
+                            "uuid": uuid_str,
+                            "model": member_info.model_name
+                        })
+                        print(f"[GroupResolve]   Member: {member_cc.name} @ {member_info.host}", file=sys.stderr)
+
+                print(f"[GroupResolve] Group '{group_data['name']}' has {len(group_data['members'])} members", file=sys.stderr)
+            except Exception as e:
+                print(f"[GroupResolve] Failed to resolve '{group_data['name']}': {e}", file=sys.stderr)
+                # Group still added with empty members - will fall back to get-group-members if needed
 
         browser.stop_discovery()
 
