@@ -1384,8 +1384,31 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       const localIp = getLocalIp();
       let webrtcUrl = `http://${localIp}:8889`;
 
-      // Check if pipeline was pre-started in background
-      if (webrtcPipelineReady && mediamtxProcess && ffmpegWebrtcProcess) {
+      // CRITICAL: Get speaker info FIRST to determine mode BEFORE using pre-started pipeline
+      // This prevents the "double audio" bug where mono starts, then switches to stereo
+      sendLog(`[DEBUG] Looking for speaker "${speakerName}" in ${discoveredSpeakers.length} discovered speakers`);
+      const speaker = discoveredSpeakers.find(s => s.name === speakerName);
+      sendLog(`[DEBUG] Found speaker: ${speaker ? JSON.stringify({name: speaker.name, cast_type: speaker.cast_type}) : 'NOT FOUND'}`);
+      const speakerIp = speaker ? speaker.ip : null;
+      const isGroup = speaker && speaker.cast_type === 'group';
+      const isTv = speaker && speaker.cast_type === 'cast';  // TVs, Shields, displays use cast_type='cast'
+      const speakerModel = speaker ? speaker.model : '';
+      const isShield = speakerModel.toLowerCase().includes('shield');
+      sendLog(`[DEBUG] isGroup=${isGroup}, isTv=${isTv}, isShield=${isShield}, speakerIp=${speakerIp}`);
+
+      // For GROUPS: Skip mono pipeline entirely - go straight to stereo mode
+      // This prevents the audio glitch where mono plays then cuts to stereo
+      if (isGroup) {
+        sendLog(`🎵 Cast Group detected - skipping mono pipeline, going direct to stereo...`);
+        // Jump straight to group handling (which will set up stereo FFmpeg)
+        // MediaMTX still needed for stereo streams
+        if (!mediamtxProcess) {
+          await startMediaMTX();
+          await new Promise(r => setTimeout(r, 1500));
+        }
+      }
+      // For MONO speakers: Check if pipeline was pre-started in background
+      else if (webrtcPipelineReady && mediamtxProcess && ffmpegWebrtcProcess) {
         sendLog('Using pre-started WebRTC pipeline', 'success');
 
         // Start stream stats monitoring
@@ -1454,15 +1477,7 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
       // Step 4: Launch custom receiver - send URL directly (NO PROXY!)
       // Receiver fetches from MediaMTX directly using local HTTP URL
-      sendLog(`[DEBUG] Looking for speaker "${speakerName}" in ${discoveredSpeakers.length} discovered speakers`);
-      const speaker = discoveredSpeakers.find(s => s.name === speakerName);
-      sendLog(`[DEBUG] Found speaker: ${speaker ? JSON.stringify({name: speaker.name, cast_type: speaker.cast_type}) : 'NOT FOUND'}`);
-      const speakerIp = speaker ? speaker.ip : null;
-      const isGroup = speaker && speaker.cast_type === 'group';
-      const isTv = speaker && speaker.cast_type === 'cast';  // TVs, Shields, displays use cast_type='cast'
-      const speakerModel = speaker ? speaker.model : '';
-      const isShield = speakerModel.toLowerCase().includes('shield');
-      sendLog(`[DEBUG] isGroup=${isGroup}, isTv=${isTv}, isShield=${isShield}, speakerIp=${speakerIp}`);
+      // NOTE: speaker, isGroup, isTv, isShield already determined above (early detection)
 
       let result;
 
