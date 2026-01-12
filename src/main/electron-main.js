@@ -694,8 +694,19 @@ async function startMediaMTX() {
       `webrtcAdditionalHosts: ['${localIp}']`
     );
 
+    // FIX: Bind local UDP/TCP to our specific IP to prevent 127.0.0.1 candidates
+    // This ensures MediaMTX only advertises our LAN IP, not localhost
+    config = config.replace(
+      /webrtcLocalUDPAddress:\s*:.*/,
+      `webrtcLocalUDPAddress: ${localIp}:8189`
+    );
+    config = config.replace(
+      /webrtcLocalTCPAddress:\s*:.*/,
+      `webrtcLocalTCPAddress: ${localIp}:8189`
+    );
+
     fs.writeFileSync(configPath, config, 'utf8');
-    sendLog(`[MediaMTX] Injected local IP: ${localIp}`);
+    sendLog(`[MediaMTX] Injected local IP: ${localIp} (bound to UDP/TCP)`);
   } catch (e) {
     sendLog(`[MediaMTX] Could not inject IP: ${e.message}`, 'warning');
   }
@@ -1785,6 +1796,18 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
             try { ffmpegWebrtcProcess.kill('SIGTERM'); } catch (e) {}
             ffmpegWebrtcProcess = null;
           }
+
+          // FIX: Also stop TV/HLS streaming if running (switching FROM TV to Cast Group)
+          if (ffmpegTvProcess) {
+            sendLog('Stopping TV stream for stereo mode...');
+            try { ffmpegTvProcess.kill('SIGTERM'); } catch (e) {}
+            ffmpegTvProcess = null;
+          }
+          if (hlsDirectServer.isRunning()) {
+            sendLog('Stopping HLS server for stereo mode...');
+            hlsDirectServer.stop();
+          }
+          tvStreamingInProgress = false;
 
           // Get FFmpeg path and volume settings
           const ffmpegPath = getFFmpegPath();
