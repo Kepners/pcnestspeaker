@@ -1576,12 +1576,16 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
         // Cast HLS to TV - use Visual receiver for ambient videos or Default Media Receiver
         // Args: hls-cast <name> <url> <ip|''> <model> <app_id>
-        const hlsReceiverAppId = useVisualReceiver ? VISUAL_APP_ID : 'CC1AD845';
+        // TEMPORARY FIX: Visual Receiver (FCAA4619) not working properly with HLS
+        // Force Default Media Receiver until Visual Receiver is fixed
+        // See: https://github.com/... for tracking issue
+        const hlsReceiverAppId = 'CC1AD845'; // useVisualReceiver ? VISUAL_APP_ID : 'CC1AD845';
         const args = ['hls-cast', speakerName, hlsUrl, speakerIp || '', speakerModel || 'unknown', hlsReceiverAppId];
         result = await runPython(args);
 
         if (result.success) {
-          const modeDesc = useVisualReceiver ? 'HLS with ambient videos' : 'HLS (Default Media Receiver)';
+          // Note: Visual Receiver temporarily disabled, always using Default Media Receiver
+          const modeDesc = 'HLS (Default Media Receiver)';
           sendLog(`${deviceIcon} Streaming to ${deviceType} started! (${modeDesc})`, 'success');
           trayManager.updateTrayState(true);
           usageTracker.startTracking();
