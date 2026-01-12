@@ -1575,6 +1575,11 @@ async function startStereoStreaming() {
       log('Stereo streaming started!', 'success');
       renderSpeakers();
 
+      // RESTORE PC AUDIO: If Wall of Sound was enabled, activate it now
+      if (pcAudioEnabled && pcAudioToggle && pcAudioToggle.checked) {
+        log('Restoring Wall of Sound from saved settings...', 'info');
+        await togglePCAudio(true);
+      }
     } else {
       throw new Error(result.error || 'Unknown error');
     }
@@ -1778,6 +1783,13 @@ async function startStreamingToSpeaker(index, clearStereoState = true) {
       setStreamingState(true);
       renderSpeakers(); // Update UI to show selected state
       log(`Streaming to ${speaker.name}!`, 'success');
+
+      // RESTORE PC AUDIO: If Wall of Sound was enabled, activate it now
+      // This fixes the bug where manual streaming didn't restore PC audio mode
+      if (pcAudioEnabled && pcAudioToggle && pcAudioToggle.checked) {
+        log('Restoring Wall of Sound from saved settings...', 'info');
+        await togglePCAudio(true);
+      }
     } else {
       // Check if trial expired
       if (result.trialExpired) {

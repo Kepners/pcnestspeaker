@@ -118,19 +118,21 @@
     }
 
     /* Ambient PHOTO background - fullscreen, behind everything */
-    /* Two images for crossfade effect */
-    .ambient-photo {
+    /* Using CSS background-image for better Cast device compatibility */
+    #slideshow-bg {
       position: fixed;
       top: 0;
       left: 0;
       width: 100vw;
       height: 100vh;
-      object-fit: cover;
+      background-position: center;
+      background-size: cover;
+      background-repeat: no-repeat;
       z-index: 1;
       opacity: 0;
-      transition: opacity 2s ease-in-out;
+      transition: opacity 2s ease-in-out, background-image 1.5s ease-in-out;
     }
-    .ambient-photo.visible { opacity: 1; }
+    #slideshow-bg.visible { opacity: 1; }
 
     /* Gradient overlay for text readability */
     #overlay {
@@ -242,9 +244,8 @@
     <div id="splash-subtitle">STREAMING YOUR WORLD</div>
   </div>
 
-  <!-- Ambient PHOTO slideshow background (two images for crossfade) -->
-  <img id="ambient-photo-1" class="ambient-photo" src="" alt="">
-  <img id="ambient-photo-2" class="ambient-photo" src="" alt="">
+  <!-- Ambient PHOTO slideshow background (CSS background-image for Cast compatibility) -->
+  <div id="slideshow-bg"></div>
   <div id="overlay"></div>
 
   <!-- UI elements -->
@@ -329,24 +330,29 @@
       'https://images.unsplash.com/photo-1444703686981-a3abbc4d4fe3?w=1920&q=80',
     ];
 
-    // Slideshow state
+    // Slideshow state - simplified for Cast device compatibility
     let currentPhotoIndex = 0;
-    let activePhotoElement = 1;  // Which img element is currently visible (1 or 2)
     let slideshowInterval = null;
     let slideshowStarted = false;
     const SLIDESHOW_INTERVAL = 10000;  // 10 seconds per photo
 
-    const photo1 = document.getElementById('ambient-photo-1');
-    const photo2 = document.getElementById('ambient-photo-2');
+    const slideshowBg = document.getElementById('slideshow-bg');
 
-    // Preload next photo for smooth transition
-    function preloadImage(url) {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(url);
-        img.onerror = () => reject(url);
-        img.src = url;
-      });
+    // Preload image before displaying (with error handling)
+    function loadAndShowPhoto(url) {
+      const img = new Image();
+      img.onload = () => {
+        // Image loaded successfully - apply to background
+        slideshowBg.style.backgroundImage = `url('${url}')`;
+        console.log('[Ambient] Photo displayed:', url.substring(0, 60) + '...');
+      };
+      img.onerror = () => {
+        // Failed to load - try next photo
+        console.log('[Ambient] Photo load failed, trying next...');
+        currentPhotoIndex = (currentPhotoIndex + 1) % ambientPhotos.length;
+        setTimeout(() => loadAndShowPhoto(ambientPhotos[currentPhotoIndex]), 100);
+      };
+      img.src = url;
     }
 
     // Get next random photo (different from current)
@@ -358,34 +364,12 @@
       return next;
     }
 
-    // Crossfade to next photo
-    async function showNextPhoto() {
-      const nextIndex = getNextPhotoIndex();
-      const nextUrl = ambientPhotos[nextIndex];
-      console.log('[Ambient] Loading photo:', nextUrl);
-
-      try {
-        await preloadImage(nextUrl);
-        currentPhotoIndex = nextIndex;
-
-        // Crossfade: show on inactive element, hide active element
-        if (activePhotoElement === 1) {
-          photo2.src = nextUrl;
-          photo2.classList.add('visible');
-          photo1.classList.remove('visible');
-          activePhotoElement = 2;
-        } else {
-          photo1.src = nextUrl;
-          photo1.classList.add('visible');
-          photo2.classList.remove('visible');
-          activePhotoElement = 1;
-        }
-        console.log('[Ambient] Photo displayed');
-      } catch (e) {
-        console.log('[Ambient] Photo load error, trying next...');
-        // Try another photo immediately
-        setTimeout(showNextPhoto, 100);
-      }
+    // Transition to next photo
+    function showNextPhoto() {
+      currentPhotoIndex = getNextPhotoIndex();
+      const nextUrl = ambientPhotos[currentPhotoIndex];
+      console.log('[Ambient] Loading next photo:', nextUrl.substring(0, 60) + '...');
+      loadAndShowPhoto(nextUrl);
     }
 
     // Start the photo slideshow
@@ -395,13 +379,11 @@
 
       console.log('[Ambient] Starting photo slideshow (' + ambientPhotos.length + ' photos, ' + (SLIDESHOW_INTERVAL/1000) + 's each)');
 
-      // Show first photo immediately
+      // Show first photo immediately (random)
       currentPhotoIndex = Math.floor(Math.random() * ambientPhotos.length);
       const firstUrl = ambientPhotos[currentPhotoIndex];
-      console.log('[Ambient] First photo:', firstUrl);
-
-      photo1.src = firstUrl;
-      // Note: Don't add 'visible' class here - finishTransition() will do it after wipe
+      console.log('[Ambient] First photo:', firstUrl.substring(0, 60) + '...');
+      loadAndShowPhoto(firstUrl);
 
       // Start slideshow interval
       slideshowInterval = setInterval(showNextPhoto, SLIDESHOW_INTERVAL);
@@ -553,8 +535,7 @@
       console.log('[UI] Transition complete - showing ambient photos');
 
       // NOW make ambient photo visible (wipe is complete)
-      // Show whichever photo element is active (photo1 has first image)
-      if (photo1 && photo1.src) photo1.classList.add('visible');
+      if (slideshowBg) slideshowBg.classList.add('visible');
 
       // Show overlay for ambient videos
       const overlay = document.getElementById('overlay');
@@ -896,9 +877,10 @@
 
     // Debug: Log ambient photo slideshow state periodically
     setInterval(() => {
-      const activePhoto = activePhotoElement === 1 ? photo1 : photo2;
-      if (activePhoto && activePhoto.src) {
-        console.log(`[Ambient Debug] Photo ${activePhotoElement} visible, index=${currentPhotoIndex}, src=${activePhoto.src.substring(0, 60)}...`);
+      if (slideshowBg && slideshowBg.style.backgroundImage) {
+        const bg = slideshowBg.style.backgroundImage;
+        const visible = slideshowBg.classList.contains('visible');
+        console.log(`[Ambient Debug] index=${currentPhotoIndex}, visible=${visible}, bg=${bg.substring(0, 60)}...`);
       }
     }, 10000);
   </script>

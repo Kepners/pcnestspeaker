@@ -1249,11 +1249,18 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
             usedDaemon = true;
 
             // FIX: If daemon returns "Not connected", it means the device wasn't connected via daemon
-            // (e.g., TV connected via HLS). Fall through to use stop-fast for actual disconnect.
-            if (stopResult && stopResult.message === 'Not connected' && speaker.ip) {
-              sendLog(`Daemon has no connection - using stop-fast for actual disconnect...`);
-              stopResult = await runPython(['stop-fast', speaker.name, speaker.ip]);
-              sendLog(`Stop-fast result: ${JSON.stringify(stopResult)}`);
+            // (e.g., TV connected via HLS). Use stop-fast if IP available, else slow stop.
+            if (stopResult && stopResult.message === 'Not connected') {
+              if (speaker.ip) {
+                sendLog(`Daemon has no connection - using stop-fast for actual disconnect...`);
+                stopResult = await runPython(['stop-fast', speaker.name, speaker.ip]);
+                sendLog(`Stop-fast result: ${JSON.stringify(stopResult)}`);
+              } else {
+                // No IP cached - fall back to slow stop (required for proper TV disconnect!)
+                sendLog(`Daemon has no connection and no IP - using slow stop for actual disconnect...`);
+                stopResult = await runPython(['stop', speaker.name]);
+                sendLog(`Stop result: ${JSON.stringify(stopResult)}`);
+              }
             }
           } else if (speaker.ip) {
             // Use fast stop with cached IP (no network scan needed)
@@ -1656,7 +1663,10 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
           // CRITICAL: Add TV to connected speakers so it gets disconnected when switching!
           currentConnectedSpeakers = [{ name: speakerName, ip: speakerIp }];
-          sendLog(`📺 TV added to connected speakers for proper cleanup on switch`);
+          sendLog(`📺 TV added to connected speakers: ${speakerName} (IP: ${speakerIp || 'MISSING - will use slow stop'})`);
+          if (!speakerIp) {
+            sendLog(`📺 WARNING: TV IP not cached - disconnect will be slower`, 'warning');
+          }
 
           // WALL OF SOUND FIX: Re-enable PC speakers if they were on
           // Switching devices can disrupt "Listen to this device" - ensure it's restored
