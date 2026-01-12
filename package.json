@@ -124,6 +124,13 @@
           "VBCABLE_Setup_x64.exe",
           "VBCABLE_Setup.exe"
         ]
+      },
+      {
+        "from": "dependencies/equalizerapo/",
+        "to": "dependencies/equalizerapo",
+        "filter": [
+          "EqualizerAPO64-1.4.exe"
+        ]
       }
     ],
     "files": [
