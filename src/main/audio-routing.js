@@ -18,7 +18,7 @@
  * - WindowsAudioControl-CLI (audioctl.exe) for "Listen to this device" control
  */
 
-const { exec } = require('child_process');
+const { exec, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const settingsManager = require('./settings-manager');
@@ -33,6 +33,129 @@ const AUDIOCTL_PATH = path.join(AUDIOCTL_DIR, 'audioctl.exe');
 
 // Store original default device for restoration
 let originalDefaultDevice = null;
+// Cache the command-line ID for sync restore on exit
+let originalDefaultDeviceCmdId = null;
+
+/**
+ * Save the current default audio device (call BEFORE switching to VB-Cable)
+ * This should be called once when app takes over audio
+ * Also caches the cmdId for synchronous restore on app exit
+ */
+async function saveOriginalDevice() {
+  if (originalDefaultDevice) {
+    console.log(`[AudioRouting] Original device already saved: ${originalDefaultDevice}`);
+    return originalDefaultDevice;
+  }
+
+  // Get full device info including cmdId for sync restore
+  const devices = await getDevices();
+  const defaultDevice = devices.find(d => d.direction === 'Render' && d.isDefault);
+
+  if (defaultDevice) {
+    // CRITICAL: Don't save VB-Cable as "original" - that's what WE use!
+    // If VB-Cable is current default, it means previous run didn't clean up properly
+    const nameLower = defaultDevice.name.toLowerCase();
+    const deviceNameLower = (defaultDevice.deviceName || '').toLowerCase();
+    if (nameLower.includes('vb-audio') || nameLower.includes('cable') ||
+        deviceNameLower.includes('vb-audio') || deviceNameLower.includes('cable')) {
+      console.log(`[AudioRouting] Current default is VB-Cable (${defaultDevice.name}) - looking for real speakers...`);
+
+      // Find the first non-VB-Cable render device to use as "original"
+      const realSpeaker = devices.find(d => {
+        if (d.direction !== 'Render') return false;
+        const n = d.name.toLowerCase();
+        const dn = (d.deviceName || '').toLowerCase();
+        return !n.includes('vb-audio') && !n.includes('cable') &&
+               !dn.includes('vb-audio') && !dn.includes('cable');
+      });
+
+      if (realSpeaker) {
+        originalDefaultDevice = realSpeaker.name;
+        originalDefaultDeviceCmdId = realSpeaker.cmdId;
+        console.log(`[AudioRouting] Found real speakers to restore to: ${originalDefaultDevice}`);
+        console.log(`[AudioRouting] Cached cmdId: ${originalDefaultDeviceCmdId}`);
+        return originalDefaultDevice;
+      } else {
+        console.log(`[AudioRouting] WARNING: No real speakers found! Cannot save original device.`);
+        return null;
+      }
+    }
+
+    originalDefaultDevice = defaultDevice.name;
+    originalDefaultDeviceCmdId = defaultDevice.cmdId;
+    console.log(`[AudioRouting] Saved original default device: ${originalDefaultDevice}`);
+    console.log(`[AudioRouting] Cached cmdId for sync restore: ${originalDefaultDeviceCmdId}`);
+  }
+  return originalDefaultDevice;
+}
+
+/**
+ * Restore the original default audio device (call when app exits or stops streaming)
+ * Returns the user to their normal audio setup
+ */
+async function restoreOriginalDevice() {
+  if (!originalDefaultDevice) {
+    console.log('[AudioRouting] No original device saved to restore');
+    return { success: false, error: 'No original device saved' };
+  }
+
+  console.log(`[AudioRouting] Restoring original device: ${originalDefaultDevice}`);
+  const result = await setDefaultDevice(originalDefaultDevice);
+
+  if (result.success) {
+    console.log(`[AudioRouting] Restored default device to: ${originalDefaultDevice}`);
+    // Clear saved device after successful restore
+    originalDefaultDevice = null;
+    originalDefaultDeviceCmdId = null;
+  }
+
+  return result;
+}
+
+/**
+ * SYNCHRONOUS version of restoreOriginalDevice - for use in app cleanup/exit
+ * Uses cached cmdId to avoid async device lookup
+ * This ensures audio is restored BEFORE the app process exits
+ */
+function restoreOriginalDeviceSync() {
+  if (!originalDefaultDeviceCmdId) {
+    console.log('[AudioRouting] No original device cmdId cached for sync restore');
+    return { success: false, error: 'No original device cmdId cached' };
+  }
+
+  if (!isAvailable()) {
+    console.log('[AudioRouting] SoundVolumeView not available for sync restore');
+    return { success: false, error: 'SoundVolumeView not found' };
+  }
+
+  try {
+    console.log(`[AudioRouting] SYNC restoring original device: ${originalDefaultDevice}`);
+    console.log(`[AudioRouting] Using cached cmdId: ${originalDefaultDeviceCmdId}`);
+
+    // Use execSync with SoundVolumeView - blocks until complete
+    const cmd = `powershell -Command "& '${SVV_PATH}' /SetDefault '${originalDefaultDeviceCmdId}' all"`;
+    execSync(cmd, { windowsHide: true, timeout: 5000, stdio: 'ignore' });
+
+    console.log(`[AudioRouting] SYNC restored default device to: ${originalDefaultDevice}`);
+
+    // Clear cached values
+    const restoredDevice = originalDefaultDevice;
+    originalDefaultDevice = null;
+    originalDefaultDeviceCmdId = null;
+
+    return { success: true, device: restoredDevice };
+  } catch (error) {
+    console.error(`[AudioRouting] SYNC restore failed: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Get the saved original device (if any)
+ */
+function getOriginalDevice() {
+  return originalDefaultDevice;
+}
 
 /**
  * Check if SoundVolumeView is available (bundled with app)
@@ -612,23 +735,36 @@ async function enablePCSpeakersMode(targetDevice = null) {
 async function findVirtualDevice() {
   const devices = await getRenderDevices();
 
-  // Virtual devices to look for - VB-Cable PREFERRED
+  // Virtual devices to look for - VB-Cable ONLY (not VoiceMeeter's CABLE 16, etc.)
   // VB-Cable provides:
   // - RENDER device: "CABLE Input" (where apps output to)
   // - CAPTURE device: "CABLE Output" (Windows-visible, for "Listen to this device")
+  // IMPORTANT: Only match "VB-Audio Virtual Cable" to avoid VoiceMeeter confusion
   const virtualPatterns = [
-    'VB-Audio Virtual Cable',    // VB-Cable device name (preferred)
-    'CABLE Input',               // VB-Cable render device display name
+    'VB-Audio Virtual Cable',    // VB-Cable device name (only specific match!)
     'Virtual Desktop Audio'      // Fallback to VDA if VB-Cable not installed
   ];
 
   for (const pattern of virtualPatterns) {
+    // First pass: find VB-Audio devices that DON'T have "16" in the name (prefer standard)
+    for (const device of devices) {
+      const nameLower = device.name.toLowerCase();
+      const deviceNameLower = device.deviceName.toLowerCase();
+      const patternLower = pattern.toLowerCase();
+
+      if ((nameLower.includes(patternLower) || deviceNameLower.includes(patternLower)) &&
+          !nameLower.includes('16') && !deviceNameLower.includes('16')) {
+        // CRITICAL: Return deviceName (unique) not name (ambiguous)
+        console.log(`[AudioRouting] Found virtual RENDER device: ${device.deviceName} (display: ${device.name})`);
+        return device.deviceName;
+      }
+    }
+
+    // Second pass: fallback to any VB-Audio device including 16ch if no standard found
     for (const device of devices) {
       if (device.name.toLowerCase().includes(pattern.toLowerCase()) ||
           device.deviceName.toLowerCase().includes(pattern.toLowerCase())) {
-        // CRITICAL: Return deviceName (unique) not name (ambiguous)
-        // Multiple devices can have name="Speakers" but deviceName is unique
-        console.log(`[AudioRouting] Found virtual RENDER device: ${device.deviceName} (display: ${device.name})`);
+        console.log(`[AudioRouting] Found virtual RENDER device (16ch fallback): ${device.deviceName} (display: ${device.name})`);
         return device.deviceName;
       }
     }
@@ -678,18 +814,41 @@ async function findVirtualCaptureDevice(matchRenderDevice = null) {
     console.log(`[AudioRouting] No CAPTURE device found matching: ${matchRenderDevice}`);
   }
 
-  // Virtual capture devices to look for - VB-Cable PREFERRED
+  // Virtual capture devices to look for - VB-Cable ONLY (not VoiceMeeter's CABLE 16, etc.)
   // VB-Cable's "CABLE Output" IS visible to Windows WASAPI (required for Listen)
   // Virtual Desktop Audio's capture is DirectShow-only and won't work
+  // IMPORTANT: Only match "VB-Audio Virtual Cable" to avoid VoiceMeeter confusion
   const virtualPatterns = [
-    'VB-Audio Virtual Cable',    // VB-Cable device name (preferred)
-    'CABLE Output',              // VB-Cable capture device display name
+    'VB-Audio Virtual Cable',    // VB-Cable device name (only specific match!)
     'Virtual Desktop Audio'      // Fallback (won't work for Listen, but try anyway)
   ];
 
   for (const pattern of virtualPatterns) {
+    // First pass: find VB-Audio devices that DON'T have "16" in the name (prefer standard)
     for (const device of allSvvDevices) {
-      // Only look at CAPTURE devices (Direction = "Capture")
+      if (device['Direction'] !== 'Capture') continue;
+      if (device['Type'] !== 'Device') continue;
+
+      const name = device['Name'] || '';
+      const deviceName = device['Device Name'] || '';
+      const nameLower = name.toLowerCase();
+      const deviceNameLower = deviceName.toLowerCase();
+      const patternLower = pattern.toLowerCase();
+
+      if ((nameLower.includes(patternLower) || deviceNameLower.includes(patternLower)) &&
+          !nameLower.includes('16') && !deviceNameLower.includes('16')) {
+        console.log(`[AudioRouting] Found virtual CAPTURE device: ${deviceName} (display: ${name})`);
+        console.log(`[AudioRouting]   Command-Line ID: ${device['Command-Line Friendly ID']}`);
+        return {
+          name: name,
+          deviceName: deviceName,
+          cmdId: device['Command-Line Friendly ID']
+        };
+      }
+    }
+
+    // Second pass: fallback to any VB-Audio device including 16ch if no standard found
+    for (const device of allSvvDevices) {
       if (device['Direction'] !== 'Capture') continue;
       if (device['Type'] !== 'Device') continue;
 
@@ -698,7 +857,7 @@ async function findVirtualCaptureDevice(matchRenderDevice = null) {
 
       if (name.toLowerCase().includes(pattern.toLowerCase()) ||
           deviceName.toLowerCase().includes(pattern.toLowerCase())) {
-        console.log(`[AudioRouting] Found virtual CAPTURE device: ${deviceName} (display: ${name})`);
+        console.log(`[AudioRouting] Found virtual CAPTURE device (16ch fallback): ${deviceName} (display: ${name})`);
         console.log(`[AudioRouting]   Command-Line ID: ${device['Command-Line Friendly ID']}`);
         return {
           name: name,
@@ -765,6 +924,10 @@ module.exports = {
   getRenderDevices,
   getCurrentDefaultDevice,
   setDefaultDevice,
+  saveOriginalDevice,
+  restoreOriginalDevice,
+  restoreOriginalDeviceSync,  // Sync version for app cleanup/exit
+  getOriginalDevice,
   findRealSpeakers,
   findVirtualDevice,
   findVirtualCaptureDevice,

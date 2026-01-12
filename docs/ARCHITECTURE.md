@@ -146,20 +146,24 @@ virtual-audio-capturer -> FFmpeg -+
 
 ```
 src/main/
-├── electron-main.js       # Main entry point, IPC handlers, process management
-├── preload.js             # IPC bridge for renderer
-├── audio-streamer.js      # FFmpeg + HTTP server for MP3 fallback
-├── chromecast.js          # Node.js Cast discovery (legacy)
-├── cast-helper.py         # Python pychromecast control (primary)
-├── stream-stats.js        # Real-time streaming statistics
-├── settings-manager.js    # JSON settings persistence
-├── usage-tracker.js       # Trial time tracking (10 hours)
-├── tray-manager.js        # System tray icon and menu
-├── auto-start-manager.js  # Windows startup registration
+├── electron-main.js        # Main entry point, IPC handlers, process management
+├── preload.js              # IPC bridge for renderer
+├── audio-streamer.js       # FFmpeg + HTTP server for MP3 fallback
+├── chromecast.js           # Node.js Cast discovery (legacy)
+├── cast-helper.py          # Python pychromecast control (primary)
+├── stream-stats.js         # Real-time streaming statistics
+├── settings-manager.js     # JSON settings persistence
+├── usage-tracker.js        # Trial time tracking (10 hours)
+├── tray-manager.js         # System tray icon and menu
+├── auto-start-manager.js   # Windows startup registration
 ├── audio-device-manager.js # Windows audio device switching
-├── windows-volume-sync.js # PC volume keys -> Nest sync
-├── daemon-manager.js      # Python daemon for fast volume
-└── firewall-setup.js      # Windows firewall rules
+├── audio-routing.js        # VB-Cable, device save/restore, "Listen to this device"
+├── audio-sync-manager.js   # APO delay manager (writes pcnestspeaker-sync.txt)
+├── auto-sync-manager.js    # Network RTT monitoring, auto-adjusts delay
+├── pc-speaker-delay.js     # Direct APO config writer
+├── windows-volume-sync.js  # PC volume keys -> Nest + PC speaker sync
+├── daemon-manager.js       # Python daemon for fast volume
+└── firewall-setup.js       # Windows firewall rules
 ```
 
 ### Renderer Process
@@ -455,11 +459,18 @@ Stream Stop:
 
 ```
 PC Volume Keys Pressed:
-1. PowerShell monitors volume (1s interval)
-2. Volume change detected
-3. Send to Python pychromecast
-4. Nest speaker volume updated
+1. PowerShell polls Windows volume (500ms interval via Core Audio API)
+2. Volume change detected (with 200ms debounce)
+3. Set Nest speaker volume (via Python pychromecast)
+4. Set PC speaker volume (via SoundVolumeView)
 ```
+
+**Implementation** (`windows-volume-sync.js`):
+- Uses PowerShell with embedded C# to access IAudioEndpointVolume
+- Polls every 500ms (CHECK_INTERVAL not 1s)
+- `DEBOUNCE_MS = 200` prevents spam during rapid changes
+- `setDeviceVolume()` uses NirSoft SoundVolumeView for per-device control
+- `setPCSpeakerVolume()` sets the same volume on PC speakers when "PC + Speakers" mode active
 
 ### Auto-Start with Windows
 
@@ -469,6 +480,117 @@ HKCU\Software\Microsoft\Windows\CurrentVersion\Run
 Name: PCNestSpeaker
 Value: "path\to\electron.exe" "path\to\app"
 ```
+
+---
+
+## Audio Sync System ("PC + Speakers" Mode)
+
+Allows PC speakers and Nest to play in sync by delaying PC audio to match Nest latency.
+
+### Architecture
+
+```
+                                  +------------------+
+                                  |  Equalizer APO   |
+                                  |  (Windows VST)   |
+        +------------+            +--------+---------+
+        | PC Speakers| <-- Delay --|       |
+        +------------+            |  pcnestspeaker-sync.txt
+                                  |  "Delay: 150 ms"
+                                  +------------------+
+                                            ^
+                                            |
++------------------+  +------------------+  |  +------------------+
+|  auto-sync-      |->|  audio-sync-     |--+  |  pc-speaker-     |
+|  manager.js      |  |  manager.js      |     |  delay.js        |
+|                  |  |                  |     |                  |
+|  * Ping RTT      |  |  * Main manager  |     |  * APO writer    |
+|  * Every 500ms   |  |  * currentDelayMs|     |  * Config format |
+|  * Baseline adj  |  |  * setDelay()    |     +------------------+
++------------------+  +------------------+
+```
+
+### Config File Location
+
+```
+C:\Program Files\EqualizerAPO\config\
+├── config.txt                # Main APO config (includes our file)
+└── pcnestspeaker-sync.txt    # Our delay: "Delay: 150 ms" or "Delay: 0 ms"
+```
+
+### Auto-Sync Algorithm
+
+```
+1. User calibrates "perfect" sync → saves baseline (delay + RTT)
+2. Every 500ms, ping speaker to measure current RTT
+3. If RTT drift > 10ms threshold:
+   newDelay = baselineDelay + (currentRTT - baselineRTT)
+4. Write new delay to APO config
+```
+
+### Key Parameters
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| `CHECK_INTERVAL_MS` | 500 | Ping frequency (0.5s) |
+| `ADJUSTMENT_THRESHOLD_MS` | 10 | Min drift to adjust |
+| `MIN_DELAY_MS` | 0 | Allows zero delay |
+| `MAX_DELAY_MS` | 2000 | 2 second cap |
+
+### VB-Cable Routing for PC + Speakers
+
+```
+Windows Default → VB-CABLE Input (render) → FFmpeg captures
+                        ↓
+                  VB-CABLE Output (capture)
+                        ↓
+               "Listen to this device" enabled
+                        ↓
+                  PC Speakers (with APO delay)
+```
+
+**Tool**: `audioctl.exe` (WindowsAudioControl-CLI) toggles "Listen to this device"
+
+---
+
+## Low-Latency FFmpeg Configuration
+
+Critical flags for sub-1-second latency:
+
+### Input Flags (DirectShow)
+```
+-fflags nobuffer          # Don't buffer input
+-flags low_delay          # Low delay mode
+-probesize 32             # Minimal probing
+-analyzeduration 0        # No analysis delay
+-rtbufsize 64k            # Small real-time buffer
+-audio_buffer_size 50     # DirectShow: 50ms (DEFAULT IS 500ms!)
+```
+
+### Output Flags
+```
+-flush_packets 1          # Flush immediately
+-max_delay 0              # No muxer delay
+-muxdelay 0               # No mux delay
+```
+
+### Opus Encoder
+```
+-application lowdelay     # Opus low-delay mode
+-frame_duration 20        # 20ms frames (balanced)
+```
+
+### MediaMTX Config (`mediamtx-audio.yml`)
+```yaml
+writeQueueSize: 64        # Reduced from 512
+```
+
+### Cast Receiver (`receiver.html`)
+```javascript
+event.receiver.jitterBufferTarget = 50; // 50ms buffer
+```
+
+**CRITICAL**: `-audio_buffer_size 50` is THE biggest latency win. Default is ~500ms!
 
 ---
 
@@ -498,4 +620,4 @@ Value: "path\to\electron.exe" "path\to\app"
 
 ---
 
-*Last Updated: January 7, 2026*
+*Last Updated: January 12, 2025*

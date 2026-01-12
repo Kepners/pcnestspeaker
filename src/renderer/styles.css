@@ -191,6 +191,11 @@ body::before {
   margin-top: 8px;
 }
 
+/* Wall of Sound label - tighter spacing with toggle below */
+#options-card .section-label {
+  margin-bottom: 4px;
+}
+
 .section-label {
   font-size: 0.7rem;
   font-weight: 600;
@@ -287,7 +292,7 @@ body::before {
   margin-bottom: 12px;
 }
 
-/* Audio Visualizer - Simple clean bars */
+/* Audio Visualizer - Rounded bars with gradient */
 .audio-visualizer {
   display: flex;
   align-items: flex-end;
@@ -299,15 +304,20 @@ body::before {
 
 .visualizer-bar {
   width: 6px;
-  background: var(--green);
-  min-height: 4px;
+  min-height: 8px;
   height: 15%;
-  transition: height 0.1s ease;
-  opacity: 0.4;
+  transition: height 0.1s ease, background 0.2s ease;
+  opacity: 0.7;
+  /* Rounded top caps */
+  border-radius: 3px 3px 0 0;
+  /* Gradient: grey at top fading to pink at bottom (idle state) */
+  background: linear-gradient(to bottom, #CCCCCC 0%, #EF476F 100%);
 }
 
 .visualizer-bar.active {
   opacity: 1;
+  /* Gradient: grey at top fading to green at bottom (streaming) */
+  background: linear-gradient(to bottom, #CCCCCC 0%, var(--green) 100%);
 }
 
 /* Stream Stats - Clean horizontal layout */
@@ -552,11 +562,6 @@ body::before {
   border-bottom: 1px solid rgba(26, 26, 26, 0.08);
 }
 
-/* Wall of Sound option row - align toggle+Ⓦ with L/R stereo buttons */
-#options-card .option-row {
-  padding-right: 62px; /* 22(check) + 12(gap) + 24(info) + 4(margin) = 62px to align with stereo toggles */
-}
-
 .option-row:last-child {
   border-bottom: none;
 }
@@ -596,6 +601,71 @@ body::before {
   color: rgba(26, 26, 26, 0.4);
   margin-top: 8px;
   line-height: 1.4;
+}
+
+/* ==================== CAST URL SECTION ==================== */
+#cast-url-section {
+  margin-top: 16px;
+}
+
+.cast-url-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.cast-url-input {
+  flex: 1;
+  min-width: 150px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  background: rgba(26, 26, 26, 0.05);
+  border: 1px solid rgba(26, 26, 26, 0.15);
+  border-radius: 8px;
+  color: var(--white);
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.cast-url-input:focus {
+  border-color: var(--cyan);
+  background: rgba(85, 130, 139, 0.08);
+}
+
+.cast-url-input::placeholder {
+  color: rgba(26, 26, 26, 0.35);
+}
+
+.cast-url-type {
+  padding: 10px 12px;
+  font-size: 0.8rem;
+  font-family: inherit;
+  background: rgba(26, 26, 26, 0.05);
+  border: 1px solid rgba(26, 26, 26, 0.15);
+  border-radius: 8px;
+  color: var(--white);
+  cursor: pointer;
+  outline: none;
+}
+
+.cast-url-type:focus {
+  border-color: var(--cyan);
+}
+
+.cast-url-status {
+  font-size: 0.75rem;
+  margin-top: 8px;
+  color: rgba(26, 26, 26, 0.5);
+}
+
+.cast-url-status.success {
+  color: var(--color-success);
+}
+
+.cast-url-status.error {
+  color: var(--color-error);
 }
 
 /* Toggle Switch - Pill Style */
@@ -1613,7 +1683,7 @@ body::before {
 /* ==================== BOTTOM TAB NAVIGATION ==================== */
 .bottom-tabs {
   position: fixed;
-  bottom: 45px;
+  bottom: 28px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -1675,74 +1745,205 @@ body::before {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   PC AUDIO OUTPUT GRID
+   WALL OF SOUND - Combined row layout
+   ═══════════════════════════════════════════════════════════ */
+
+.wall-of-sound-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.pc-speaker-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.pc-speaker-controls .option-label {
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.wall-divider {
+  width: 1px;
+  height: 24px;
+  background: rgba(26, 26, 26, 0.15);
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PC AUDIO OUTPUT - COMPACT PILL WITH OVERLAY EXPANSION
    ═══════════════════════════════════════════════════════════ */
 
 .audio-output-grid {
-  display: none; /* Hidden by default, shown in PC + Speakers mode */
-  flex-wrap: wrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   gap: 4px;
-  margin-top: 10px;
-  background: rgba(26, 26, 26, 0.03);
-  border: 1px solid rgba(26, 26, 26, 0.1);
-  border-radius: 8px;
-  padding: 4px;
+  background: rgba(26, 26, 26, 0.04);
+  border: 1px solid rgba(26, 26, 26, 0.08);
+  border-radius: 20px;
+  padding: 3px 4px;
+  position: relative;
 }
 
 .audio-output-loading {
   color: rgba(26, 26, 26, 0.4);
-  font-size: 0.65rem;
-  padding: 6px;
+  font-size: 0.6rem;
+  padding: 4px 8px;
   text-align: center;
-  width: 100%;
 }
 
+/* Circle button - icon only by default */
 .audio-output-item {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 5px 8px;
-  background: rgba(26, 26, 26, 0.05);
+  width: 26px;
+  height: 26px;
+  background: rgba(26, 26, 26, 0.06);
   border: none;
-  border-radius: 4px;
+  border-radius: 50%;
   cursor: pointer;
-  transition: all 0.2s ease;
-  color: rgba(26, 26, 26, 0.45);
-}
-
-.audio-output-item:hover {
-  color: rgba(26, 26, 26, 0.7);
-  background: rgba(26, 26, 26, 0.08);
-}
-
-.audio-output-item.active {
-  background: linear-gradient(135deg, var(--pink), var(--cyan));
-  color: white;
-  box-shadow: 0 2px 8px rgba(239, 71, 111, 0.3);
-}
-
-.audio-output-item.switching {
-  opacity: 0.6;
-  pointer-events: none;
-}
-
-.audio-output-icon {
-  font-size: 0.7rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  color: rgba(26, 26, 26, 0.5);
+  position: relative;
   flex-shrink: 0;
 }
 
+/* Hover: glow effect */
+.audio-output-item:hover {
+  color: rgba(26, 26, 26, 0.8);
+  background: rgba(26, 26, 26, 0.1);
+  box-shadow: 0 0 10px rgba(239, 71, 111, 0.3);
+  transform: scale(1.1);
+}
+
+/* Active (current device): pink gradient */
+.audio-output-item.active {
+  background: linear-gradient(135deg, var(--pink), #ff8fa3);
+  color: white;
+  box-shadow: 0 2px 8px rgba(239, 71, 111, 0.4);
+}
+
+.audio-output-item.active:hover {
+  box-shadow: 0 2px 12px rgba(239, 71, 111, 0.5);
+}
+
+/* Expanded state: OVERLAY on top - position set by JS */
+.audio-output-item.expanded {
+  position: absolute !important;
+  width: auto !important;
+  min-width: 100px;
+  max-width: 160px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 13px;
+  gap: 5px;
+  z-index: 100;
+  background: linear-gradient(135deg, var(--pink), var(--cyan)) !important;
+  color: white !important;
+  box-shadow: 0 3px 15px rgba(239, 71, 111, 0.5);
+  transform: none !important;
+  top: 50%;
+  margin-top: -13px;  /* Half of height to center vertically */
+}
+
+/* Switching state */
+.audio-output-item.switching {
+  opacity: 0.7;
+  pointer-events: none;
+  animation: pulse-switch 0.5s ease-in-out infinite;
+}
+
+@keyframes pulse-switch {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.95); }
+}
+
+/* Icon inside circle */
+.audio-output-icon {
+  font-size: 0.75rem;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.audio-output-item:hover .audio-output-icon {
+  transform: scale(1.15);
+}
+
+/* Name - ALWAYS hidden unless expanded */
 .audio-output-name {
+  display: none;
   font-size: 0.55rem;
   font-weight: 600;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 70px;
+  max-width: 0;
+  opacity: 0;
 }
 
-.audio-output-item.active .audio-output-icon {
-  color: white;
+/* Only show name when expanded class is present */
+.audio-output-item.expanded .audio-output-name {
+  display: inline;
+  max-width: 120px;
+  opacity: 1;
+}
+
+/* VB-Cable indicator - green dot showing it's required */
+.audio-output-item.vb-cable {
+  position: relative;
+}
+
+.vb-cable-indicator {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 7px;
+  height: 7px;
+  background: #4CAF50;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 5px rgba(76, 175, 80, 0.6);
+  animation: vb-pulse 2s ease-in-out infinite;
+}
+
+/* When VB-Cable is active, indicator is brighter */
+.audio-output-item.vb-cable.active .vb-cable-indicator {
+  background: #00E676;
+  box-shadow: 0 0 8px rgba(0, 230, 118, 0.8);
+}
+
+@keyframes vb-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(0.9); }
+}
+
+/* Toast animations for sync calibration popup */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100px);
+  }
 }
 

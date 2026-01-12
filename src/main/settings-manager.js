@@ -20,7 +20,9 @@ function getSettingsFilePath() {
 
 // Default settings
 const DEFAULT_SETTINGS = {
-  lastSpeaker: null,           // { name, ip, cast_type }
+  lastSpeaker: null,           // { name, ip, cast_type } - single speaker mode
+  lastStereoSpeakers: null,    // { left: {...}, right: {...} } - stereo mode L/R pair
+  lastMode: 'single',          // 'single' or 'stereo' - which mode was active
   autoConnect: false,          // Auto-connect to last speaker on startup
   autoStart: false,            // Start app on Windows boot
   streamingMode: 'webrtc-system',  // Default streaming mode

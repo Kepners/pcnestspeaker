@@ -11,8 +11,20 @@ const path = require('path');
 // Configuration
 const CHECK_INTERVAL_MS = 500; // Check every 0.5 seconds
 const ADJUSTMENT_THRESHOLD_MS = 10; // Only adjust if drift > 10ms (conservative - no hunting)
-const MIN_DELAY_MS = 200; // Minimum reasonable delay
-const MAX_DELAY_MS = 2000; // Maximum delay
+const MIN_DELAY_MS = 0; // Allow zero delay (WebRTC is super fast now!)
+const MAX_DELAY_MS = 2000; // Maximum delay (2 seconds)
+
+// Smart Default: Known pipeline delays (in ms)
+// These are added to RTT to estimate total audio delay
+// Updated for optimized low-latency FFmpeg (50ms buffer)
+const PIPELINE_DELAYS = {
+  FFMPEG_CAPTURE: 50,        // audio_buffer_size on DirectShow
+  OPUS_ENCODING: 20,         // Opus frame_duration
+  WEBRTC_JITTER_BUFFER: 50,  // jitterBufferTarget on receiver
+  OPUS_DECODING: 10,         // Decoder latency
+  SPEAKER_PROCESSING: 30,    // Nest speaker internal processing (reduced - modern hardware)
+};
+const TOTAL_PIPELINE_DELAY = Object.values(PIPELINE_DELAYS).reduce((a, b) => a + b, 0); // ~160ms
 
 // State
 let isEnabled = false;
@@ -23,6 +35,8 @@ let baselineDelay = null; // The delay that was "perfect" for the user
 let onDelayAdjusted = null; // Callback when delay is auto-adjusted
 let audioSyncManager = null;
 let sendLogFn = null;
+let manualAdjustmentPause = false; // Prevents auto-correct during manual adjustment
+let pingCount = 0; // For periodic UI heartbeat
 
 /**
  * Initialize the auto-sync manager
@@ -51,6 +65,7 @@ function start(speaker) {
 
   currentSpeaker = speaker;
   isEnabled = true;
+  pingCount = 0; // Reset heartbeat counter
 
   // Clear any existing interval
   if (checkInterval) {
@@ -120,11 +135,19 @@ function setBaseline() {
  * we know network added 50ms latency, so new delay should be 1000ms.
  */
 async function checkAndAdjust() {
-  if (!currentSpeaker || !audioSyncManager) {
+  // Skip if paused (user is manually adjusting)
+  if (manualAdjustmentPause) {
+    console.log('[AutoSync] Skipped - manual adjustment pause active');
+    return;
+  }
+
+  // CRITICAL: Check if still enabled (user may have stopped during async operation)
+  if (!isEnabled || !currentSpeaker || !audioSyncManager) {
     return;
   }
 
   try {
+    pingCount++;
     console.log(`[AutoSync] Checking latency to "${currentSpeaker.name}"...`);
 
     // Measure current latency
@@ -134,6 +157,8 @@ async function checkAndAdjust() {
       console.log('[AutoSync] Could not measure latency');
       return;
     }
+
+    // Silent monitoring - only console log, no UI spam
 
     // Get current delay setting
     const currentDelay = audioSyncManager.getDelay();
@@ -228,6 +253,90 @@ function measureLatencyQuick(ip) {
 }
 
 /**
+ * Update baseline when user manually adjusts delay
+ * This prevents auto-sync from fighting manual changes
+ * @param {number} newDelay - The new delay set by user
+ */
+async function updateBaseline(newDelay) {
+  // PAUSE auto-sync for 5 seconds so user can hear their adjustment
+  manualAdjustmentPause = true;
+  console.log('[AutoSync] PAUSED - manual adjustment in progress');
+
+  // Update baseline delay to user's new value
+  baselineDelay = newDelay;
+
+  // Measure current RTT as new baseline
+  if (currentSpeaker) {
+    const currentRtt = await measureLatencyQuick(currentSpeaker.ip);
+    if (currentRtt !== null) {
+      baselineRtt = currentRtt;
+      console.log(`[AutoSync] New baseline: ${newDelay}ms delay at ${currentRtt}ms RTT`);
+    }
+  }
+
+  // After 5 seconds: resume AND immediately do a fresh calculation
+  setTimeout(async () => {
+    manualAdjustmentPause = false;
+    console.log('[AutoSync] RESUMED - running fresh check...');
+
+    // Immediately check if adjustment needed based on new baseline
+    if (isEnabled && currentSpeaker) {
+      await checkAndAdjust();
+    }
+  }, 5000);
+
+  log(`Your setting: ${newDelay}ms (auto-sync resumes in 5s)`);
+  return true;
+}
+
+/**
+ * Calculate smart default delay based on RTT
+ * @param {number} rtt - Measured round-trip time in ms
+ * @returns {number} Estimated delay in ms, rounded to nearest 10ms
+ */
+function calculateSmartDefault(rtt = 0) {
+  const estimated = rtt + TOTAL_PIPELINE_DELAY;
+  // Round to nearest 10ms for cleaner values
+  return Math.round(estimated / 10) * 10;
+}
+
+/**
+ * Calibrate and set a smart default delay
+ * Measures RTT and calculates estimated delay based on known pipeline delays
+ * @returns {Promise<{success: boolean, delay: number, rtt: number}>}
+ */
+async function calibrateSmartDefault() {
+  if (!currentSpeaker) {
+    return { success: false, error: 'No speaker connected' };
+  }
+
+  const rtt = await measureLatencyQuick(currentSpeaker.ip);
+  if (rtt === null) {
+    return { success: false, error: 'Could not measure RTT' };
+  }
+
+  const smartDelay = calculateSmartDefault(rtt);
+
+  // Set as new baseline
+  baselineRtt = rtt;
+  baselineDelay = smartDelay;
+
+  // Apply the delay if we have audioSyncManager
+  if (audioSyncManager) {
+    await audioSyncManager.setDelay(smartDelay);
+  }
+
+  log(`Smart default calibrated: ${smartDelay}ms (RTT: ${rtt}ms + pipeline: ${TOTAL_PIPELINE_DELAY}ms)`);
+
+  return {
+    success: true,
+    delay: smartDelay,
+    rtt: rtt,
+    pipelineDelay: TOTAL_PIPELINE_DELAY
+  };
+}
+
+/**
  * Force an immediate sync check
  */
 async function checkNow() {
@@ -287,6 +396,9 @@ module.exports = {
   stop,
   checkNow,
   setBaseline,
+  updateBaseline,
+  calibrateSmartDefault,
+  calculateSmartDefault,
   setCheckInterval,
   getStatus
 };

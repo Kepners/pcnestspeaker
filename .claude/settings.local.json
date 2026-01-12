@@ -174,7 +174,13 @@
       "Bash(\"c:/Users/kepne/OneDrive/Documents/GitHub/pcnestspeaker/audioctl/audioctl.exe\" listen --name \"CABLE Output\" --disable)",
       "Bash(node_modules/electron/dist/electron.exe .)",
       "Bash(node_modules/electron/dist/electron.exe:*)",
-      "mcp__exa__web_search_exa"
+      "mcp__exa__web_search_exa",
+      "mcp__google-search__search",
+      "mcp__github__get_file_contents",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_evaluate",
+      "mcp__playwright__browser_close"
     ]
   }
 }

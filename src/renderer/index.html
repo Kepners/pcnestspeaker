@@ -81,19 +81,43 @@
           </div>
         </div>
 
-        <!-- Wall of Sound -->
+        <!-- Cast URL to TV (sends URL, TV plays it directly) -->
+        <div class="section" id="cast-url-section" style="display: none;">
+          <h2 class="section-label">CAST VIDEO TO TV</h2>
+          <p class="option-hint">Paste direct video URL (.mp4, .m3u8) - not web page links</p>
+          <div class="cast-url-form">
+            <input type="text" class="cast-url-input" id="cast-url-input" placeholder="https://example.com/video.mp4">
+            <select class="cast-url-type" id="cast-url-type">
+              <option value="">Auto-detect</option>
+              <option value="video/mp4">MP4 Video</option>
+              <option value="application/x-mpegURL">HLS Stream</option>
+              <option value="application/dash+xml">DASH Stream</option>
+              <option value="video/webm">WebM Video</option>
+              <option value="audio/mpeg">MP3 Audio</option>
+            </select>
+            <button class="btn btn-primary btn-small" id="cast-url-btn">Cast</button>
+          </div>
+          <p class="cast-url-status" id="cast-url-status"></p>
+        </div>
+
+        <!-- Wall of Sound - PC speaker + audio output in one row -->
         <div class="section" id="options-card">
           <h2 class="section-label">WALL OF SOUND</h2>
-
-          <!-- PC Audio Toggle (simple on/off) -->
-          <div class="option-row">
-            <span class="option-label">Add PC speaker</span>
-            <div class="toggle-with-info">
+          <div class="wall-of-sound-row">
+            <!-- Left side: Add PC speaker toggle -->
+            <div class="pc-speaker-controls">
+              <span class="option-label">Add PC speaker</span>
               <label class="toggle-switch">
                 <input type="checkbox" id="pc-audio-toggle">
                 <span class="toggle-slider"></span>
               </label>
               <span class="info-icon" id="pc-audio-info" title="Click to open sync settings">Ⓦ</span>
+            </div>
+            <!-- Vertical divider -->
+            <div class="wall-divider"></div>
+            <!-- Right side: Audio output pill -->
+            <div class="audio-output-grid" id="audio-output-list">
+              <div class="audio-output-loading">Loading...</div>
             </div>
           </div>
         </div>
@@ -154,7 +178,7 @@
                      class="sync-slider-hidden" id="sync-delay-slider">
             </div>
 
-            <p class="sync-hint" id="sync-hint">Use scroll wheel or drag to adjust (~700-1200ms typical)</p>
+            <p class="sync-hint" id="sync-hint">Use scroll wheel or drag to adjust (~50-200ms typical)</p>
 
             <!-- Auto-sync toggle -->
             <div class="option-row" style="margin-top: 12px;">

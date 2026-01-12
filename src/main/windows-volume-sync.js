@@ -78,17 +78,20 @@ function getWindowsVolumeFallback() {
  * @param {Function} callback - Called with (volume) when volume changes
  */
 function startMonitoring(speakers, callback) {
+  // Always update targets and callback, even if already monitoring
+  // This fixes the bug where switching devices didn't update volume targets
+  targetSpeakers = speakers;
+  onVolumeChangeCallback = callback;
+
+  console.log('[VolumeSync] Target speakers:', speakers.map(s => s.name).join(', '));
+
   if (isMonitoring) {
-    console.log('[VolumeSync] Already monitoring');
+    console.log('[VolumeSync] Already monitoring, updated targets');
     return;
   }
 
-  targetSpeakers = speakers;
-  onVolumeChangeCallback = callback;
   isMonitoring = true;
-
   console.log('[VolumeSync] Starting Windows volume monitoring...');
-  console.log('[VolumeSync] Target speakers:', speakers.map(s => s.name).join(', '));
 
   // Poll Windows volume every 500ms
   // (Windows doesn't have a clean event API for this without native modules)
@@ -384,6 +387,70 @@ async function switchToPCSpeakersMode() {
   }
 }
 
+/**
+ * Set volume on a specific audio device (not just default)
+ * Uses SoundVolumeView for reliable per-device volume control
+ * @param {string} deviceName - The device name (e.g., "Speakers (Realtek)")
+ * @param {number} volume - Volume level 0-100
+ */
+function setDeviceVolume(deviceName, volume) {
+  return new Promise((resolve, reject) => {
+    const SVV_PATH = path.join(__dirname, '..', '..', 'soundvolumeview', 'SoundVolumeView.exe');
+    const fs = require('fs');
+
+    if (!fs.existsSync(SVV_PATH)) {
+      console.error('[VolumeSync] SoundVolumeView not found:', SVV_PATH);
+      reject(new Error('SoundVolumeView not found'));
+      return;
+    }
+
+    // SoundVolumeView syntax: /SetVolume "DeviceName" <percent>
+    const volumePercent = Math.max(0, Math.min(100, volume));
+    const cmd = `"${SVV_PATH}" /SetVolume "${deviceName}" ${volumePercent}`;
+
+    exec(cmd, { windowsHide: true, timeout: 5000 }, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`[VolumeSync] Failed to set volume on ${deviceName}:`, stderr || error.message);
+        reject(new Error(stderr || error.message));
+      } else {
+        console.log(`[VolumeSync] Set ${deviceName} volume to ${volumePercent}%`);
+        resolve(volumePercent);
+      }
+    });
+  });
+}
+
+// PC speaker device name (cached for fast access)
+let pcSpeakerDevice = null;
+
+/**
+ * Set the PC speaker device name for volume control
+ * @param {string} deviceName - The PC speaker device name
+ */
+function setPCSpeakerDevice(deviceName) {
+  pcSpeakerDevice = deviceName;
+  console.log(`[VolumeSync] PC speaker device set to: ${deviceName}`);
+}
+
+/**
+ * Set volume on PC speakers (if device is configured)
+ * @param {number} volume - Volume level 0-100
+ */
+async function setPCSpeakerVolume(volume) {
+  if (!pcSpeakerDevice) {
+    console.log('[VolumeSync] No PC speaker device configured');
+    return false;
+  }
+
+  try {
+    await setDeviceVolume(pcSpeakerDevice, volume);
+    return true;
+  } catch (error) {
+    console.error('[VolumeSync] Failed to set PC speaker volume:', error.message);
+    return false;
+  }
+}
+
 module.exports = {
   startMonitoring,
   stopMonitoring,
@@ -391,5 +458,8 @@ module.exports = {
   setWindowsVolume,
   setVolumeOnSpeakers,
   switchToSpeakersOnlyMode,
-  switchToPCSpeakersMode
+  switchToPCSpeakersMode,
+  setDeviceVolume,
+  setPCSpeakerDevice,
+  setPCSpeakerVolume
 };

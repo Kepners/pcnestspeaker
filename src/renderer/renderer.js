@@ -39,7 +39,7 @@ const autoSyncHint = document.getElementById('auto-sync-hint');
 
 // Number of visual bars for sync delay
 const SYNC_BAR_COUNT = 20;
-const SYNC_MAX_DELAY = 2000; // ms
+const SYNC_MAX_DELAY = 2000; // ms - keep high for networks with larger latency
 
 // Calibration state
 let isCalibrating = false;
@@ -221,8 +221,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load APO device info for Settings tab
   await loadApoDevices();
 
-  // Audio outputs are loaded by setCastMode() when mode is 'all'
-  // No need to pre-load here since 'speakers' mode is default
+  // Load audio outputs for quick switching in Settings tab
+  await loadAudioOutputs();
 
   // Set up first-run event listener
   setupFirstRunListener();
@@ -589,20 +589,107 @@ function setupEventListeners() {
     });
   }
 
-  // Listen for auto-connect event from main process
+  // Listen for auto-connect event from main process (single speaker)
   window.api.onAutoConnect(async (speaker) => {
     log(`Auto-connecting to ${speaker.name}...`, 'info');
 
-    // Find speaker in list
-    const speakerIndex = speakers.findIndex(s => s.name === speaker.name);
-    if (speakerIndex !== -1) {
-      // Use startStreamingToSpeaker() which actually starts streaming
-      // (selectSpeaker only pings without streaming!)
-      await startStreamingToSpeaker(speakerIndex);
-    } else {
-      log(`Speaker "${speaker.name}" not found in discovered speakers`, 'error');
-      log('Make sure the speaker is online and on the same network', 'warning');
+    // Retry logic: If speaker not found, re-discover and try again (speakers may have just turned on)
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 2000;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      // Find speaker in list
+      const speakerIndex = speakers.findIndex(s => s.name === speaker.name);
+      if (speakerIndex !== -1) {
+        // Use startStreamingToSpeaker() which actually starts streaming
+        // (selectSpeaker only pings without streaming!)
+        await startStreamingToSpeaker(speakerIndex);
+
+        // RESTORE PC SPEAKER MODE: If setting was saved as ON, enable it now that streaming is active
+        // This ensures auto-sync starts automatically on boot without user having to toggle
+        if (pcAudioEnabled && pcAudioToggle && pcAudioToggle.checked) {
+          log('Restoring PC speaker mode from saved settings...', 'info');
+          await togglePCAudio(true);
+        }
+
+        return; // Success - exit
+      }
+
+      // Speaker not found - try re-discovering
+      if (attempt < MAX_RETRIES) {
+        log(`Speaker "${speaker.name}" not found (attempt ${attempt}/${MAX_RETRIES}), re-discovering...`, 'warning');
+        try {
+          await discoverDevices();
+        } catch (e) {
+          log(`Re-discovery failed: ${e.message}`, 'error');
+        }
+        // Wait before next attempt
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+      }
     }
+
+    // All retries exhausted
+    log(`Speaker "${speaker.name}" not found after ${MAX_RETRIES} attempts`, 'error');
+    log('Make sure the speaker is online and on the same network', 'warning');
+  });
+
+  // Listen for stereo auto-connect event from main process (L/R pair)
+  window.api.onAutoConnectStereo(async ({ left, right }) => {
+    log(`Auto-connecting stereo: L="${left.name}", R="${right.name}"...`, 'info');
+
+    // Retry logic: If speakers not found, re-discover and try again
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 2000;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      // Find both speakers in list
+      const leftIndex = speakers.findIndex(s => s.name === left.name);
+      const rightIndex = speakers.findIndex(s => s.name === right.name);
+
+      if (leftIndex !== -1 && rightIndex !== -1) {
+        // Set up stereo mode with L/R assignments
+        stereoMode.leftSpeaker = leftIndex;
+        stereoMode.rightSpeaker = rightIndex;
+
+        // Start stereo streaming
+        await startStereoStreaming();
+
+        // RESTORE PC SPEAKER MODE: If setting was saved as ON, enable it now that streaming is active
+        // This ensures auto-sync starts automatically on boot without user having to toggle
+        if (pcAudioEnabled && pcAudioToggle && pcAudioToggle.checked) {
+          log('Restoring PC speaker mode from saved settings...', 'info');
+          await togglePCAudio(true);
+        }
+
+        return; // Success - exit
+      }
+
+      // One or both speakers not found - try re-discovering
+      if (attempt < MAX_RETRIES) {
+        const missing = [];
+        if (leftIndex === -1) missing.push(`L="${left.name}"`);
+        if (rightIndex === -1) missing.push(`R="${right.name}"`);
+        log(`Speakers not found (${missing.join(', ')}) - attempt ${attempt}/${MAX_RETRIES}, re-discovering...`, 'warning');
+        try {
+          await discoverDevices();
+        } catch (e) {
+          log(`Re-discovery failed: ${e.message}`, 'error');
+        }
+        // Wait before next attempt
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+      }
+    }
+
+    // All retries exhausted - log which speakers are missing
+    const leftIndex = speakers.findIndex(s => s.name === left.name);
+    const rightIndex = speakers.findIndex(s => s.name === right.name);
+    if (leftIndex === -1) {
+      log(`Left speaker "${left.name}" not found after ${MAX_RETRIES} attempts`, 'error');
+    }
+    if (rightIndex === -1) {
+      log(`Right speaker "${right.name}" not found after ${MAX_RETRIES} attempts`, 'error');
+    }
+    log('Make sure both speakers are online and on the same network', 'warning');
   });
 
   // Listen for tray stop streaming event
@@ -636,6 +723,28 @@ function setupEventListeners() {
       syncDelayValue.textContent = `${newDelay}ms`;
     }
     updateSyncBars(newDelay);
+  });
+
+  // Listen for sync delay auto-correction (when old high delay corrected for optimized WebRTC)
+  window.api.onSyncDelayCorrected((newDelayMs) => {
+    log(`Sync delay auto-corrected to ${newDelayMs}ms (optimized for WebRTC)`, 'info');
+
+    // Update the sync delay UI to reflect the corrected value
+    currentSyncDelayMs = newDelayMs;
+    if (syncDelaySlider) {
+      syncDelaySlider.value = newDelayMs;
+    }
+    if (syncDelayValue) {
+      syncDelayValue.textContent = `${newDelayMs}ms`;
+    }
+    updateSyncBars(newDelayMs);
+  });
+
+  // Listen for audio device change (when Windows audio switches to VB-Cable, refresh pill UI)
+  window.api.onAudioDeviceChanged((deviceName) => {
+    console.log(`[Renderer] Audio device changed to: ${deviceName}`);
+    // Refresh the audio output list to show new active device
+    loadAudioOutputs();
   });
 
   // Auto-sync toggle handler
@@ -844,6 +953,24 @@ async function togglePCAudio(enabled) {
 
         // Save auto-sync state
         window.api.updateSettings({ autoSyncEnabled: true });
+
+        // SMART CALIBRATION: Measure ping and calculate starting delay
+        log('Measuring network latency to calculate smart default...', 'info');
+        const calibration = await window.api.calibrateSmartDefault();
+        if (calibration.success) {
+          // Update the slider to show calibrated value
+          const syncDelaySlider = document.getElementById('sync-delay');
+          const syncDelayValue = document.getElementById('sync-delay-value');
+          if (syncDelaySlider) {
+            syncDelaySlider.value = calibration.delay;
+          }
+          if (syncDelayValue) {
+            syncDelayValue.textContent = calibration.delay;
+          }
+
+          // Show helpful toast explaining what happened
+          showSyncCalibrationToast(calibration);
+        }
       }
     } else {
       log(`PC Audio toggle failed: ${result.error}`, 'error');
@@ -851,6 +978,72 @@ async function togglePCAudio(enabled) {
   } catch (err) {
     log(`PC Audio error: ${err.message}`, 'error');
   }
+}
+
+// Show a helpful toast when sync is calibrated
+function showSyncCalibrationToast(calibration) {
+  // Create toast container if it doesn't exist
+  let toastContainer = document.getElementById('toast-container');
+  if (!toastContainer) {
+    toastContainer = document.createElement('div');
+    toastContainer.id = 'toast-container';
+    toastContainer.style.cssText = `
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      z-index: 10000;
+    `;
+    document.body.appendChild(toastContainer);
+  }
+
+  // Create toast
+  const toast = document.createElement('div');
+  toast.className = 'sync-toast';
+  toast.style.cssText = `
+    background: linear-gradient(135deg, var(--color-blue), #2a3f47);
+    border: 1px solid var(--color-blush);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 10px;
+    max-width: 320px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    animation: slideIn 0.3s ease;
+  `;
+
+  toast.innerHTML = `
+    <div style="color: var(--color-blush); font-weight: 600; margin-bottom: 8px;">
+      🎯 Smart Sync Started
+    </div>
+    <div style="color: #fff; font-size: 13px; line-height: 1.4; margin-bottom: 10px;">
+      Ping to speaker: <b>${calibration.rtt}ms</b><br>
+      Starting delay: <b>${calibration.delay}ms</b>
+    </div>
+    <div style="color: #aaa; font-size: 11px; line-height: 1.4;">
+      If audio is out of sync, adjust the slider in Settings → Sync.
+      The app will track from your setting.
+    </div>
+    <button onclick="this.parentElement.remove()" style="
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: none;
+      border: none;
+      color: #888;
+      cursor: pointer;
+      font-size: 16px;
+    ">&times;</button>
+  `;
+  toast.style.position = 'relative';
+
+  toastContainer.appendChild(toast);
+
+  // Auto-remove after 8 seconds
+  setTimeout(() => {
+    if (toast.parentElement) {
+      toast.style.animation = 'slideOut 0.3s ease';
+      setTimeout(() => toast.remove(), 300);
+    }
+  }, 8000);
 }
 
 // Legacy alias for compatibility
@@ -1437,6 +1630,11 @@ async function selectSpeaker(index) {
   selectedSpeaker = speakers[index];
   log(`Selected speaker: ${selectedSpeaker.name}`);
 
+  // Update Cast URL section visibility (only shows for TVs)
+  if (typeof updateCastUrlSection === 'function') {
+    updateCastUrlSection();
+  }
+
   // Save as last speaker for auto-connect
   try {
     await window.api.saveLastSpeaker(selectedSpeaker);
@@ -1506,6 +1704,11 @@ async function startStreamingToSpeaker(index, clearStereoState = true) {
       setStreamingState(false);
       renderSpeakers(); // Re-render to clear selected/streaming states
 
+      // Hide Cast URL section when no speaker selected
+      if (typeof updateCastUrlSection === 'function') {
+        updateCastUrlSection();
+      }
+
     } catch (error) {
       log(`Failed to stop stream: ${error.message}`, 'error');
     }
@@ -1517,6 +1720,11 @@ async function startStreamingToSpeaker(index, clearStereoState = true) {
   speakerList.querySelectorAll('.speaker-item').forEach((item, i) => {
     item.classList.toggle('selected', i === index);
   });
+
+  // Update Cast URL section visibility (only shows for TVs)
+  if (typeof updateCastUrlSection === 'function') {
+    updateCastUrlSection();
+  }
 
   // Save as last speaker for auto-connect
   try {
@@ -2283,57 +2491,124 @@ async function loadApoDevices() {
 
 /**
  * Load and display all audio output devices for quick switching
+ * New pill design with expanding circles
  */
 async function loadAudioOutputs() {
   const listEl = document.getElementById('audio-output-list');
   if (!listEl) return;
 
   // Show loading state
-  listEl.innerHTML = '<div class="audio-output-loading">Loading devices...</div>';
+  listEl.innerHTML = '<div class="audio-output-loading">...</div>';
 
   try {
     const result = await window.api.getAudioOutputs();
 
     if (!result.success || !result.devices || result.devices.length === 0) {
-      listEl.innerHTML = '<div class="audio-output-loading">No audio devices found</div>';
+      listEl.innerHTML = '<div class="audio-output-loading">No devices</div>';
       return;
     }
 
-    // Build the device list
+    // Build the device list - circles with icons
     listEl.innerHTML = result.devices.map(device => {
       const icon = getAudioDeviceIcon(device.name);
       const isActive = device.isDefault;
+      // Short name for display (first meaningful word)
+      const shortName = getShortDeviceName(device.name);
+      // Check if this is VB-Cable (required for streaming)
+      const isVBCable = device.name.toLowerCase().includes('cable') &&
+                        device.name.toLowerCase().includes('vb');
 
       return `
-        <div class="audio-output-item ${isActive ? 'active' : ''}"
-             data-device-name="${escapeHtml(device.name)}">
+        <div class="audio-output-item ${isActive ? 'active' : ''} ${isVBCable ? 'vb-cable' : ''}"
+             data-device-name="${escapeHtml(device.name)}"
+             title="${escapeHtml(device.name)}${isVBCable ? ' (Required for streaming)' : ''}">
           <span class="audio-output-icon">${icon}</span>
-          <span class="audio-output-name">${escapeHtml(device.name)}</span>
+          <span class="audio-output-name">${escapeHtml(shortName)}</span>
+          ${isVBCable ? '<span class="vb-cable-indicator"></span>' : ''}
         </div>
       `;
     }).join('');
 
-    // Add click handlers via event delegation (safer than inline onclick)
+    // Add click handlers with expand/collapse overlay animation
     const items = listEl.querySelectorAll('.audio-output-item');
-    console.log('[AudioOutput] Found', items.length, 'items to add listeners to');
+    const gridRect = listEl.getBoundingClientRect();
 
     items.forEach((item, index) => {
       const deviceName = item.dataset.deviceName;
-      console.log(`[AudioOutput] Adding listener to item ${index}: ${deviceName}`);
 
-      item.addEventListener('click', async (event) => {
-        console.log('[AudioOutput] CLICK EVENT FIRED!');
-        console.log('[AudioOutput] Event target:', event.target);
-        console.log('[AudioOutput] Device name:', deviceName);
-        await switchAudioOutput(deviceName);
+      item.addEventListener('click', async () => {
+        // If already active, just flash (don't switch)
+        if (item.classList.contains('active')) {
+          item.style.transform = 'scale(1.15)';
+          setTimeout(() => item.style.transform = '', 150);
+          return;
+        }
+
+        // Get item's position before expanding
+        const itemRect = item.getBoundingClientRect();
+        const containerRect = listEl.getBoundingClientRect();
+
+        // Calculate position relative to container
+        const leftOffset = itemRect.left - containerRect.left;
+        const rightSpace = containerRect.right - itemRect.right;
+
+        // Determine if we should expand left (item is on right side)
+        const expandLeft = rightSpace < 80;  // Less than 80px on right = expand left
+
+        // Store original position for restoration
+        item.dataset.originalLeft = leftOffset + 'px';
+
+        // Position the item absolutely at its current spot
+        item.style.left = expandLeft ? 'auto' : leftOffset + 'px';
+        item.style.right = expandLeft ? (containerRect.width - leftOffset - itemRect.width) + 'px' : 'auto';
+
+        // Add expanded class (triggers overlay)
+        item.classList.add('expanded');
+        if (expandLeft) item.classList.add('expand-left');
+
+        // Helper to clean up expanded state
+        const collapse = () => {
+          item.classList.remove('expanded', 'expand-left');
+          item.style.left = '';
+          item.style.right = '';
+        };
+
+        // Small delay to show the text, then switch
+        setTimeout(async () => {
+          try {
+            await switchAudioOutput(deviceName);
+          } finally {
+            // ALWAYS collapse after, even on error
+            setTimeout(collapse, 300);
+          }
+        }, 400);
       });
     });
 
-    log(`Loaded ${result.devices.length} audio outputs`, 'info');
   } catch (error) {
-    listEl.innerHTML = '<div class="audio-output-loading">Error loading devices</div>';
+    listEl.innerHTML = '<div class="audio-output-loading">Error</div>';
     log(`Failed to load audio outputs: ${error.message}`, 'error');
   }
+}
+
+/**
+ * Get short name for device (for expanded pill display)
+ */
+function getShortDeviceName(name) {
+  // Remove common suffixes/prefixes
+  let short = name
+    .replace(/\(.*?\)/g, '')  // Remove parentheses content
+    .replace(/VB-Audio Virtual Cable/gi, 'VB-Cable')
+    .replace(/High Definition Audio/gi, '')
+    .replace(/Audio Device/gi, '')
+    .trim();
+
+  // If still too long, take first 15 chars
+  if (short.length > 18) {
+    short = short.substring(0, 15) + '...';
+  }
+
+  return short || name.substring(0, 12);
 }
 
 /**
@@ -2816,11 +3091,10 @@ document.addEventListener('wheel', (e) => {
 
   const step = 10; // 10ms per scroll tick
   const min = 0;
-  const max = 2000;
 
   // Scroll up (negative deltaY) = increase, scroll down = decrease
   if (e.deltaY < 0) {
-    currentSyncDelay = Math.min(max, currentSyncDelay + step);
+    currentSyncDelay = Math.min(SYNC_MAX_DELAY, currentSyncDelay + step);
   } else {
     currentSyncDelay = Math.max(min, currentSyncDelay - step);
   }
@@ -2979,6 +3253,93 @@ if (tvVisualsToggle) {
     const enabled = e.target.checked;
     log(`TV ambient visuals: ${enabled ? 'ON' : 'OFF'}`);
     window.api.updateSettings({ tvVisualsEnabled: enabled });
+  });
+}
+
+// ===================
+// Cast URL to TV Feature
+// ===================
+const castUrlSection = document.getElementById('cast-url-section');
+const castUrlInput = document.getElementById('cast-url-input');
+const castUrlType = document.getElementById('cast-url-type');
+const castUrlBtn = document.getElementById('cast-url-btn');
+const castUrlStatus = document.getElementById('cast-url-status');
+
+// Track currently selected TV for URL casting
+let selectedTvForUrlCast = null;
+
+// Show/hide Cast URL section based on device selection
+function updateCastUrlSection() {
+  if (!castUrlSection) return;
+
+  // DISABLED: Don't auto-show Cast URL section when TV selected
+  // User can manually trigger this feature if needed via settings
+  castUrlSection.style.display = 'none';
+
+  // Still track selected TV for when user manually triggers cast URL
+  const isTvSelected = selectedSpeaker && selectedSpeaker.cast_type === 'cast';
+  if (isTvSelected) {
+    selectedTvForUrlCast = selectedSpeaker;
+  }
+}
+
+// Handle Cast URL button click
+if (castUrlBtn) {
+  castUrlBtn.addEventListener('click', async () => {
+    if (!selectedTvForUrlCast) {
+      if (castUrlStatus) {
+        castUrlStatus.textContent = 'No TV selected';
+        castUrlStatus.className = 'cast-url-status error';
+      }
+      return;
+    }
+
+    const url = castUrlInput?.value?.trim();
+    if (!url) {
+      if (castUrlStatus) {
+        castUrlStatus.textContent = 'Please enter a URL';
+        castUrlStatus.className = 'cast-url-status error';
+      }
+      return;
+    }
+
+    // Get content type (empty string = auto-detect)
+    const contentType = castUrlType?.value || null;
+
+    log(`Casting URL to ${selectedTvForUrlCast.name}...`);
+    if (castUrlStatus) {
+      castUrlStatus.textContent = 'Casting...';
+      castUrlStatus.className = 'cast-url-status';
+    }
+
+    try {
+      const result = await window.api.castUrl(
+        selectedTvForUrlCast.name,
+        url,
+        contentType,
+        selectedTvForUrlCast.ip
+      );
+
+      if (result.success) {
+        log(`URL casting started: ${result.content_type}`, 'success');
+        if (castUrlStatus) {
+          castUrlStatus.textContent = `Playing on ${selectedTvForUrlCast.name}`;
+          castUrlStatus.className = 'cast-url-status success';
+        }
+      } else {
+        log(`URL casting failed: ${result.error}`, 'error');
+        if (castUrlStatus) {
+          castUrlStatus.textContent = result.error || 'Cast failed';
+          castUrlStatus.className = 'cast-url-status error';
+        }
+      }
+    } catch (error) {
+      log(`URL casting error: ${error.message}`, 'error');
+      if (castUrlStatus) {
+        castUrlStatus.textContent = error.message || 'Cast failed';
+        castUrlStatus.className = 'cast-url-status error';
+      }
+    }
   });
 }
 

@@ -56,7 +56,6 @@ rtmp: no
 ###############################################
 # HLS server - for TV devices (Shield, Chromecast)
 # TVs don't support WebRTC, so we use HLS instead
-# Stream URL: http://192.168.50.48:8888/pcaudio/index.m3u8
 ###############################################
 hls: yes
 hlsAddress: :8888

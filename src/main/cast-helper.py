@@ -502,6 +502,14 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pc
         print(f"[WebRTC] Device model: {cast.cast_info.model_name}", file=sys.stderr)
 
         try:
+            # ENSURE CONNECT CHIME: Quit any existing app first for fresh session
+            # The "ding" only plays when starting a NEW app, not when resuming!
+            try:
+                cast.quit_app()
+                time.sleep(0.5)  # Brief pause before starting new app
+            except:
+                pass  # Ignore if nothing to quit
+
             cast.start_app(receiver_app_id)
             time.sleep(3)  # Wait for receiver to load
             print("[WebRTC] Receiver launched!", file=sys.stderr)
@@ -711,6 +719,14 @@ def webrtc_proxy_connect(speaker_name, mediamtx_url, speaker_ip=None, stream_nam
         # Step 2: Launch custom receiver
         print(f"[WebRTC-Proxy] Launching receiver (App ID: {receiver_app_id})...", file=sys.stderr)
         try:
+            # ENSURE CONNECT CHIME: Quit any existing app first for fresh session
+            # The "ding" only plays when starting a NEW app, not when resuming!
+            try:
+                cast.quit_app()
+                time.sleep(0.5)
+            except:
+                pass
+
             cast.start_app(receiver_app_id)
             time.sleep(3)
             print("[WebRTC-Proxy] Receiver launched!", file=sys.stderr)
@@ -866,7 +882,11 @@ def webrtc_signal(speaker_name, message_json):
         return {"success": False, "error": str(e)}
 
 def stop_cast(speaker_name):
-    """Stop casting to a speaker."""
+    """Stop casting to a speaker.
+
+    Plays the Cast "ding" sound on disconnect by briefly launching
+    the Default Media Receiver before quitting.
+    """
     try:
         chromecasts, browser = pychromecast.get_listed_chromecasts(
             friendly_names=[speaker_name],
@@ -877,6 +897,16 @@ def stop_cast(speaker_name):
             cast = chromecasts[0]
             cast.wait()
             cast.quit_app()
+
+            # PLAY DISCONNECT CHIME: Launch Default Media Receiver briefly
+            # The "ding" sound ONLY plays when start_app() is called!
+            try:
+                time.sleep(0.3)
+                cast.start_app("CC1AD845")  # Triggers the ding!
+                time.sleep(1.0)
+                cast.quit_app()  # Leave speaker idle
+            except Exception as e:
+                print(f"[stop] Disconnect chime failed (non-critical): {e}", file=sys.stderr)
 
         browser.stop_discovery()
         return {"success": True}
@@ -889,6 +919,9 @@ def stop_cast_fast(speaker_name, speaker_ip):
     """
     Stop casting using cached IP - no network scan needed.
     Much faster than stop_cast() (~1s vs 10s).
+
+    Plays the Cast "ding" sound on disconnect by briefly launching
+    the Default Media Receiver before quitting.
     """
     try:
         if not speaker_ip:
@@ -899,6 +932,17 @@ def stop_cast_fast(speaker_name, speaker_ip):
         cast = pychromecast.Chromecast(speaker_ip)
         cast.wait(timeout=5)
         cast.quit_app()
+
+        # PLAY DISCONNECT CHIME: Launch Default Media Receiver briefly
+        # The "ding" sound ONLY plays when start_app() is called!
+        try:
+            time.sleep(0.3)
+            cast.start_app("CC1AD845")  # Triggers the ding!
+            time.sleep(1.0)
+            cast.quit_app()  # Leave speaker idle
+        except Exception as e:
+            print(f"[stop-fast] Disconnect chime failed (non-critical): {e}", file=sys.stderr)
+
         return {"success": True}
 
     except Exception as e:
@@ -1068,23 +1112,146 @@ def get_group_members(group_name):
         return {"success": False, "error": str(e)}
 
 
-def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None):
+def cast_url_to_tv(device_name, url, content_type=None, device_ip=None):
+    """Cast ANY URL to a TV device (Chromecast, Shield, etc.).
+
+    This is the simple "send URL, TV plays it" function.
+    The TV fetches and plays the URL directly - we're NOT screen sharing.
+
+    Supported content types (auto-detected from URL if not provided):
+    - video/mp4: MP4 files
+    - application/x-mpegURL: HLS streams (.m3u8)
+    - application/dash+xml: DASH streams (.mpd)
+    - video/webm: WebM files
+    - audio/mpeg: MP3 files
+
+    Args:
+        device_name: Name of the TV/Chromecast device
+        url: URL to cast (YouTube URLs will be rejected - use YouTube app)
+        content_type: MIME type (auto-detected if None)
+        device_ip: Optional direct IP for faster connection
+
+    Returns:
+        { success: true, state: "PLAYING", url: "..." }
+    """
+    try:
+        browser = None
+
+        # Auto-detect content type from URL extension
+        if not content_type:
+            url_lower = url.lower()
+            if '.m3u8' in url_lower:
+                content_type = 'application/x-mpegURL'
+            elif '.mpd' in url_lower:
+                content_type = 'application/dash+xml'
+            elif '.mp4' in url_lower:
+                content_type = 'video/mp4'
+            elif '.webm' in url_lower:
+                content_type = 'video/webm'
+            elif '.mp3' in url_lower:
+                content_type = 'audio/mpeg'
+            elif '.m4a' in url_lower or '.aac' in url_lower:
+                content_type = 'audio/mp4'
+            elif '.mkv' in url_lower:
+                content_type = 'video/x-matroska'
+            else:
+                # Default to video/mp4 for unknown URLs
+                content_type = 'video/mp4'
+                print(f"[CastURL] Unknown extension, defaulting to: {content_type}", file=sys.stderr)
+
+        print(f"[CastURL] Casting URL to '{device_name}'...", file=sys.stderr)
+        print(f"[CastURL] URL: {url}", file=sys.stderr)
+        print(f"[CastURL] Content-Type: {content_type}", file=sys.stderr)
+
+        # Connect to device
+        if device_ip:
+            print(f"[CastURL] Using direct IP: {device_ip}", file=sys.stderr)
+            chromecasts, browser = pychromecast.get_listed_chromecasts(
+                friendly_names=[device_name],
+                known_hosts=[device_ip],
+                timeout=5
+            )
+        else:
+            chromecasts, browser = pychromecast.get_listed_chromecasts(
+                friendly_names=[device_name],
+                timeout=10
+            )
+
+        if not chromecasts:
+            if browser:
+                browser.stop_discovery()
+            return {"success": False, "error": f"Device '{device_name}' not found"}
+
+        cast = chromecasts[0]
+        host = cast.cast_info.host if hasattr(cast, 'cast_info') else device_ip or 'unknown'
+        print(f"[CastURL] Connected to {host}", file=sys.stderr)
+        cast.wait(timeout=10)
+
+        # Use Default Media Receiver for URL casting (most compatible)
+        DEFAULT_MEDIA_RECEIVER = 'CC1AD845'
+        print(f"[CastURL] Launching Default Media Receiver...", file=sys.stderr)
+
+        try:
+            cast.quit_app()  # Ensure chime
+            time.sleep(0.5)
+            cast.start_app(DEFAULT_MEDIA_RECEIVER)
+            time.sleep(2)
+        except Exception as e:
+            print(f"[CastURL] App launch warning (non-critical): {e}", file=sys.stderr)
+
+        # Send URL to TV
+        mc = cast.media_controller
+        print(f"[CastURL] Playing URL...", file=sys.stderr)
+
+        mc.play_media(
+            url,
+            content_type,
+            autoplay=True,
+            current_time=0
+        )
+        mc.block_until_active(timeout=30)
+
+        if browser:
+            browser.stop_discovery()
+
+        print("[CastURL] Playback started!", file=sys.stderr)
+        return {
+            "success": True,
+            "state": "PLAYING",
+            "url": url,
+            "content_type": content_type,
+            "device": device_name
+        }
+
+    except Exception as e:
+        import traceback
+        print(f"[CastURL] ERROR: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        return {"success": False, "error": str(e)}
+
+
+def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None, app_id=None):
     """Cast HLS stream to TV devices (NVIDIA Shield, Chromecast with screen).
 
-    TVs don't support WebRTC custom receivers, but they DO support HLS via
-    the Default Media Receiver. This provides ~2-6 second latency but works
-    reliably on all TV devices.
+    TVs don't support WebRTC, but they DO support HLS. We can use either:
+    - Default Media Receiver (CC1AD845): Plain playback, no visuals
+    - Visual Receiver (FCAA4619): Ambient videos behind audio
 
     Args:
         speaker_name: Name of the TV/device
         hls_url: HLS playlist URL (e.g., http://<local-ip>:8888/pcaudio/index.m3u8)
         speaker_ip: Optional direct IP for faster connection
         device_model: Model name from discovery (e.g., "SHIELD Android TV")
-                     Used to determine wake method (ADB for Shield, CEC for others)
+        app_id: Receiver app ID. Default is Visual receiver (FCAA4619) for ambient videos.
+                Pass 'CC1AD845' for Default Media Receiver.
 
     Returns:
         { success: true, state: "PLAYING", mode: "hls" }
     """
+    # Default to Visual receiver for ambient videos (unless explicitly overridden)
+    VISUAL_APP_ID = 'FCAA4619'
+    DEFAULT_MEDIA_RECEIVER = 'CC1AD845'
+    receiver_id = app_id if app_id else VISUAL_APP_ID
     try:
         browser = None
 
@@ -1125,24 +1292,37 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None):
         print(f"[HLS-TV] Connecting to {host} (model: {model})...", file=sys.stderr)
         cast.wait(timeout=10)
 
-        # Check standby status
-        if cast.status and cast.status.is_stand_by:
-            print(f"[HLS-TV] Device is on STANDBY - launching app to wake...", file=sys.stderr)
-            # Explicitly launch Default Media Receiver to wake the TV
-            # App ID CC1AD845 = Default Media Receiver
+        # Check standby status and launch receiver
+        print(f"[HLS-TV] Launching receiver {receiver_id}...", file=sys.stderr)
+        try:
+            # ENSURE CHIME: Quit any existing app first for fresh session
             try:
-                cast.start_app('CC1AD845')
-                time.sleep(3)  # Give TV time to wake and launch app
-                print(f"[HLS-TV] Default Media Receiver launched - TV should be waking...", file=sys.stderr)
-            except Exception as e:
-                print(f"[HLS-TV] App launch failed (continuing anyway): {e}", file=sys.stderr)
-        else:
-            print(f"[HLS-TV] Device is ACTIVE", file=sys.stderr)
+                cast.quit_app()
+                time.sleep(0.5)
+            except:
+                pass
+
+            # Launch our receiver (Visual or Default Media)
+            cast.start_app(receiver_id)
+            time.sleep(3)  # Give receiver time to load
+            print(f"[HLS-TV] Receiver {receiver_id} launched!", file=sys.stderr)
+        except Exception as e:
+            print(f"[HLS-TV] Receiver launch failed: {e}", file=sys.stderr)
+            # Fall back to Default Media Receiver if Visual fails
+            if receiver_id != DEFAULT_MEDIA_RECEIVER:
+                print(f"[HLS-TV] Falling back to Default Media Receiver...", file=sys.stderr)
+                try:
+                    cast.start_app(DEFAULT_MEDIA_RECEIVER)
+                    receiver_id = DEFAULT_MEDIA_RECEIVER
+                    time.sleep(2)
+                except Exception as e2:
+                    print(f"[HLS-TV] Fallback also failed: {e2}", file=sys.stderr)
 
         mc = cast.media_controller
 
-        # Use Default Media Receiver with HLS content type
-        print(f"[HLS-TV] Using Default Media Receiver for HLS...", file=sys.stderr)
+        # Send HLS URL to receiver
+        receiver_name = "Visual receiver" if receiver_id == VISUAL_APP_ID else "Default Media Receiver"
+        print(f"[HLS-TV] Sending HLS to {receiver_name}...", file=sys.stderr)
         print(f"[HLS-TV] Playing: {hls_url}", file=sys.stderr)
 
         mc.play_media(
@@ -1702,12 +1882,23 @@ if __name__ == "__main__":
 
     elif command == "hls-cast" and len(sys.argv) >= 4:
         # Cast HLS stream to TV devices (NVIDIA Shield, Chromecast with screen)
-        # Args: hls-cast <device_name> <hls_url> [device_ip] [model]
+        # Args: hls-cast <device_name> <hls_url> [device_ip] [model] [app_id]
         device_name = sys.argv[2]
         hls_url = sys.argv[3]
         device_ip = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] != '' else None
         device_model = sys.argv[5] if len(sys.argv) > 5 else None
-        result = hls_cast_to_tv(device_name, hls_url, device_ip, device_model)
+        app_id = sys.argv[6] if len(sys.argv) > 6 else None  # Visual receiver by default
+        result = hls_cast_to_tv(device_name, hls_url, device_ip, device_model, app_id)
+        print(json.dumps(result))
+
+    elif command == "cast-url" and len(sys.argv) >= 4:
+        # Cast ANY URL to TV (generic URL casting - user provides URL, TV plays it)
+        # Args: cast-url <device_name> <url> [content_type] [device_ip]
+        device_name = sys.argv[2]
+        url = sys.argv[3]
+        content_type = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] != '' else None
+        device_ip = sys.argv[5] if len(sys.argv) > 5 and sys.argv[5] != '' else None
+        result = cast_url_to_tv(device_name, url, content_type, device_ip)
         print(json.dumps(result))
 
     elif command == "get-audio-outputs":

@@ -53,6 +53,7 @@ let currentConnectedSpeakers = []; // Track currently connected speakers for pro
 let pcAudioEnabled = false; // true = also play on PC speakers (via Listen)
 let virtualCaptureCmdId = null; // Cached Virtual Desktop Audio CAPTURE device ID for Listen
 let autoSyncEnabled = false; // true = auto-adjust sync delay based on network conditions
+let tvStreamingInProgress = false; // Prevent duplicate TV streaming operations
 
 // Dependency download URLs
 // NOTE: We use VB-CABLE which provides:
@@ -591,6 +592,9 @@ function cleanup() {
     hlsDirectServer.stop();
   }
 
+  // Reset TV streaming flag
+  tvStreamingInProgress = false;
+
   // Stop localtunnel
   if (localTunnelProcess) {
     sendLog('Stopping localtunnel...');
@@ -788,17 +792,23 @@ async function startFFmpegWebRTC(audioDevice) {
     const args = [
       '-hide_banner',
       '-stats',  // Force progress output for stream monitor
-      // Low-latency input flags (CRITICAL for real-time streaming)
-      '-fflags', 'nobuffer',
+      // BALANCED TIMING: Clock stability + Low latency
+      // -thread_queue_size 512: Queue absorbs jitter without adding delay
+      // -use_wallclock_as_timestamps: Stable clock prevents drift under CPU load
+      // -aresample async=1: Handles timestamp irregularities
+      '-thread_queue_size', '512',
+      '-use_wallclock_as_timestamps', '1',
+      '-fflags', '+genpts+discardcorrupt',
       '-flags', 'low_delay',
       '-probesize', '32',
       '-analyzeduration', '0',
-      '-rtbufsize', '64k',
-      // Input from DirectShow with minimal buffer
+      '-rtbufsize', '64k',  // LOW LATENCY: Back to 64k
+      // Input from DirectShow - 50ms for low latency
       '-f', 'dshow',
-      '-audio_buffer_size', '50',
+      '-audio_buffer_size', '50',  // LOW LATENCY: 50ms (not 100!)
       '-i', `audio=${audioDevice}`,
-      '-af', `volume=${boostLevel}`  // Always apply volume filter
+      // Audio processing - aresample ensures clean output timing
+      '-af', `aresample=async=1:first_pts=0,volume=${boostLevel}`
     ];
 
     if (volumeBoostEnabled) {
@@ -1219,14 +1229,32 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
     // DISCONNECT any currently connected speakers BEFORE connecting to new one
     if (currentConnectedSpeakers.length > 0) {
+      // FIX: Stop HLS server if running (switching FROM TV to speaker)
+      if (hlsDirectServer.isRunning()) {
+        sendLog('Stopping HLS server (switching away from TV)...');
+        hlsDirectServer.stop();
+        tvStreamingInProgress = false;
+      }
+
       sendLog(`Disconnecting ${currentConnectedSpeakers.length} previous speaker(s)...`);
       for (const speaker of currentConnectedSpeakers) {
         try {
           sendLog(`Disconnecting "${speaker.name}" (IP: ${speaker.ip || 'unknown'})...`);
           let stopResult;
+          let usedDaemon = false;
+
           if (daemonManager.isDaemonRunning()) {
             stopResult = await daemonManager.disconnectSpeaker(speaker.name);
             sendLog(`Daemon disconnect result: ${JSON.stringify(stopResult)}`);
+            usedDaemon = true;
+
+            // FIX: If daemon returns "Not connected", it means the device wasn't connected via daemon
+            // (e.g., TV connected via HLS). Fall through to use stop-fast for actual disconnect.
+            if (stopResult && stopResult.message === 'Not connected' && speaker.ip) {
+              sendLog(`Daemon has no connection - using stop-fast for actual disconnect...`);
+              stopResult = await runPython(['stop-fast', speaker.name, speaker.ip]);
+              sendLog(`Stop-fast result: ${JSON.stringify(stopResult)}`);
+            }
           } else if (speaker.ip) {
             // Use fast stop with cached IP (no network scan needed)
             sendLog(`Using stop-fast with IP ${speaker.ip}...`);
@@ -1422,6 +1450,13 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
       // ChromeCast/TVs don't support WebRTC in receivers - only HLS/DASH/MP4
       // BYPASS: Use direct FFmpeg HLS output to avoid MediaMTX's LL-HLS 7-segment requirement
       if (isTv) {
+        // PREVENT DUPLICATE: Check if TV streaming is already in progress
+        if (tvStreamingInProgress) {
+          sendLog(`📺 TV streaming already in progress, skipping duplicate request`, 'warning');
+          return { success: true, mode: 'hls', duplicate: true };
+        }
+        tvStreamingInProgress = true;
+
         const tvVisualsEnabled = settingsManager.getSetting('tvVisualsEnabled') !== false; // Default ON
         const deviceIcon = isShield ? '🎮' : '📺';
         const deviceType = isShield ? 'NVIDIA Shield' : 'TV';
@@ -1495,17 +1530,45 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           windowsHide: true
         });
 
+        // IMPROVED: Log ALL FFmpeg HLS output for debugging
+        let hlsSegmentCreated = false;
         ffmpegWebrtcProcess.stderr.on('data', (data) => {
           const msg = data.toString().trim();
           if (streamStats) streamStats.parseFfmpegOutput(msg);
+
+          // Log all HLS-related messages
+          if (msg.includes('segment') || msg.includes('.ts') || msg.includes('.m3u8')) {
+            sendLog(`[FFmpeg HLS] ${msg}`);
+            hlsSegmentCreated = true;
+          }
           if (msg.includes('Error') || msg.includes('error')) {
-            sendLog(`[FFmpeg HLS] ${msg}`, 'error');
+            sendLog(`[FFmpeg HLS ERROR] ${msg}`, 'error');
+          }
+          // Log input/output info
+          if (msg.includes('Input #') || msg.includes('Output #') || msg.includes('Stream mapping')) {
+            sendLog(`[FFmpeg HLS] ${msg}`);
           }
         });
 
         // Wait for FFmpeg to create initial HLS segments
         sendLog('📺 Waiting for HLS segments to be created...');
         await new Promise(r => setTimeout(r, 4000)); // HLS needs time to create segments
+
+        // VERIFY: Check that HLS files actually exist before casting
+        const fs = require('fs');
+        if (fs.existsSync(hlsOutputPath)) {
+          const m3u8Content = fs.readFileSync(hlsOutputPath, 'utf8');
+          sendLog(`📺 HLS playlist exists (${m3u8Content.length} bytes)`);
+          if (m3u8Content.includes('.ts')) {
+            sendLog(`📺 HLS segments found in playlist`);
+          } else {
+            sendLog(`📺 WARNING: No .ts segments in playlist yet`, 'warning');
+          }
+        } else {
+          sendLog(`📺 WARNING: HLS playlist not found at ${hlsOutputPath}`, 'warning');
+          sendLog(`📺 Waiting additional 3 seconds...`);
+          await new Promise(r => setTimeout(r, 3000));
+        }
 
         const localIp = getLocalIp();
         const hlsUrl = hlsDirectServer.getHlsUrl(localIp);
@@ -1549,6 +1612,7 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
           return { success: true, mode: 'hls', url: hlsUrl };
         } else {
+          tvStreamingInProgress = false; // Reset on failure
           throw new Error(result.error || 'Failed to start HLS streaming to TV');
         }
       }
@@ -1608,16 +1672,19 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           sendLog('Starting FFmpeg stereo split (single capture, dual output)...');
           stereoFFmpegProcesses.left = spawn(ffmpegPath, [
             '-hide_banner', '-stats',
-            // Low-latency input flags
-            '-fflags', 'nobuffer',
+            // BALANCED: Clock stability WITHOUT sacrificing latency
+            '-thread_queue_size', '512',
+            '-use_wallclock_as_timestamps', '1',
+            '-fflags', '+genpts+discardcorrupt',
             '-flags', 'low_delay',
             '-probesize', '32',
             '-analyzeduration', '0',
-            '-rtbufsize', '64k',
+            '-rtbufsize', '64k',  // LOW LATENCY
             '-f', 'dshow',
-            '-audio_buffer_size', '50',
+            '-audio_buffer_size', '50',  // LOW LATENCY: 50ms
             '-i', `audio=${stereoAudioDevice}`,
-            '-filter_complex', `[0:a]pan=mono|c0=c0,volume=${boostLevel}[left];[0:a]pan=mono|c0=c1,volume=${boostLevel}[right]`,
+            // Stereo split with aresample for clean timing
+            '-filter_complex', `[0:a]aresample=async=1:first_pts=0[resampled];[resampled]pan=mono|c0=c0,volume=${boostLevel}[left];[resampled]pan=mono|c0=c1,volume=${boostLevel}[right]`,
             // Left output with low-latency flags
             '-map', '[left]', '-c:a', 'libopus', '-b:a', '128k', '-ar', '48000', '-ac', '1',
             '-application', 'lowdelay', '-frame_duration', '20',
@@ -2031,6 +2098,9 @@ ipcMain.handle('stop-streaming', async (event, speakerName) => {
       hlsDirectServer.stop();
     }
 
+    // Reset TV streaming flag
+    tvStreamingInProgress = false;
+
     return { success: true };
   } catch (error) {
     sendLog(`Stop error: ${error.message}`, 'error');
@@ -2396,16 +2466,19 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     // Single FFmpeg process with filter_complex for L/R split + dual RTSP output
     stereoFFmpegProcesses.left = spawn(ffmpegPath, [
       '-hide_banner', '-stats',
-      // Low-latency input flags
-      '-fflags', 'nobuffer',
+      // BALANCED: Clock stability WITHOUT sacrificing latency
+      '-thread_queue_size', '512',
+      '-use_wallclock_as_timestamps', '1',
+      '-fflags', '+genpts+discardcorrupt',
       '-flags', 'low_delay',
       '-probesize', '32',
       '-analyzeduration', '0',
-      '-rtbufsize', '64k',
+      '-rtbufsize', '64k',  // LOW LATENCY
       '-f', 'dshow',
-      '-audio_buffer_size', '50',
+      '-audio_buffer_size', '50',  // LOW LATENCY: 50ms
       '-i', `audio=${stereoDevice2}`,
-      '-filter_complex', `[0:a]pan=mono|c0=c0,volume=${boostLevel}[left];[0:a]pan=mono|c0=c1,volume=${boostLevel}[right]`,
+      // Stereo split with aresample for clean timing
+      '-filter_complex', `[0:a]aresample=async=1:first_pts=0[resampled];[resampled]pan=mono|c0=c0,volume=${boostLevel}[left];[resampled]pan=mono|c0=c1,volume=${boostLevel}[right]`,
       // Left output with low-latency flags
       '-map', '[left]', '-c:a', 'libopus', '-b:a', '128k', '-ar', '48000', '-ac', '1',
       '-application', 'lowdelay', '-frame_duration', '20',
@@ -2890,39 +2963,47 @@ ipcMain.handle('toggle-pc-audio', async (event, enabled) => {
           }).catch(() => {});
         }
 
-        // Restore saved APO delay for sync
-        // Auto-correct OLD high delays (>300ms) from before latency optimization
-        // NEW slider max is 300ms, so values <= 300 are intentional user settings
-        const settings = await settingsManager.loadSettings();
-        const OLD_STREAMING_THRESHOLD = 300; // Values above this were from old slow streaming
-        const CORRECTED_DELAY = 100; // Reset to safe middle value for optimized WebRTC
-        if (settings.syncDelayMs > 0) {
-          let actualDelay = settings.syncDelayMs;
-          // Only auto-correct values that are clearly from old streaming (> 300ms)
-          if (settings.syncDelayMs > OLD_STREAMING_THRESHOLD) {
-            actualDelay = CORRECTED_DELAY;
-            sendLog(`[Sync] Auto-corrected delay: ${settings.syncDelayMs}ms → ${actualDelay}ms (WebRTC optimized)`, 'info');
-            settingsManager.setSetting('syncDelayMs', actualDelay);
-            // Notify renderer to update UI slider
-            if (mainWindow && mainWindow.webContents) {
-              mainWindow.webContents.send('sync-delay-corrected', actualDelay);
-            }
-          }
-          await pcSpeakerDelay.setDelay(actualDelay);
-          // CRITICAL: Also update audioSyncManager's internal state for auto-sync baseline!
-          // Without this, auto-sync thinks delay is 0 and doesn't adjust properly
-          await audioSyncManager.setDelay(actualDelay);
-        }
-
-        // AUTO-SYNC: PC speaker and sync are coupled - when PC speaker is ON, auto-sync starts
+        // AUTO-CALIBRATE: Measure RTT and calculate optimal delay automatically
+        // No more manual slider adjustment needed!
         if (currentConnectedSpeakers.length > 0) {
-          const speakerForSync = currentConnectedSpeakers[0]; // Use first speaker for latency monitoring
+          const speakerForSync = currentConnectedSpeakers[0];
           if (speakerForSync?.ip) {
+            // Start auto-sync first so calibration can work
             autoSyncEnabled = true;
             settingsManager.setSetting('autoSyncEnabled', true);
             autoSyncManager.start(speakerForSync);
-            await autoSyncManager.setBaseline();
-            sendLog(`Auto-sync started for "${speakerForSync.name}" (coupled with PC speaker mode)`);
+
+            // Auto-calibrate: measure RTT + add pipeline delays = optimal sync
+            const calibration = await autoSyncManager.calibrateSmartDefault();
+            if (calibration.success) {
+              const delay = calibration.delay;
+              sendLog(`[Sync] Auto-calibrated: ${delay}ms (RTT: ${calibration.rtt}ms + pipeline: ${calibration.pipelineDelay}ms)`);
+
+              // Apply the calibrated delay
+              await pcSpeakerDelay.setDelay(delay);
+              await audioSyncManager.setDelay(delay);
+              settingsManager.setSetting('syncDelayMs', delay);
+
+              // Update UI slider
+              if (mainWindow && mainWindow.webContents) {
+                mainWindow.webContents.send('sync-delay-corrected', delay);
+              }
+            } else {
+              // Fallback to safe default if calibration fails
+              const fallbackDelay = 100;
+              sendLog(`[Sync] Calibration failed, using ${fallbackDelay}ms default`, 'warning');
+              await pcSpeakerDelay.setDelay(fallbackDelay);
+              await audioSyncManager.setDelay(fallbackDelay);
+            }
+
+            sendLog(`Auto-sync monitoring "${speakerForSync.name}"`);
+          }
+        } else {
+          // No speaker connected - use saved delay as fallback
+          const settings = await settingsManager.loadSettings();
+          if (settings.syncDelayMs > 0) {
+            await pcSpeakerDelay.setDelay(settings.syncDelayMs);
+            await audioSyncManager.setDelay(settings.syncDelayMs);
           }
         }
       }

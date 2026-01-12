@@ -32,6 +32,10 @@ contextBridge.exposeInMainWorld('api', {
   stopTvStreaming: () => ipcRenderer.invoke('stop-tv-streaming'),
   getTvStreamingStatus: () => ipcRenderer.invoke('get-tv-streaming-status'),
 
+  // URL casting (user provides URL, TV plays it directly)
+  castUrl: (deviceName, url, contentType = null, deviceIp = null) =>
+    ipcRenderer.invoke('cast-url', deviceName, url, contentType, deviceIp),
+
   // Volume control (0.0 - 1.0 for pychromecast)
   setVolume: (speakerName, volume) =>
     ipcRenderer.invoke('set-volume', speakerName, volume),
@@ -67,6 +71,7 @@ contextBridge.exposeInMainWorld('api', {
   setSyncDelay: (delayMs) => ipcRenderer.invoke('set-sync-delay', delayMs),
   getSyncDelay: () => ipcRenderer.invoke('get-sync-delay'),
   measureLatency: (speakerName, speakerIp) => ipcRenderer.invoke('measure-latency', speakerName, speakerIp),
+  calibrateSmartDefault: () => ipcRenderer.invoke('calibrate-smart-default'),
   checkEqualizerApo: () => ipcRenderer.invoke('check-equalizer-apo'),
   installEqualizerApo: () => ipcRenderer.invoke('install-equalizer-apo'),
   getApoDevices: () => ipcRenderer.invoke('get-apo-devices'),
@@ -105,6 +110,9 @@ contextBridge.exposeInMainWorld('api', {
   onAutoConnect: (callback) => {
     ipcRenderer.on('auto-connect', (event, speaker) => callback(speaker));
   },
+  onAutoConnectStereo: (callback) => {
+    ipcRenderer.on('auto-connect-stereo', (event, data) => callback(data));
+  },
 
   // Auto-discovery events (fired on app startup)
   onSpeakersDiscovered: (callback) => {
@@ -127,6 +135,16 @@ contextBridge.exposeInMainWorld('api', {
   // Auto-sync adjustment event (when network latency changes and delay is auto-adjusted)
   onAutoSyncAdjusted: (callback) => {
     ipcRenderer.on('auto-sync-adjusted', (event, data) => callback(data));
+  },
+
+  // Sync delay auto-correction event (when old high delay is corrected for optimized WebRTC)
+  onSyncDelayCorrected: (callback) => {
+    ipcRenderer.on('sync-delay-corrected', (event, newDelayMs) => callback(newDelayMs));
+  },
+
+  // Audio device changed event (when Windows audio output switches, refresh UI)
+  onAudioDeviceChanged: (callback) => {
+    ipcRenderer.on('audio-device-changed', (event, deviceName) => callback(deviceName));
   },
 
   // Window controls (frameless window)
