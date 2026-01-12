@@ -1084,4 +1084,134 @@ return null;  // Block Cast SDK player
 
 ---
 
+## Session: January 12, 2025 (Continued) - Cast Group Speed Optimization
+
+### Problem
+Cast Groups took **12-22 seconds** to connect, while manual L&R stereo mode connected in **3-5 seconds**.
+
+### Root Cause Analysis
+When user clicked a Cast Group, the `get-group-members` function did:
+1. `pychromecast.get_chromecasts(timeout=10)` - **FULL RE-DISCOVERY** (up to 10s)
+2. `group_cast.wait(timeout=10)` - Connect to group to query membership
+3. `time.sleep(2)` - Fixed wait for multizone response
+4. **THEN** connect to individual speakers
+
+This was redundant because discovery had ALREADY happened at app boot!
+
+### Solution: Cache Group Members During Boot Discovery
+
+**Before** (slow):
+```
+Boot: discover speakers (finds groups but not members)
+Click Group: re-discover → query multizone → get members → connect
+Total: 12-22 seconds
+```
+
+**After** (fast):
+```
+Boot: discover speakers AND resolve group members in same pass
+Click Group: use cached speaker.members → connect immediately
+Total: 3-5 seconds (same as manual L&R!)
+```
+
+### Implementation Details
+
+#### 1. Enhanced Discovery (`cast-helper.py`)
+
+```python
+def discover_speakers(timeout=12):
+    # First pass: collect all devices
+    speakers = []
+    groups = []
+    cc_by_uuid = {}  # For quick UUID lookup
+
+    for cc in chromecasts:
+        device_data = {..., "uuid": str(cc.uuid)}
+        if info.cast_type == 'group':
+            device_data["members"] = []
+            groups.append((cc, device_data))
+        speakers.append(device_data)
+        cc_by_uuid[str(cc.uuid)] = cc
+
+    # Second pass: resolve group members (no re-discovery!)
+    for group_cc, group_data in groups:
+        group_cc.wait(timeout=5)  # Quick connect
+        mz = MultizoneController(group_cc.uuid)
+        group_cc.register_handler(mz)
+        mz.update_members()
+        time.sleep(0.5)  # Reduced from 2s
+
+        # Match UUIDs to cached devices (instant)
+        for uuid in member_uuids:
+            if uuid in cc_by_uuid:
+                group_data["members"].append({...})
+```
+
+#### 2. Use Cached Members (`electron-main.js`)
+
+```javascript
+if (isGroup) {
+  let membersResult;
+  if (speaker.members && speaker.members.length > 0) {
+    // FAST PATH: Use cached members from discovery
+    sendLog(`Using cached group members (${speaker.members.length} members)`);
+    membersResult = {
+      success: true,
+      members: speaker.members,
+      count: speaker.members.length
+    };
+  } else {
+    // SLOW PATH: Fall back to get-group-members if cache empty
+    sendLog(`No cached members, querying group (this may take ~10s)...`);
+    membersResult = await runPython(['get-group-members', speakerName]);
+  }
+  // ... rest of group handling
+}
+```
+
+### Files Modified
+| File | Changes |
+|------|---------|
+| `src/main/cast-helper.py` | `discover_speakers()` resolves group members during discovery |
+| `src/main/electron-main.js` | Uses cached `speaker.members` before falling back to slow query |
+
+### Results
+- **Before**: 12-22 seconds to connect Cast Group
+- **After**: 3-5 seconds (matches manual L&R stereo speed)
+- **Fallback**: If cache is empty, still works via slow path
+
+### Commits
+- `46b754b` - ⚡ perf: Cache Cast Group members during discovery for instant connections
+
+---
+
+## Complete Session Summary: January 12, 2025
+
+### All Fixes This Session
+
+| Issue | Fix | Commit |
+|-------|-----|--------|
+| TV/Shield no audio | hls.js in Visual Receiver | `b45498f` |
+| Python false failure on HLS | IDLE state = success for Visual Receiver | `388c853` |
+| Cast Groups slow (12-22s) | Cache members during discovery | `46b754b` |
+| Pipeline documentation | Complete architecture in CLAUDE.md | `4e4fb85` |
+
+### Working Architecture Summary
+
+| Device Type | Speed | Method | Receiver |
+|-------------|-------|--------|----------|
+| Single Speaker | ~3s | WebRTC (Opus) | Audio (4B876246) |
+| Cast Group (2 members) | ~3-5s | WebRTC L/R split | Audio (4B876246) |
+| Cast Group (3+ members) | ~3-5s | WebRTC multicast | Audio (4B876246) |
+| TV/Chromecast/Shield | ~5-7s | HLS via hls.js | Visual (FCAA4619) |
+
+### Key Technical Decisions
+
+1. **hls.js over Cast SDK player**: Cast's built-in player can't handle audio-only HLS
+2. **Group members cached at boot**: Eliminates redundant re-discovery on group click
+3. **Visual Receiver for TVs**: Provides splash screen + ambient photos + hls.js audio
+4. **Promise.all for stereo**: Connects L/R speakers in parallel for perfect sync
+
+---
+
 *Last Updated: January 12, 2025*
