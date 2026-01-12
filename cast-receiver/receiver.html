@@ -7,8 +7,8 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #334E58; overflow: hidden; }
 
-    /* Ambient video background - fullscreen, behind everything */
-    #ambient-video {
+    /* Ambient photo slideshow - fullscreen, behind everything */
+    .ambient-photo {
       position: fixed;
       top: 0;
       left: 0;
@@ -19,7 +19,8 @@
       opacity: 0;
       transition: opacity 2s ease-in-out;
     }
-    #ambient-video.visible { opacity: 1; }
+    .ambient-photo.visible { opacity: 1; }
+    .ambient-photo.hidden { opacity: 0; }
 
     /* Gradient overlay for text readability */
     #overlay {
@@ -107,8 +108,9 @@
 <body>
   <cast-media-player id="player"></cast-media-player>
 
-  <!-- Ambient video background -->
-  <video id="ambient-video" muted loop playsinline></video>
+  <!-- Ambient photo slideshow - two images for crossfade effect -->
+  <img id="ambient-photo-1" class="ambient-photo" src="" alt="">
+  <img id="ambient-photo-2" class="ambient-photo" src="" alt="">
   <div id="overlay"></div>
 
   <!-- UI elements -->
@@ -129,100 +131,131 @@
     const WEBRTC_NAMESPACE = 'urn:x-cast:com.pcnestspeaker.webrtc';
 
     // ===================
-    // Ambient Video System - Free CC0 videos from Pexels (CORS-enabled)
+    // Ambient Photo Slideshow - Free photos from Unsplash (fast CDN, CORS-enabled)
+    // Using Unsplash Source for direct image URLs (1920x1080 for fast loading)
     // ===================
-    const ambientVideos = [
+    const ambientPhotos = [
       // Ocean & Water
-      'https://videos.pexels.com/video-files/3571264/3571264-uhd_2560_1440_30fps.mp4',  // Ocean waves aerial
-      'https://videos.pexels.com/video-files/1093662/1093662-uhd_2560_1440_30fps.mp4',  // Beach sunset waves
-      'https://videos.pexels.com/video-files/2098989/2098989-uhd_2560_1440_30fps.mp4',  // Waterfall
-      'https://videos.pexels.com/video-files/1409899/1409899-uhd_2560_1440_25fps.mp4',  // Calm ocean
-
-      // Clouds & Sky
-      'https://videos.pexels.com/video-files/1918465/1918465-uhd_2560_1440_24fps.mp4',  // Clouds timelapse
-      'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_24fps.mp4',  // Northern lights
-      'https://videos.pexels.com/video-files/857195/857195-hd_1920_1080_25fps.mp4',     // Sunset clouds
-
-      // Forest & Nature
-      'https://videos.pexels.com/video-files/857251/857251-hd_1920_1080_25fps.mp4',     // Forest mist
-      'https://videos.pexels.com/video-files/3125908/3125908-uhd_2560_1440_30fps.mp4',  // Mountain lake
-      'https://videos.pexels.com/video-files/2871916/2871916-uhd_2560_1440_24fps.mp4',  // Green forest aerial
+      'https://images.unsplash.com/photo-1505118380757-91f5f5632de0?w=1920&h=1080&fit=crop',  // Ocean waves
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1920&h=1080&fit=crop',  // Beach tropical
+      'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=1920&h=1080&fit=crop',  // Ocean aerial
+      'https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=1920&h=1080&fit=crop',  // Sea sunset
 
       // Mountains & Landscapes
-      'https://videos.pexels.com/video-files/1448735/1448735-uhd_2560_1440_24fps.mp4',  // Desert dunes
-      'https://videos.pexels.com/video-files/3015510/3015510-uhd_2560_1440_24fps.mp4',  // Snowy mountains
-      'https://videos.pexels.com/video-files/2169880/2169880-uhd_2560_1440_30fps.mp4',  // Valley mist
+      'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1920&h=1080&fit=crop',  // Mountain peaks
+      'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&h=1080&fit=crop',  // Mountains clouds
+      'https://images.unsplash.com/photo-1454496522488-7a8e488e8606?w=1920&h=1080&fit=crop',  // Snowy mountains
+      'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1920&h=1080&fit=crop',  // Mountain stars
 
-      // Space & Stars
-      'https://videos.pexels.com/video-files/1851190/1851190-uhd_2560_1440_30fps.mp4',  // Stars timelapse
-      'https://videos.pexels.com/video-files/5765760/5765760-uhd_2560_1440_25fps.mp4',  // Milky way
-      'https://videos.pexels.com/video-files/4770815/4770815-uhd_2560_1440_30fps.mp4',  // Earth from space
+      // Forest & Nature
+      'https://images.unsplash.com/photo-1448375240586-882707db888b?w=1920&h=1080&fit=crop',  // Forest path
+      'https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?w=1920&h=1080&fit=crop',  // Forest sunlight
+      'https://images.unsplash.com/photo-1476362555312-ab9e108a0b7e?w=1920&h=1080&fit=crop',  // Autumn forest
+      'https://images.unsplash.com/photo-1425913397330-cf8af2ff40a1?w=1920&h=1080&fit=crop',  // Misty forest
+
+      // Sky & Clouds
+      'https://images.unsplash.com/photo-1517483000871-1dbf64a6e1c6?w=1920&h=1080&fit=crop',  // Sunset sky
+      'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=1920&h=1080&fit=crop',  // Pink clouds
+      'https://images.unsplash.com/photo-1501630834273-4b5604d2ee31?w=1920&h=1080&fit=crop',  // Blue sky clouds
+      'https://images.unsplash.com/photo-1499346030926-9a72daac6c63?w=1920&h=1080&fit=crop',  // Starry night
+
+      // Northern Lights & Space
+      'https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=1920&h=1080&fit=crop',  // Northern lights
+      'https://images.unsplash.com/photo-1507400492013-162706c8c05e?w=1920&h=1080&fit=crop',  // Aurora green
+      'https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=1920&h=1080&fit=crop',  // Milky way
+      'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=1920&h=1080&fit=crop',  // Galaxy
+
+      // Desert & Dunes
+      'https://images.unsplash.com/photo-1509316785289-025f5b846b35?w=1920&h=1080&fit=crop',  // Desert dunes
+      'https://images.unsplash.com/photo-1473580044384-7ba9967e16a0?w=1920&h=1080&fit=crop',  // Sahara sunset
+      'https://images.unsplash.com/photo-1547234935-80c7145ec969?w=1920&h=1080&fit=crop',  // Desert night
 
       // Underwater & Sea Life
-      'https://videos.pexels.com/video-files/855049/855049-hd_1920_1080_30fps.mp4',     // Coral reef fish
-      'https://videos.pexels.com/video-files/4812204/4812204-uhd_2560_1440_25fps.mp4',  // Jellyfish
-      'https://videos.pexels.com/video-files/2556126/2556126-uhd_2560_1440_30fps.mp4',  // Ocean underwater
+      'https://images.unsplash.com/photo-1544551763-92ab472cad5d?w=1920&h=1080&fit=crop',  // Underwater coral
+      'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=1920&h=1080&fit=crop',  // Sea turtle
+      'https://images.unsplash.com/photo-1546026423-cc4642628d2b?w=1920&h=1080&fit=crop',  // Jellyfish
 
-      // Fire & Abstract
-      'https://videos.pexels.com/video-files/856798/856798-hd_1920_1080_25fps.mp4',     // Campfire flames
-      'https://videos.pexels.com/video-files/2795173/2795173-uhd_2560_1440_25fps.mp4',  // Abstract particles
-      'https://videos.pexels.com/video-files/3129671/3129671-uhd_2560_1440_30fps.mp4',  // City night lights
+      // Abstract & Minimal
+      'https://images.unsplash.com/photo-1557682250-33bd709cbe85?w=1920&h=1080&fit=crop',  // Gradient purple
+      'https://images.unsplash.com/photo-1558591710-4b4a1ae0f04d?w=1920&h=1080&fit=crop',  // Abstract waves
+      'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=1920&h=1080&fit=crop',  // Colorful gradient
 
-      // Nature & Flowers
-      'https://videos.pexels.com/video-files/2611168/2611168-uhd_2560_1440_25fps.mp4',  // Flowers field
-      'https://videos.pexels.com/video-files/4763830/4763830-uhd_2560_1440_30fps.mp4',  // Cherry blossoms
-
-      // Rain & Weather
-      'https://videos.pexels.com/video-files/2491280/2491280-uhd_2560_1440_24fps.mp4',  // Rain on window
-      'https://videos.pexels.com/video-files/1906831/1906831-uhd_2560_1440_25fps.mp4',  // Storm clouds
-
-      // Driving & Roads
-      'https://videos.pexels.com/video-files/3015509/3015509-uhd_2560_1440_24fps.mp4',  // Mountain road drive
-      'https://videos.pexels.com/video-files/2795401/2795401-uhd_2560_1440_25fps.mp4',  // Highway night
-
-      // Animals
-      'https://videos.pexels.com/video-files/856973/856973-hd_1920_1080_25fps.mp4',     // Birds flying
-      'https://videos.pexels.com/video-files/4091636/4091636-uhd_2560_1440_25fps.mp4',  // Fish school
+      // Flowers & Gardens
+      'https://images.unsplash.com/photo-1490750967868-88aa4486c946?w=1920&h=1080&fit=crop',  // Sunflower
+      'https://images.unsplash.com/photo-1518882605483-4a7369cc29fb?w=1920&h=1080&fit=crop',  // Lavender field
+      'https://images.unsplash.com/photo-1462275646964-a0e3571f4f81?w=1920&h=1080&fit=crop',  // Cherry blossoms
     ];
 
-    let currentVideoIndex = 0;
-    const ambientVideo = document.getElementById('ambient-video');
+    // Slideshow state
+    let currentPhotoIndex = 0;
+    let activePhoto = 1; // Toggle between photo 1 and 2 for crossfade
+    const photo1 = document.getElementById('ambient-photo-1');
+    const photo2 = document.getElementById('ambient-photo-2');
+    let slideshowInterval = null;
+    const SLIDESHOW_DURATION = 10000; // 10 seconds per photo
 
-    function loadNextAmbientVideo() {
-      // Fade out current video
-      ambientVideo.classList.remove('visible');
-
-      setTimeout(() => {
-        // Pick next video (random or sequential)
-        currentVideoIndex = Math.floor(Math.random() * ambientVideos.length);
-        ambientVideo.src = ambientVideos[currentVideoIndex];
-        ambientVideo.load();
-      }, 1000); // Wait for fade out
+    function getRandomPhoto() {
+      const newIndex = Math.floor(Math.random() * ambientPhotos.length);
+      // Avoid showing same photo twice in a row
+      if (newIndex === currentPhotoIndex && ambientPhotos.length > 1) {
+        return (newIndex + 1) % ambientPhotos.length;
+      }
+      return newIndex;
     }
 
-    ambientVideo.addEventListener('loadeddata', () => {
-      console.log('[Ambient] Video loaded, playing...');
-      ambientVideo.play().then(() => {
-        ambientVideo.classList.add('visible');
-      }).catch(e => console.log('[Ambient] Autoplay blocked:', e.message));
-    });
+    function showNextPhoto() {
+      currentPhotoIndex = getRandomPhoto();
+      const nextUrl = ambientPhotos[currentPhotoIndex];
+      console.log('[Slideshow] Loading photo:', currentPhotoIndex);
 
-    ambientVideo.addEventListener('ended', () => {
-      console.log('[Ambient] Video ended, loading next...');
-      loadNextAmbientVideo();
-    });
+      if (activePhoto === 1) {
+        // Load into photo2, then crossfade
+        photo2.src = nextUrl;
+        photo2.onload = () => {
+          photo1.classList.remove('visible');
+          photo1.classList.add('hidden');
+          photo2.classList.remove('hidden');
+          photo2.classList.add('visible');
+          activePhoto = 2;
+        };
+      } else {
+        // Load into photo1, then crossfade
+        photo1.src = nextUrl;
+        photo1.onload = () => {
+          photo2.classList.remove('visible');
+          photo2.classList.add('hidden');
+          photo1.classList.remove('hidden');
+          photo1.classList.add('visible');
+          activePhoto = 1;
+        };
+      }
+    }
 
-    ambientVideo.addEventListener('error', (e) => {
-      console.log('[Ambient] Video error, trying next...');
-      loadNextAmbientVideo();
-    });
+    function startSlideshow() {
+      console.log('[Slideshow] Starting ambient photo slideshow');
+      // Load first photo immediately
+      currentPhotoIndex = getRandomPhoto();
+      photo1.src = ambientPhotos[currentPhotoIndex];
+      photo1.onload = () => {
+        photo1.classList.add('visible');
+        activePhoto = 1;
+      };
 
-    // Start first ambient video
+      // Start interval for subsequent photos
+      if (slideshowInterval) clearInterval(slideshowInterval);
+      slideshowInterval = setInterval(showNextPhoto, SLIDESHOW_DURATION);
+    }
+
+    function stopSlideshow() {
+      if (slideshowInterval) {
+        clearInterval(slideshowInterval);
+        slideshowInterval = null;
+      }
+    }
+
+    // Legacy function name for compatibility
     function startAmbientVideos() {
-      console.log('[Ambient] Starting ambient video playlist');
-      currentVideoIndex = Math.floor(Math.random() * ambientVideos.length);
-      ambientVideo.src = ambientVideos[currentVideoIndex];
-      ambientVideo.load();
+      startSlideshow();
     }
 
     // ===================

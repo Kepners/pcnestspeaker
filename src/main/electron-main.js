@@ -1489,7 +1489,27 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         const volumeBoostEnabled = settingsManager.getSetting('volumeBoost');
         const boostLevel = volumeBoostEnabled ? 1.25 : 1.03;
 
-        // Get audio device - prefer standard VB-Audio (not 16ch or VoiceMeeter)
+        // CRITICAL: Save original device and switch Windows audio to VB-Cable
+        // This routes Windows audio through VB-Cable so FFmpeg can capture it
+        await audioRouting.saveOriginalDevice();
+        const vbCableInput = await audioRouting.findVirtualDevice();
+        if (vbCableInput) {
+          const deviceName = vbCableInput.name || vbCableInput;
+          const switchResult = await audioRouting.setDefaultDevice(deviceName);
+          if (switchResult.success) {
+            sendLog(`📺 Windows audio switched to: ${deviceName}`);
+            // Notify renderer to refresh audio output UI
+            if (mainWindow && mainWindow.webContents) {
+              mainWindow.webContents.send('audio-device-changed', deviceName);
+            }
+          } else {
+            sendLog(`📺 WARNING: Failed to switch to VB-Cable: ${switchResult.error}`, 'warning');
+          }
+        } else {
+          sendLog('📺 WARNING: VB-Cable Input not found - audio may not stream!', 'warning');
+        }
+
+        // Get audio device for FFmpeg capture - prefer standard VB-Audio (not 16ch or VoiceMeeter)
         if (!audioStreamer) audioStreamer = new AudioStreamer();
         const tvDevices = await audioStreamer.getAudioDevices();
         const tvVbDevice = tvDevices.find(d => {
@@ -1497,7 +1517,7 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           return lower.includes('vb-audio') && lower.includes('output') && !lower.includes('16');
         }) || tvDevices.find(d => d.toLowerCase().includes('vb-audio') && d.toLowerCase().includes('output'));
         const tvAudioDevice = tvVbDevice || 'CABLE Output (VB-Audio Virtual Cable)';
-        sendLog(`📺 Audio device: ${tvAudioDevice}`);
+        sendLog(`📺 FFmpeg capture device: ${tvAudioDevice}`);
 
         const hlsOutputPath = path.join(hlsOutputDir, 'stream.m3u8');
 
@@ -1524,10 +1544,25 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           hlsOutputPath
         ];
 
-        sendLog(`📺 FFmpeg direct HLS: ${ffmpegPath} ... -f hls ${hlsOutputPath}`);
+        // Log FULL command for debugging
+        sendLog(`📺 FFmpeg HLS command: ${ffmpegPath} ${ffmpegArgs.join(' ')}`);
+
         ffmpegWebrtcProcess = spawn(ffmpegPath, ffmpegArgs, {
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true
+        });
+
+        // CRITICAL: Handle spawn errors (missing ffmpeg, permissions, etc.)
+        ffmpegWebrtcProcess.on('error', (err) => {
+          sendLog(`📺 FFmpeg SPAWN ERROR: ${err.message}`, 'error');
+          tvStreamingInProgress = false;
+        });
+
+        // CRITICAL: Handle unexpected exits
+        ffmpegWebrtcProcess.on('close', (code) => {
+          if (code !== 0 && code !== null) {
+            sendLog(`📺 FFmpeg exited unexpectedly with code ${code}`, 'warning');
+          }
         });
 
         // IMPROVED: Log ALL FFmpeg HLS output for debugging
@@ -1576,16 +1611,15 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
 
         // Cast HLS to TV - use Visual receiver for ambient videos or Default Media Receiver
         // Args: hls-cast <name> <url> <ip|''> <model> <app_id>
-        // TEMPORARY FIX: Visual Receiver (FCAA4619) not working properly with HLS
-        // Force Default Media Receiver until Visual Receiver is fixed
-        // See: https://github.com/... for tracking issue
-        const hlsReceiverAppId = 'CC1AD845'; // useVisualReceiver ? VISUAL_APP_ID : 'CC1AD845';
+        // Python hls_cast_to_tv() has built-in fallback: Visual → Default Media Receiver
+        // If Visual Receiver times out, Python will automatically fall back
+        const hlsReceiverAppId = useVisualReceiver ? VISUAL_APP_ID : 'CC1AD845';
+        sendLog(`📺 Using receiver: ${useVisualReceiver ? 'Visual (with splash/ambient)' : 'Default Media'}`);
         const args = ['hls-cast', speakerName, hlsUrl, speakerIp || '', speakerModel || 'unknown', hlsReceiverAppId];
         result = await runPython(args);
 
         if (result.success) {
-          // Note: Visual Receiver temporarily disabled, always using Default Media Receiver
-          const modeDesc = 'HLS (Default Media Receiver)';
+          const modeDesc = useVisualReceiver ? 'HLS (Visual receiver with ambient videos)' : 'HLS (Default Media Receiver)';
           sendLog(`${deviceIcon} Streaming to ${deviceType} started! (${modeDesc})`, 'success');
           trayManager.updateTrayState(true);
           usageTracker.startTracking();

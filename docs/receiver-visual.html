@@ -117,8 +117,9 @@
       display: none;
     }
 
-    /* Ambient video background - fullscreen, behind everything */
-    #ambient-video {
+    /* Ambient PHOTO background - fullscreen, behind everything */
+    /* Two images for crossfade effect */
+    .ambient-photo {
       position: fixed;
       top: 0;
       left: 0;
@@ -129,7 +130,7 @@
       opacity: 0;
       transition: opacity 2s ease-in-out;
     }
-    #ambient-video.visible { opacity: 1; }
+    .ambient-photo.visible { opacity: 1; }
 
     /* Gradient overlay for text readability */
     #overlay {
@@ -241,8 +242,9 @@
     <div id="splash-subtitle">STREAMING YOUR WORLD</div>
   </div>
 
-  <!-- Ambient video background -->
-  <video id="ambient-video" muted autoplay playsinline crossorigin="anonymous"></video>
+  <!-- Ambient PHOTO slideshow background (two images for crossfade) -->
+  <img id="ambient-photo-1" class="ambient-photo" src="" alt="">
+  <img id="ambient-photo-2" class="ambient-photo" src="" alt="">
   <div id="overlay"></div>
 
   <!-- UI elements -->
@@ -278,135 +280,140 @@
     let splashComplete = false;
 
     // ===================
-    // Ambient Video System - Pexels Videos (CORS-enabled, works on Cast)
+    // Ambient PHOTO Slideshow System - Unsplash (CORS-enabled, works on Cast)
+    // Much lighter than 4K videos, works reliably on Shield/TVs
     // ===================
-    const ambientVideos = [
-      // Ocean & Water - proven to work on Cast
-      'https://videos.pexels.com/video-files/3571264/3571264-uhd_3840_2160_30fps.mp4',
-      'https://videos.pexels.com/video-files/1093662/1093662-uhd_3840_2160_30fps.mp4',
-      'https://videos.pexels.com/video-files/2098989/2098989-uhd_3840_2160_30fps.mp4',
-      // Clouds & Sky
-      'https://videos.pexels.com/video-files/1918465/1918465-uhd_3840_2160_24fps.mp4',
-      'https://videos.pexels.com/video-files/2491284/2491284-uhd_3840_2160_24fps.mp4',
-      // Nature
-      'https://videos.pexels.com/video-files/3125908/3125908-uhd_3840_2160_30fps.mp4',
-      'https://videos.pexels.com/video-files/2871916/2871916-uhd_3840_2160_24fps.mp4',
+    const ambientPhotos = [
+      // Ocean & Water
+      'https://images.unsplash.com/photo-1505118380757-91f5f5632de0?w=1920&q=80',
+      'https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=1920&q=80',
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1920&q=80',
+      'https://images.unsplash.com/photo-1439405326854-014607f694d7?w=1920&q=80',
       // Mountains
-      'https://videos.pexels.com/video-files/1448735/1448735-uhd_3840_2160_24fps.mp4',
-      'https://videos.pexels.com/video-files/3015510/3015510-uhd_3840_2160_24fps.mp4',
+      'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1920&q=80',
+      'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1920&q=80',
+      'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&q=80',
+      'https://images.unsplash.com/photo-1454496522488-7a8e488e8606?w=1920&q=80',
+      // Forest & Nature
+      'https://images.unsplash.com/photo-1448375240586-882707db888b?w=1920&q=80',
+      'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=1920&q=80',
+      'https://images.unsplash.com/photo-1476231682828-37e571bc172f?w=1920&q=80',
+      'https://images.unsplash.com/photo-1502082553048-f009c37129b9?w=1920&q=80',
+      // Sky & Clouds
+      'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=1920&q=80',
+      'https://images.unsplash.com/photo-1517483000871-1dbf64a6e1c6?w=1920&q=80',
+      'https://images.unsplash.com/photo-1504608524841-42fe6f032b4b?w=1920&q=80',
+      'https://images.unsplash.com/photo-1513002749550-c59d786b8e6c?w=1920&q=80',
+      // Desert & Canyon
+      'https://images.unsplash.com/photo-1509316785289-025f5b846b35?w=1920&q=80',
+      'https://images.unsplash.com/photo-1474044159687-1ee9f3a51722?w=1920&q=80',
+      'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=1920&q=80',
+      // Night Sky & Stars
+      'https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=1920&q=80',
+      'https://images.unsplash.com/photo-1507400492013-162706c8c05e?w=1920&q=80',
+      'https://images.unsplash.com/photo-1465101162946-4377e57745c3?w=1920&q=80',
+      // Aurora
+      'https://images.unsplash.com/photo-1483347756197-71ef80e95f73?w=1920&q=80',
+      'https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=1920&q=80',
+      // Waterfall
+      'https://images.unsplash.com/photo-1432405972618-c60b0225b8f9?w=1920&q=80',
+      'https://images.unsplash.com/photo-1546182990-dffeafbe841d?w=1920&q=80',
+      // Lake & Reflection
+      'https://images.unsplash.com/photo-1439066615861-d1af74d74000?w=1920&q=80',
+      'https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=1920&q=80',
+      // Fields & Meadows
+      'https://images.unsplash.com/photo-1500534623283-c6c3c930c8f6?w=1920&q=80',
+      'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=1920&q=80',
+      // Space (abstract/nebula)
+      'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=1920&q=80',
+      'https://images.unsplash.com/photo-1444703686981-a3abbc4d4fe3?w=1920&q=80',
     ];
 
-    let currentVideoIndex = 0;
-    let videoLoadTimeout = null;
-    let videoErrorCount = 0;
-    const MAX_VIDEO_ERRORS = 5;
-    const VIDEO_LOAD_TIMEOUT = 30000; // 30 seconds for 4K videos
-    const ambientVideo = document.getElementById('ambient-video');
-    let videosStarted = false;
+    // Slideshow state
+    let currentPhotoIndex = 0;
+    let activePhotoElement = 1;  // Which img element is currently visible (1 or 2)
+    let slideshowInterval = null;
+    let slideshowStarted = false;
+    const SLIDESHOW_INTERVAL = 10000;  // 10 seconds per photo
 
-    function loadNextAmbientVideo() {
-      // Clear any existing timeout
-      if (videoLoadTimeout) {
-        clearTimeout(videoLoadTimeout);
-        videoLoadTimeout = null;
-      }
+    const photo1 = document.getElementById('ambient-photo-1');
+    const photo2 = document.getElementById('ambient-photo-2');
 
-      // Fade out current video
-      ambientVideo.classList.remove('visible');
-
-      setTimeout(() => {
-        // Pick next video (random)
-        currentVideoIndex = Math.floor(Math.random() * ambientVideos.length);
-        const videoUrl = ambientVideos[currentVideoIndex];
-        console.log('[Ambient] Loading video:', videoUrl);
-
-        ambientVideo.src = videoUrl;
-        ambientVideo.load();
-
-        // Set timeout for loading - try next video if this one takes too long
-        videoLoadTimeout = setTimeout(() => {
-          console.log('[Ambient] Video load timeout, trying next...');
-          videoErrorCount++;
-          if (videoErrorCount < MAX_VIDEO_ERRORS) {
-            loadNextAmbientVideo();
-          } else {
-            console.log('[Ambient] Max errors reached, stopping video attempts');
-          }
-        }, VIDEO_LOAD_TIMEOUT);
-      }, 1000); // Wait for fade out
+    // Preload next photo for smooth transition
+    function preloadImage(url) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(url);
+        img.onerror = () => reject(url);
+        img.src = url;
+      });
     }
 
-    // canplay is more reliable than loadeddata on some devices
-    ambientVideo.addEventListener('canplay', function onCanPlay() {
-      // Clear timeout since video is loading
-      if (videoLoadTimeout) {
-        clearTimeout(videoLoadTimeout);
-        videoLoadTimeout = null;
+    // Get next random photo (different from current)
+    function getNextPhotoIndex() {
+      let next;
+      do {
+        next = Math.floor(Math.random() * ambientPhotos.length);
+      } while (next === currentPhotoIndex && ambientPhotos.length > 1);
+      return next;
+    }
+
+    // Crossfade to next photo
+    async function showNextPhoto() {
+      const nextIndex = getNextPhotoIndex();
+      const nextUrl = ambientPhotos[nextIndex];
+      console.log('[Ambient] Loading photo:', nextUrl);
+
+      try {
+        await preloadImage(nextUrl);
+        currentPhotoIndex = nextIndex;
+
+        // Crossfade: show on inactive element, hide active element
+        if (activePhotoElement === 1) {
+          photo2.src = nextUrl;
+          photo2.classList.add('visible');
+          photo1.classList.remove('visible');
+          activePhotoElement = 2;
+        } else {
+          photo1.src = nextUrl;
+          photo1.classList.add('visible');
+          photo2.classList.remove('visible');
+          activePhotoElement = 1;
+        }
+        console.log('[Ambient] Photo displayed');
+      } catch (e) {
+        console.log('[Ambient] Photo load error, trying next...');
+        // Try another photo immediately
+        setTimeout(showNextPhoto, 100);
       }
+    }
 
-      console.log('[Ambient] Video can play, starting...');
-      videoErrorCount = 0; // Reset error count on success
+    // Start the photo slideshow
+    function startAmbientVideos() {  // Keep function name for compatibility
+      if (slideshowStarted) return;
+      slideshowStarted = true;
 
-      ambientVideo.play().then(() => {
-        console.log('[Ambient] Video playing (will show after wipe)');
-        // DON'T make visible here - wait for finishTransition() after wipe!
-      }).catch(e => {
-        console.log('[Ambient] Play blocked:', e.message);
-        // Try again with user interaction simulation
-        setTimeout(() => {
-          ambientVideo.muted = true;
-          ambientVideo.play().then(() => {
-            console.log('[Ambient] Video playing (muted retry, will show after wipe)');
-            // DON'T make visible here - wait for finishTransition()!
-          }).catch(e2 => {
-            console.log('[Ambient] Retry failed:', e2.message);
-            loadNextAmbientVideo();
-          });
-        }, 500);
-      });
-    });
+      console.log('[Ambient] Starting photo slideshow (' + ambientPhotos.length + ' photos, ' + (SLIDESHOW_INTERVAL/1000) + 's each)');
 
-    ambientVideo.addEventListener('ended', () => {
-      console.log('[Ambient] Video ended, loading next...');
-      loadNextAmbientVideo();
-    });
+      // Show first photo immediately
+      currentPhotoIndex = Math.floor(Math.random() * ambientPhotos.length);
+      const firstUrl = ambientPhotos[currentPhotoIndex];
+      console.log('[Ambient] First photo:', firstUrl);
 
-    ambientVideo.addEventListener('error', (e) => {
-      console.log('[Ambient] Video error:', e.message || 'unknown error');
-      if (videoLoadTimeout) {
-        clearTimeout(videoLoadTimeout);
-        videoLoadTimeout = null;
+      photo1.src = firstUrl;
+      // Note: Don't add 'visible' class here - finishTransition() will do it after wipe
+
+      // Start slideshow interval
+      slideshowInterval = setInterval(showNextPhoto, SLIDESHOW_INTERVAL);
+    }
+
+    // Stop slideshow (for cleanup)
+    function stopAmbientSlideshow() {
+      if (slideshowInterval) {
+        clearInterval(slideshowInterval);
+        slideshowInterval = null;
       }
-      videoErrorCount++;
-      if (videoErrorCount < MAX_VIDEO_ERRORS) {
-        loadNextAmbientVideo();
-      }
-    });
-
-    // Also listen for stalled/waiting
-    ambientVideo.addEventListener('stalled', () => {
-      console.log('[Ambient] Video stalled');
-    });
-
-    // Start first ambient video
-    function startAmbientVideos() {
-      if (videosStarted) return; // Only start once
-      videosStarted = true;
-
-      console.log('[Ambient] Starting ambient video playlist (' + ambientVideos.length + ' videos)');
-      currentVideoIndex = Math.floor(Math.random() * ambientVideos.length);
-      const videoUrl = ambientVideos[currentVideoIndex];
-      console.log('[Ambient] First video:', videoUrl);
-
-      ambientVideo.src = videoUrl;
-      ambientVideo.load();
-
-      // Set timeout for first video
-      videoLoadTimeout = setTimeout(() => {
-        console.log('[Ambient] First video timeout, trying next...');
-        videoErrorCount++;
-        loadNextAmbientVideo();
-      }, VIDEO_LOAD_TIMEOUT);
+      slideshowStarted = false;
     }
 
     // ===================
@@ -543,11 +550,11 @@
       if (hasTransitioned) return;
       hasTransitioned = true;
 
-      console.log('[UI] Transition complete - showing ambient videos');
+      console.log('[UI] Transition complete - showing ambient photos');
 
-      // NOW make ambient video visible (wipe is complete)
-      const ambientVideo = document.getElementById('ambient-video');
-      if (ambientVideo) ambientVideo.classList.add('visible');
+      // NOW make ambient photo visible (wipe is complete)
+      // Show whichever photo element is active (photo1 has first image)
+      if (photo1 && photo1.src) photo1.classList.add('visible');
 
       // Show overlay for ambient videos
       const overlay = document.getElementById('overlay');
@@ -887,13 +894,13 @@
       });
     }
 
-    // Debug: Log ambient video state periodically
+    // Debug: Log ambient photo slideshow state periodically
     setInterval(() => {
-      const av = document.getElementById('ambient-video');
-      if (av && av.src) {
-        console.log(`[Ambient Debug] readyState=${av.readyState}, paused=${av.paused}, currentTime=${av.currentTime.toFixed(1)}, error=${av.error?.message || 'none'}`);
+      const activePhoto = activePhotoElement === 1 ? photo1 : photo2;
+      if (activePhoto && activePhoto.src) {
+        console.log(`[Ambient Debug] Photo ${activePhotoElement} visible, index=${currentPhotoIndex}, src=${activePhoto.src.substring(0, 60)}...`);
       }
-    }, 5000);
+    }, 10000);
   </script>
 </body>
 </html>
