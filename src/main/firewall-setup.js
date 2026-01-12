@@ -14,7 +14,8 @@ const RULES = [
   { name: 'PC Nest Speaker HTTP', ports: '8000-8010', protocol: 'TCP' },
   { name: 'PC Nest Speaker WebRTC', ports: '8889', protocol: 'TCP' },
   { name: 'PC Nest Speaker ICE UDP', ports: '8189', protocol: 'UDP' },
-  { name: 'PC Nest Speaker ICE TCP', ports: '8189', protocol: 'TCP' }
+  { name: 'PC Nest Speaker ICE TCP', ports: '8189', protocol: 'TCP' },
+  { name: 'PC Nest Speaker HLS TV', ports: '8890', protocol: 'TCP' }  // HLS server for TV/Chromecast streaming
 ];
 
 /**
@@ -134,11 +135,8 @@ async function setupFirewall() {
     return true;
   }
 
-  // Check if already set up in our settings
-  if (hasCompletedSetup()) {
-    console.log('Firewall setup already completed (settings)');
-    // Still check for missing rules (in case we added new ones in an update)
-  }
+  // Always check for missing rules (even if completed before)
+  // This handles cases where we add new rules in updates (like HLS port 8890)
 
   // Check which rules are missing
   const missingRules = await getMissingRules();

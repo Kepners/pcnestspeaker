@@ -2969,8 +2969,8 @@ async function startCalibration() {
       syncCalibrateBtn.disabled = false;
       syncCalibrateBtn.classList.add('calibrating');
     }
-    if (syncVisual) {
-      syncVisual.classList.add('calibrating');
+    if (syncBarsWrapper) {
+      syncBarsWrapper.classList.add('calibrating');
     }
     if (syncHint) {
       syncHint.textContent = 'Scroll up/down until you hear ONE ping, then click Done';
@@ -3013,8 +3013,8 @@ function stopCalibration() {
     syncCalibrateBtn.disabled = false;
     syncCalibrateBtn.classList.remove('calibrating');
   }
-  if (syncVisual) {
-    syncVisual.classList.remove('calibrating');
+  if (syncBarsWrapper) {
+    syncBarsWrapper.classList.remove('calibrating');
   }
   if (syncHint) {
     syncHint.textContent = 'Click Calibrate, then scroll until you hear ONE ping';
@@ -3057,7 +3057,8 @@ if (measureLatencyBtn) {
 
       if (result.success) {
         // Auto-populate the sync delay slider with recommended value
-        const recommendedDelay = result.recommendedDelay || 700;
+        // Fallback 170ms = typical RTT 10ms / 2 + 160ms pipeline
+        const recommendedDelay = result.recommendedDelay || 170;
         currentSyncDelay = recommendedDelay;
 
         if (syncDelaySlider) syncDelaySlider.value = recommendedDelay;

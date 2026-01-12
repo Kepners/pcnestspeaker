@@ -924,4 +924,50 @@ Added `-async 1` to THREE locations in `electron-main.js`:
 
 ---
 
+## Session: January 12, 2025 (Continued) - TV Streaming Firewall Fix
+
+### Problem
+TV streaming (HLS) not working - when trying to access `http://192.168.50.48:8890/stream.m3u8`, browser shows "ERR_CONNECTION_REFUSED".
+
+### Root Cause
+Windows Firewall was blocking port 8890 (HLS server). The `firewall-setup.js` module existed and was called on startup, but **port 8890 was NOT in the rules list**!
+
+Existing rules:
+- 8000-8010 (HTTP)
+- 8889 (WebRTC)
+- 8189 (ICE UDP + TCP)
+
+**Missing**: 8890 (HLS server for TV/Chromecast streaming)
+
+### Fix Applied
+
+1. **Added HLS port to firewall rules** (`src/main/firewall-setup.js`):
+```javascript
+const RULES = [
+  { name: 'PC Nest Speaker HTTP', ports: '8000-8010', protocol: 'TCP' },
+  { name: 'PC Nest Speaker WebRTC', ports: '8889', protocol: 'TCP' },
+  { name: 'PC Nest Speaker ICE UDP', ports: '8189', protocol: 'UDP' },
+  { name: 'PC Nest Speaker ICE TCP', ports: '8189', protocol: 'TCP' },
+  { name: 'PC Nest Speaker HLS TV', ports: '8890', protocol: 'TCP' }  // NEW!
+];
+```
+
+2. **Force re-check for new rules** - Removed early-exit when setup was "completed" so app always checks for missing rules on startup.
+
+### Behavior After Fix
+On next app startup:
+1. App checks for all 5 firewall rules
+2. Detects "PC Nest Speaker HLS TV" is missing
+3. Shows Windows UAC prompt for admin permission
+4. Adds the rule automatically
+5. TV streaming should work!
+
+### Files Modified
+| File | Changes |
+|------|---------|
+| `src/main/firewall-setup.js` | Added port 8890 rule, force re-check for updates |
+| `.claude/CLAUDE.md` | Session documentation |
+
+---
+
 *Last Updated: January 12, 2025*
