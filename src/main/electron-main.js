@@ -1716,7 +1716,22 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
           // Switching devices can disrupt "Listen to this device" - ensure it's restored
           if (pcAudioEnabled) {
             sendLog(`📺 Restoring Wall of Sound (PC speakers)...`);
-            await audioRouting.enablePCSpeakersMode();
+            const wosResult = await audioRouting.enablePCSpeakersMode();
+            if (wosResult.success) {
+              sendLog(`📺 Wall of Sound restored: ${wosResult.device} (verified: ${wosResult.verified || false})`, 'success');
+            } else {
+              sendLog(`📺 Wall of Sound FAILED: ${wosResult.error}`, 'error');
+            }
+
+            // Start auto-sync for TV too - PC speaker delay still needs network monitoring
+            if (speaker?.ip) {
+              autoSyncEnabled = true;
+              autoSyncManager.start({ name: speaker.name, ip: speaker.ip });
+              await autoSyncManager.setBaseline();
+              sendLog(`📺 Auto-sync monitoring "${speaker.name}" for sync drift (TV mode)`);
+            }
+          } else {
+            sendLog(`📺 Wall of Sound not active (pcAudioEnabled=false)`);
           }
 
           return { success: true, mode: 'hls', url: hlsUrl };
