@@ -3745,6 +3745,10 @@ app.whenReady().then(async () => {
   autoSyncEnabled = settingsManager.getSetting('autoSyncEnabled') || false;
   console.log(`[Main] Auto-sync: ${autoSyncEnabled ? 'enabled' : 'disabled'} (from settings)`);
 
+  // Restore PC audio (Wall of Sound) enabled state from settings
+  pcAudioEnabled = settingsManager.getSetting('pcAudioEnabled') || false;
+  console.log(`[Main] PC Audio (Wall of Sound): ${pcAudioEnabled ? 'enabled' : 'disabled'} (from settings)`);
+
   // Start Cast daemon for instant volume control
   daemonManager.startDaemon().then(() => {
     console.log('[Main] Cast daemon started - volume control will be instant');

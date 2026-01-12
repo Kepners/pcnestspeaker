@@ -78,8 +78,8 @@ webrtcAllowOrigins: ['*']
 webrtcIPsFromInterfaces: no
 webrtcIPsFromInterfacesList: []
 webrtcAdditionalHosts: ['192.168.50.48']
-webrtcLocalUDPAddress: :8189
-webrtcLocalTCPAddress: :8189
+webrtcLocalUDPAddress: 192.168.50.48:8189
+webrtcLocalTCPAddress: 192.168.50.48:8189
 # Reduced timeouts for faster testing (increase later if needed)
 webrtcHandshakeTimeout: 30s
 webrtcTrackGatherTimeout: 10s
