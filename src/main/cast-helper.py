@@ -1293,6 +1293,13 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None, ap
         # CRITICAL: Shield needs longer timeout when booting from cold (10s too short)
         cast.wait(timeout=30)
 
+        # SHIELD FIX: Visual Receiver hangs on Shield - use Default Media Receiver directly
+        # Custom receivers don't work reliably on Shield - skip straight to DMR
+        is_shield = 'shield' in model
+        if is_shield and receiver_id == VISUAL_APP_ID:
+            print(f"[HLS-TV] Shield detected - using Default Media Receiver (Visual not supported)", file=sys.stderr)
+            receiver_id = DEFAULT_MEDIA_RECEIVER
+
         # Check standby status and launch receiver
         print(f"[HLS-TV] Launching receiver {receiver_id}...", file=sys.stderr)
         try:
@@ -1303,8 +1310,8 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None, ap
             except:
                 pass
 
-            # Launch our receiver (Visual or Default Media)
-            # CRITICAL: Shield takes ~10 seconds to boot from cold - use 30s timeout
+            # Launch receiver with proper timeout handling
+            # Note: pychromecast timeout doesn't always work, so we add explicit check
             cast.start_app(receiver_id, timeout=30)
             time.sleep(3)  # Give receiver time to load
             print(f"[HLS-TV] Receiver {receiver_id} launched!", file=sys.stderr)
