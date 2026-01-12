@@ -1609,17 +1609,16 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         const hlsUrl = hlsDirectServer.getHlsUrl(localIp);
         sendLog(`📺 Direct HLS URL: ${hlsUrl}`);
 
-        // Cast HLS to TV - use Visual receiver for ambient videos or Default Media Receiver
+        // Cast HLS to TV - FORCE Default Media Receiver for reliability
+        // Visual Receiver has issues with HLS timing - use Default until fixed
         // Args: hls-cast <name> <url> <ip|''> <model> <app_id>
-        // Python hls_cast_to_tv() has built-in fallback: Visual → Default Media Receiver
-        // If Visual Receiver times out, Python will automatically fall back
-        const hlsReceiverAppId = useVisualReceiver ? VISUAL_APP_ID : 'CC1AD845';
-        sendLog(`📺 Using receiver: ${useVisualReceiver ? 'Visual (with splash/ambient)' : 'Default Media'}`);
+        const hlsReceiverAppId = 'CC1AD845';  // Force Default Media Receiver
+        sendLog(`📺 Using Default Media Receiver (CC1AD845) for reliable HLS playback`);
         const args = ['hls-cast', speakerName, hlsUrl, speakerIp || '', speakerModel || 'unknown', hlsReceiverAppId];
         result = await runPython(args);
 
         if (result.success) {
-          const modeDesc = useVisualReceiver ? 'HLS (Visual receiver with ambient videos)' : 'HLS (Default Media Receiver)';
+          const modeDesc = 'HLS (Default Media Receiver)';
           sendLog(`${deviceIcon} Streaming to ${deviceType} started! (${modeDesc})`, 'success');
           trayManager.updateTrayState(true);
           usageTracker.startTracking();
