@@ -2069,9 +2069,20 @@ ipcMain.handle('stop-streaming', async (event, speakerName) => {
     // Clear connected speakers tracking
     currentConnectedSpeakers = [];
 
-    // Stop FFmpeg stream
+    // Stop FFmpeg stream (audioStreamer is for WebRTC via MediaMTX)
     if (audioStreamer) {
       await audioStreamer.stop();
+    }
+
+    // CRITICAL: Also kill direct FFmpeg process (used for HLS TV streaming)
+    if (ffmpegWebrtcProcess) {
+      sendLog('Stopping FFmpeg HLS process...');
+      try {
+        ffmpegWebrtcProcess.kill('SIGTERM');
+      } catch (e) {
+        sendLog(`FFmpeg kill error: ${e.message}`, 'warning');
+      }
+      ffmpegWebrtcProcess = null;
     }
 
     // Stop stream stats

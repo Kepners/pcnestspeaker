@@ -82,8 +82,20 @@
       filter: drop-shadow(0 2px 10px rgba(0,0,0,0.3));
     }
 
-    /* Hide default cast player */
-    #player { display: none; }
+    /* Default cast player - hidden for WebRTC, shown for HLS */
+    #player {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0;
+      /* Start hidden, shown when HLS plays */
+      opacity: 0;
+    }
+    #player.hls-active {
+      opacity: 1;
+    }
   </style>
 </head>
 <body>
@@ -647,6 +659,24 @@
         if (request.customData && request.customData.webrtcUrl) {
           connectToMediaMTX(request.customData.webrtcUrl, request.customData.stream || 'pcaudio');
           return null;
+        }
+
+        // HLS HANDLING: If we get here with a media URL, it's HLS for TV
+        if (request.media && request.media.contentId) {
+          const contentId = request.media.contentId;
+          const isHLS = contentId.includes('.m3u8') ||
+                        (request.media.contentType && request.media.contentType.includes('mpegURL'));
+
+          if (isHLS) {
+            console.log('[Cast] HLS mode - starting ambient videos and player');
+            // Start ambient videos for HLS too!
+            startAmbientVideos();
+            log('Streaming audio...');
+
+            // Show player for HLS
+            const player = document.getElementById('player');
+            if (player) player.classList.add('hls-active');
+          }
         }
 
         if (request.media) {
