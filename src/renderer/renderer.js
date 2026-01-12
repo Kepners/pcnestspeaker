@@ -2119,31 +2119,29 @@ const licenseError = document.getElementById('license-error');
 let hasValidLicense = false;
 
 /**
- * Format license input as user types: PNS-XXXX-XXXX-XXXX-XXXX
+ * Format license input as user types: XXXX-XXXX-XXXX-XXXX
+ * (16 uppercase hex chars from website HMAC)
  */
 function formatLicenseInput(input) {
-  // Remove everything except alphanumeric
-  let clean = input.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  // Remove everything except hex characters (0-9, A-F)
+  let clean = input.toUpperCase().replace(/[^A-F0-9]/g, '');
 
-  // Remove PNS prefix if user typed it (we'll add it back)
-  if (clean.startsWith('PNS')) {
-    clean = clean.slice(3);
-  }
+  // Limit to 16 hex chars
+  clean = clean.slice(0, 16);
 
   // Split into groups of 4 characters
   const parts = clean.match(/.{1,4}/g) || [];
-  const limited = parts.slice(0, 4);
 
-  return 'PNS-' + limited.join('-');
+  return parts.join('-');
 }
 
 /**
- * Mask license key for display: PNS-XXXX-****-****-XXXX
+ * Mask license key for display: XXXX-****-****-XXXX
  */
 function maskLicenseKey(key) {
-  if (!key || key.length < 23) return 'PNS-****-****-****-****';
-  // Show: PNS-XXXX-****-****-XXXX
-  return key.slice(0, 9) + '-****-****-' + key.slice(-4);
+  if (!key || key.length < 19) return '****-****-****-****';
+  // Show: XXXX-****-****-XXXX
+  return key.slice(0, 4) + '-****-****-' + key.slice(-4);
 }
 
 /**
@@ -2203,10 +2201,10 @@ async function activateLicense() {
   // Format the input
   const formatted = formatLicenseInput(input);
 
-  // Basic client-side validation
-  if (formatted.length !== 23) {
+  // Basic client-side validation (19 chars: XXXX-XXXX-XXXX-XXXX)
+  if (formatted.length !== 19) {
     if (licenseError) {
-      licenseError.textContent = 'License key is incomplete. Format: PNS-XXXX-XXXX-XXXX-XXXX';
+      licenseError.textContent = 'License key is incomplete. Format: XXXX-XXXX-XXXX-XXXX';
       licenseError.style.display = 'block';
     }
     return;

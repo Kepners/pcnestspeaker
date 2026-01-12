@@ -8,7 +8,7 @@
 |------|-------|
 | Type | Electron Desktop App |
 | Monetization | Paid (Stripe) |
-| License Format | PNS-XXXX-XXXX-XXXX-XXXX |
+| License Format | XXXX-XXXX-XXXX-XXXX (16 hex chars from HMAC) |
 | Streaming | HLS primary, MP3 fallback |
 | Latency | ~1.5-3 seconds |
 
