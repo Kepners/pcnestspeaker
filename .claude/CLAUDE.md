@@ -970,4 +970,64 @@ On next app startup:
 
 ---
 
+## Session: January 12, 2025 (Continued) - hls.js TV Audio Fix
+
+### Problem
+TV/Shield streaming showed splash and ambient images (Visual Receiver working!), but NO audio. Cast logs showed:
+```
+player_state: IDLE
+content_id: http://192.168.50.48:8890/stream.m3u8
+idle_reason: ERROR
+```
+
+### Root Cause
+Cast SDK's built-in `cast-media-player` fails on **audio-only HLS streams**. It expects video+audio or just video. When it tries to play audio-only HLS (.m3u8 with AAC segments), it throws an error.
+
+### Solution: Use hls.js Library
+Added hls.js to the Visual Receiver to handle HLS playback directly:
+
+1. **Added hls.js CDN script** (line 7):
+```html
+<script src="//cdn.jsdelivr.net/npm/hls.js@latest"></script>
+```
+
+2. **Created `playHlsAudio()` function** (lines 501-569):
+```javascript
+function playHlsAudio(hlsUrl) {
+  if (Hls.isSupported()) {
+    hlsInstance = new Hls({ lowLatencyMode: true });
+    hlsInstance.loadSource(hlsUrl);
+    hlsInstance.attachMedia(audioElement);  // Uses existing <audio> element
+    hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+      audioElement.play();
+    });
+  }
+}
+```
+
+3. **Modified HLS handler** (lines 886-909):
+```javascript
+// OLD: return request; // Let Cast player handle it (FAILS!)
+// NEW:
+hideDefaultPlayer();
+playHlsAudio(contentId);  // Use hls.js instead
+return null;  // Block Cast SDK player
+```
+
+### Technical Notes
+- hls.js is a JavaScript library that plays HLS on any browser using MSE (Media Source Extensions)
+- It works on Cast devices because they run a Chromium-based browser
+- The existing `<audio id="webrtc-audio">` element is reused for HLS playback
+- `return null` in LOAD interceptor blocks Cast SDK's player from trying to handle the request
+
+### Files Modified
+| File | Changes |
+|------|---------|
+| `docs/receiver-visual.html` | Added hls.js, playHlsAudio(), modified HLS handler |
+
+### Commits
+- `b45498f` - 🎯 fix: Use hls.js for TV/Shield HLS audio playback
+
+---
+
 *Last Updated: January 12, 2025*
