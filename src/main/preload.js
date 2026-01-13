@@ -47,6 +47,9 @@ contextBridge.exposeInMainWorld('api', {
   updateSettings: (updates) => ipcRenderer.invoke('update-settings', updates),
   saveLastSpeaker: (speaker) => ipcRenderer.invoke('save-last-speaker', speaker),
 
+  // Get splash video path (works in dev and production)
+  getSplashPath: () => ipcRenderer.invoke('get-splash-path'),
+
   // PC Audio toggle - enable/disable "Listen to this device" on VB-Cable
   togglePCAudio: (enabled) => ipcRenderer.invoke('toggle-pc-audio', enabled),
 
@@ -60,6 +63,10 @@ contextBridge.exposeInMainWorld('api', {
 
   // Trial & Usage
   getUsage: () => ipcRenderer.invoke('get-usage'),
+
+  // Dev-only: Trial reset (requires machine-specific key)
+  getDevKey: () => ipcRenderer.invoke('get-dev-key'),
+  devResetTrial: (devKey) => ipcRenderer.invoke('dev-reset-trial', devKey),
 
   // License Management
   getLicense: () => ipcRenderer.invoke('get-license'),

@@ -81,6 +81,27 @@ function getMediaMTXConfig() {
     : path.join(__dirname, '../../mediamtx/mediamtx-audio.yml');
 }
 
+// Python script paths
+// In dev: src/main/ folder
+// In production: resources/python/ in the app package
+function getCastHelperPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'python', 'cast-helper.py')
+    : path.join(__dirname, 'cast-helper.py');
+}
+function getCastDaemonPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'python', 'cast-daemon.py')
+    : path.join(__dirname, 'cast-daemon.py');
+}
+
+// Splash video path (extraResources in production)
+function getSplashPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'assets', 'splash.mp4')
+    : path.join(__dirname, '../../assets/splash.mp4');
+}
+
 // MediaMTX process reference
 let mediamtxProcess = null;
 let ffmpegWebrtcProcess = null;  // For mono speaker streaming (WebRTC/Opus)
@@ -422,24 +443,25 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
-      devTools: !app.isPackaged, // Disable DevTools in production builds
+      devTools: true, // TEMPORARILY enabled for debugging blank window
     },
   });
 
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
 
   // Block DevTools keyboard shortcuts in production
-  if (app.isPackaged) {
-    mainWindow.webContents.on('before-input-event', (event, input) => {
-      // Block Ctrl+Shift+I, Ctrl+Shift+J, F12
-      if (input.control && input.shift && (input.key.toLowerCase() === 'i' || input.key.toLowerCase() === 'j')) {
-        event.preventDefault();
-      }
-      if (input.key === 'F12') {
-        event.preventDefault();
-      }
-    });
-  }
+  // TEMPORARILY DISABLED for debugging blank window
+  // if (app.isPackaged) {
+  //   mainWindow.webContents.on('before-input-event', (event, input) => {
+  //     // Block Ctrl+Shift+I, Ctrl+Shift+J, F12
+  //     if (input.control && input.shift && (input.key.toLowerCase() === 'i' || input.key.toLowerCase() === 'j')) {
+  //       event.preventDefault();
+  //     }
+  //     if (input.key === 'F12') {
+  //       event.preventDefault();
+  //     }
+  //   });
+  // }
 
   // Initialize stream stats
   streamStats = new StreamStats();
@@ -519,7 +541,7 @@ function cleanup() {
         sendLog(`Disconnecting "${speaker.name}"...`);
         // ALWAYS use sync Python call for cleanup - daemon async won't complete before exit!
         const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
-        const scriptPath = path.join(__dirname, 'cast-helper.py');
+        const scriptPath = getCastHelperPath();
         // Use stop-fast if we have IP (faster), otherwise stop (slower but works)
         const stopCmd = speaker.ip
           ? `${pythonPath} "${scriptPath}" stop-fast "${speaker.name}" "${speaker.ip}"`
@@ -1137,7 +1159,7 @@ async function preStartWebRTCPipeline() {
 // Run Python cast-helper script
 function runPython(args) {
   return new Promise((resolve, reject) => {
-    const scriptPath = path.join(__dirname, 'cast-helper.py');
+    const scriptPath = getCastHelperPath();
     // Use python (not pythonw!) - pythonw breaks mDNS/multicast sockets on Windows
     // windowsHide: true still hides the console window
     const pythonCmd = 'python';
@@ -3120,6 +3142,38 @@ ipcMain.handle('cast-url', async (event, deviceName, url, contentType = null, de
 // ========================================
 ipcMain.handle('get-settings', () => {
   return settingsManager.getAllSettings();
+});
+
+// Get splash video path (works in both dev and production)
+ipcMain.handle('get-splash-path', () => {
+  const splashPath = getSplashPath();
+  // Check if file exists
+  if (fs.existsSync(splashPath)) {
+    console.log('[Splash] Found at:', splashPath);
+    // Return file:// URL for video element (required for portable builds)
+    return `file://${splashPath.replace(/\\/g, '/')}`;
+  } else {
+    console.log('[Splash] NOT FOUND at:', splashPath);
+    return null;
+  }
+});
+
+// Dev-only: Reset trial for testing (requires machine-specific key)
+ipcMain.handle('dev-reset-trial', (event, devKey) => {
+  if (app.isPackaged) {
+    console.log('[Dev] Reset denied - production build');
+    return { success: false, error: 'Production build' };
+  }
+  const result = usageTracker.resetUsage(devKey);
+  if (result) {
+    return { success: true };
+  }
+  return { success: false, error: 'Invalid dev key' };
+});
+
+// Dev-only: Get the dev reset key
+ipcMain.handle('get-dev-key', () => {
+  return usageTracker.getDevKey();
 });
 
 ipcMain.handle('update-settings', (event, updates) => {

@@ -14,6 +14,13 @@
 const { app, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 
+// Get assets path (different in dev vs production)
+function getAssetsPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'assets')
+    : path.join(__dirname, '../../assets');
+}
+
 let tray = null;
 let mainWindow = null;
 let isStreaming = false;
@@ -53,7 +60,7 @@ function createFallbackIcon(color) {
  */
 function loadIcon(filename, fallbackColor) {
   const fs = require('fs');
-  const assetsPath = path.join(__dirname, '../../assets');
+  const assetsPath = getAssetsPath();
 
   // Try ICO first (preferred on Windows), then PNG
   const baseName = filename.replace(/\.(png|ico)$/, '');

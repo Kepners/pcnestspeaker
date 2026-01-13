@@ -66,6 +66,9 @@
       "uninstallerIcon": "assets/icon.ico",
       "license": "LICENSE.txt"
     },
+    "portable": {
+      "artifactName": "${productName} ${version} Portable.${ext}"
+    },
     "mac": {
       "target": [
         "dmg",

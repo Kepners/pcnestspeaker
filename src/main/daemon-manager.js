@@ -11,6 +11,14 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const readline = require('readline');
+const { app } = require('electron');
+
+// Get correct path for Python script (dev vs production)
+function getCastDaemonPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'python', 'cast-daemon.py')
+    : path.join(__dirname, 'cast-daemon.py');
+}
 
 let daemonProcess = null;
 let pendingRequests = new Map(); // requestId -> { resolve, reject, timeout }
@@ -33,7 +41,7 @@ function startDaemon() {
 
     // Use pythonw on Windows (no console window), fallback to python
     const pythonPath = process.platform === 'win32' ? 'pythonw' : 'python';
-    const scriptPath = path.join(__dirname, 'cast-daemon.py');
+    const scriptPath = getCastDaemonPath();
 
     console.log('[Daemon] Starting daemon...');
 

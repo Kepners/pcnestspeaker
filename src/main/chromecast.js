@@ -8,6 +8,14 @@ const DefaultMediaReceiver = require('castv2-client').DefaultMediaReceiver;
 const mdns = require('mdns-js');
 const { spawn } = require('child_process');
 const path = require('path');
+const { app } = require('electron');
+
+// Get correct path for Python script (dev vs production)
+function getCastHelperPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'python', 'cast-helper.py')
+    : path.join(__dirname, 'cast-helper.py');
+}
 
 class ChromecastManager {
   constructor() {
@@ -244,7 +252,7 @@ class ChromecastManager {
     return new Promise((resolve, reject) => {
       this._log('Trying Python pychromecast fallback...', 'warn');
 
-      const pythonScript = path.join(__dirname, 'cast-helper.py');
+      const pythonScript = getCastHelperPath();
       // Use pythonw on Windows (no console window), fallback to python
       const pythonCmd = process.platform === 'win32' ? 'pythonw' : 'python';
       const python = spawn(pythonCmd, [pythonScript, 'cast', speakerName, streamUrl, contentType], {
@@ -296,7 +304,7 @@ class ChromecastManager {
    */
   async stopWithPython(speakerName) {
     return new Promise((resolve) => {
-      const pythonScript = path.join(__dirname, 'cast-helper.py');
+      const pythonScript = getCastHelperPath();
       // Use pythonw on Windows (no console window), fallback to python
       const pythonCmd = process.platform === 'win32' ? 'pythonw' : 'python';
       const python = spawn(pythonCmd, [pythonScript, 'stop', speakerName], {

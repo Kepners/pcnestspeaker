@@ -1,25 +1,229 @@
 /**
- * Usage Tracker - Trial Time Management
+ * Usage Tracker - Tamper-Resistant Trial System
  *
  * Tracks streaming usage time to enforce 10-hour trial limit.
- * Only counts time while actively streaming.
+ * Uses encrypted storage with HMAC signatures to prevent tampering.
  *
- * Usage data stored in settings.json:
- * - usageSeconds: Total seconds used
- * - firstUsedAt: Timestamp of first use
- * - lastUsedAt: Timestamp of last use
- * - trialExpired: Boolean flag
+ * If tampering is detected (file modified, decryption fails, HMAC mismatch),
+ * the trial auto-expires as punishment.
+ *
+ * Storage: %APPDATA%/PC Nest Speaker/.usage (encrypted binary)
  */
 
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const { app } = require('electron');
 const settingsManager = require('./settings-manager');
 
 // Constants
 const TRIAL_HOURS = 10;
 const TRIAL_SECONDS = TRIAL_HOURS * 60 * 60; // 36000 seconds = 10 hours
 
+// Encryption settings
+const ALGORITHM = 'aes-128-cbc';
+const HMAC_ALGORITHM = 'sha256';
+
 // Tracking state
 let streamStartTime = null; // Timestamp when streaming started
 let trackingInterval = null; // Interval for updating usage
+let cachedData = null; // In-memory cache to reduce disk reads
+
+// ============== TAMPER-RESISTANT STORAGE ==============
+
+/**
+ * Get machine-specific ID (makes copying between machines harder)
+ */
+function getMachineId() {
+  const os = require('os');
+  const raw = `${os.hostname()}-${os.userInfo().username}-${os.cpus()[0]?.model || 'cpu'}`;
+  return crypto.createHash('sha256').update(raw).digest('hex').slice(0, 32);
+}
+
+/**
+ * Derive encryption key from machine ID + app salt
+ */
+function deriveKey() {
+  const machineId = getMachineId();
+  const salt = 'PCNestSpeaker2025';
+  return crypto.scryptSync(machineId, salt, 16);
+}
+
+/**
+ * Derive HMAC key (different from encryption key)
+ */
+function deriveHmacKey() {
+  const machineId = getMachineId();
+  const salt = 'PNS-HMAC-2025';
+  return crypto.scryptSync(machineId, salt, 32);
+}
+
+/**
+ * Get encrypted storage file path
+ */
+function getSecureStoragePath() {
+  const userDataPath = app.getPath('userData');
+  return path.join(userDataPath, '.usage');
+}
+
+/**
+ * Encrypt data object
+ */
+function encrypt(data) {
+  const key = deriveKey();
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  let encrypted = cipher.update(JSON.stringify(data), 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return { iv: iv.toString('hex'), data: encrypted };
+}
+
+/**
+ * Decrypt data object
+ */
+function decrypt(encryptedObj) {
+  const key = deriveKey();
+  const iv = Buffer.from(encryptedObj.iv, 'hex');
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  let decrypted = decipher.update(encryptedObj.data, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return JSON.parse(decrypted);
+}
+
+/**
+ * Generate HMAC signature
+ */
+function sign(data) {
+  const hmacKey = deriveHmacKey();
+  const hmac = crypto.createHmac(HMAC_ALGORITHM, hmacKey);
+  hmac.update(JSON.stringify(data));
+  return hmac.digest('hex');
+}
+
+/**
+ * Verify HMAC signature
+ */
+function verify(data, signature) {
+  try {
+    const expectedSig = sign(data);
+    return crypto.timingSafeEqual(
+      Buffer.from(signature, 'hex'),
+      Buffer.from(expectedSig, 'hex')
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get default trial data
+ */
+function getDefaultData() {
+  return {
+    usageSeconds: 0,
+    firstUsedAt: null,
+    lastUsedAt: null,
+    tampered: false,
+    version: 2
+  };
+}
+
+/**
+ * Load secure trial data (with tamper detection)
+ */
+function loadSecureData() {
+  if (cachedData) return cachedData;
+
+  const filePath = getSecureStoragePath();
+
+  try {
+    if (!fs.existsSync(filePath)) {
+      // First run - create new encrypted storage
+      console.log('[UsageTracker] First run - creating secure storage');
+      cachedData = getDefaultData();
+      saveSecureData(cachedData);
+      return cachedData;
+    }
+
+    const raw = fs.readFileSync(filePath, 'utf8');
+    const stored = JSON.parse(raw);
+
+    // Verify format
+    if (!stored.signature || !stored.encrypted) {
+      console.log('[UsageTracker] Invalid storage format - TAMPERED');
+      return markTampered();
+    }
+
+    // Decrypt
+    const decrypted = decrypt(stored.encrypted);
+
+    // Verify HMAC signature
+    if (!verify(decrypted, stored.signature)) {
+      console.log('[UsageTracker] HMAC mismatch - TAMPERED');
+      return markTampered();
+    }
+
+    // Check for clock manipulation (clock set way into the future then back)
+    if (decrypted.lastUsedAt && decrypted.lastUsedAt > Date.now() + 60000) {
+      console.log('[UsageTracker] Clock manipulation detected - TAMPERED');
+      return markTampered();
+    }
+
+    cachedData = decrypted;
+    return decrypted;
+
+  } catch (err) {
+    console.log('[UsageTracker] Load error (tampering?):', err.message);
+    return markTampered();
+  }
+}
+
+/**
+ * Save secure trial data (encrypted + signed)
+ */
+function saveSecureData(data) {
+  const filePath = getSecureStoragePath();
+
+  try {
+    data.lastUsedAt = Date.now();
+    cachedData = data;
+
+    const encrypted = encrypt(data);
+    const signature = sign(data);
+
+    const stored = {
+      encrypted,
+      signature,
+      v: 2 // Format version
+    };
+
+    fs.writeFileSync(filePath, JSON.stringify(stored), 'utf8');
+    return true;
+
+  } catch (err) {
+    console.error('[UsageTracker] Save error:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Mark as tampered - trial expires immediately as punishment
+ */
+function markTampered() {
+  const data = {
+    usageSeconds: TRIAL_SECONDS + 1, // Over limit
+    firstUsedAt: 0,
+    lastUsedAt: Date.now(),
+    tampered: true,
+    version: 2
+  };
+  cachedData = data;
+  saveSecureData(data);
+  console.log('[UsageTracker] ⚠️ TAMPERING DETECTED - Trial expired');
+  return data;
+}
+
+// ============== TRACKING FUNCTIONS ==============
 
 /**
  * Start tracking usage (called when streaming starts)
@@ -30,10 +234,10 @@ function startTracking() {
     return;
   }
 
-  const usage = getUsage();
+  const data = loadSecureData();
 
-  // Check if trial has expired
-  if (usage.usageSeconds >= TRIAL_SECONDS) {
+  // Check if trial has expired or tampered
+  if (data.tampered || data.usageSeconds >= TRIAL_SECONDS) {
     console.log('[UsageTracker] Trial expired - not tracking');
     return;
   }
@@ -42,14 +246,15 @@ function startTracking() {
   console.log('[UsageTracker] Started tracking usage');
 
   // Update first used timestamp if not set
-  if (!settingsManager.getSetting('firstUsedAt')) {
-    settingsManager.setSetting('firstUsedAt', streamStartTime);
+  if (!data.firstUsedAt) {
+    data.firstUsedAt = streamStartTime;
+    saveSecureData(data);
   }
 
   // Update usage every 10 seconds while streaming
   trackingInterval = setInterval(() => {
     updateUsage();
-  }, 10000); // Update every 10 seconds
+  }, 10000);
 }
 
 /**
@@ -73,7 +278,7 @@ function stopTracking() {
 }
 
 /**
- * Update usage seconds in settings
+ * Update usage seconds (internal - uses secure storage)
  */
 function updateUsage() {
   if (!streamStartTime) return;
@@ -81,51 +286,48 @@ function updateUsage() {
   const now = Date.now();
   const sessionSeconds = Math.floor((now - streamStartTime) / 1000);
 
-  // Get current usage
-  const currentUsage = settingsManager.getSetting('usageSeconds') || 0;
-  const newUsage = currentUsage + sessionSeconds;
+  // Get current secure data
+  const data = loadSecureData();
+  if (data.tampered) return; // Don't track if tampered
 
-  // Save updated usage
-  settingsManager.setSetting('usageSeconds', newUsage);
-  settingsManager.setSetting('lastUsedAt', now);
+  data.usageSeconds += sessionSeconds;
 
   // Reset stream start time for next interval
   streamStartTime = now;
 
   // Check if trial expired
-  if (newUsage >= TRIAL_SECONDS) {
-    settingsManager.setSetting('trialExpired', true);
+  if (data.usageSeconds >= TRIAL_SECONDS) {
     console.log('[UsageTracker] Trial expired!');
   }
 
-  console.log(`[UsageTracker] Usage: ${newUsage}s / ${TRIAL_SECONDS}s (${formatTime(newUsage)} / ${TRIAL_HOURS} hours)`);
+  saveSecureData(data);
+  console.log(`[UsageTracker] Usage: ${data.usageSeconds}s / ${TRIAL_SECONDS}s (${formatTime(data.usageSeconds)} / ${TRIAL_HOURS} hours)`);
 }
 
 /**
  * Get current usage statistics
  */
 function getUsage() {
-  const usageSeconds = settingsManager.getSetting('usageSeconds') || 0;
-  const firstUsedAt = settingsManager.getSetting('firstUsedAt') || null;
-  const lastUsedAt = settingsManager.getSetting('lastUsedAt') || null;
-  const trialExpired = settingsManager.getSetting('trialExpired') || false;
+  const data = loadSecureData();
   const licenseKey = settingsManager.getSetting('licenseKey') || null;
 
-  const remainingSeconds = Math.max(0, TRIAL_SECONDS - usageSeconds);
-  const percentUsed = Math.min(100, (usageSeconds / TRIAL_SECONDS) * 100);
+  const remainingSeconds = Math.max(0, TRIAL_SECONDS - data.usageSeconds);
+  const percentUsed = Math.min(100, (data.usageSeconds / TRIAL_SECONDS) * 100);
+  const trialExpired = data.tampered || data.usageSeconds >= TRIAL_SECONDS;
 
   return {
-    usageSeconds,
+    usageSeconds: data.usageSeconds,
     remainingSeconds,
     percentUsed,
-    trialExpired: licenseKey ? false : trialExpired, // Licensed users don't have trial limits
+    trialExpired: licenseKey ? false : trialExpired,
     hasLicense: !!licenseKey,
-    firstUsedAt,
-    lastUsedAt,
+    firstUsedAt: data.firstUsedAt,
+    lastUsedAt: data.lastUsedAt,
     trialHours: TRIAL_HOURS,
     trialSeconds: TRIAL_SECONDS,
-    formattedUsage: formatTime(usageSeconds),
-    formattedRemaining: formatTime(remainingSeconds)
+    formattedUsage: formatTime(data.usageSeconds),
+    formattedRemaining: formatTime(remainingSeconds),
+    tampered: data.tampered || false
   };
 }
 
@@ -138,22 +340,46 @@ function isTrialExpired() {
 }
 
 /**
- * Reset usage (for testing or after purchase)
+ * Reset usage (DEV ONLY - requires special key)
+ * @param {string} devKey - Developer reset key (machine-specific)
  */
-function resetUsage() {
-  settingsManager.setSetting('usageSeconds', 0);
-  settingsManager.setSetting('trialExpired', false);
-  settingsManager.setSetting('firstUsedAt', null);
-  settingsManager.setSetting('lastUsedAt', null);
-  console.log('[UsageTracker] Usage reset');
+function resetUsage(devKey) {
+  // Generate expected key from machine ID
+  const expectedKey = crypto.createHash('sha256')
+    .update('PNS-DEV-RESET-' + getMachineId())
+    .digest('hex')
+    .slice(0, 16);
+
+  if (devKey !== expectedKey) {
+    console.log('[UsageTracker] Invalid dev key - reset denied');
+    return false;
+  }
+
+  // Reset to clean state
+  cachedData = null;
+  const data = getDefaultData();
+  saveSecureData(data);
+  console.log('[UsageTracker] DEV RESET successful');
+  return true;
+}
+
+/**
+ * Get dev reset key (only in dev mode)
+ */
+function getDevKey() {
+  if (app.isPackaged) return null; // Hidden in production
+  return crypto.createHash('sha256')
+    .update('PNS-DEV-RESET-' + getMachineId())
+    .digest('hex')
+    .slice(0, 16);
 }
 
 /**
  * Activate license (removes trial limits)
+ * License key still stored in settings.json (validated against Stripe)
  */
 function activateLicense(licenseKey) {
   settingsManager.setSetting('licenseKey', licenseKey);
-  settingsManager.setSetting('trialExpired', false);
   console.log('[UsageTracker] License activated');
 }
 
@@ -163,12 +389,6 @@ function activateLicense(licenseKey) {
 function deactivateLicense() {
   settingsManager.setSetting('licenseKey', null);
   console.log('[UsageTracker] License deactivated');
-
-  // Check if trial should be marked as expired
-  const usageSeconds = settingsManager.getSetting('usageSeconds') || 0;
-  if (usageSeconds >= TRIAL_SECONDS) {
-    settingsManager.setSetting('trialExpired', true);
-  }
 }
 
 /**
@@ -188,6 +408,13 @@ function formatTime(seconds) {
   }
 }
 
+/**
+ * Clear cache (force reload from disk)
+ */
+function clearCache() {
+  cachedData = null;
+}
+
 module.exports = {
   startTracking,
   stopTracking,
@@ -196,5 +423,7 @@ module.exports = {
   resetUsage,
   activateLicense,
   deactivateLicense,
-  formatTime
+  formatTime,
+  getDevKey,
+  clearCache
 };
