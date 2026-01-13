@@ -16,6 +16,7 @@
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - System diagrams & component details
 - [docs/APP_DOCUMENTATION.md](docs/APP_DOCUMENTATION.md) - Complete feature documentation
 - [.claude/CLAUDE.md](.claude/CLAUDE.md) - Session memory & development notes
+- [.claude/TRIAL_DRM_SYSTEM.md](.claude/TRIAL_DRM_SYSTEM.md) - Trial encryption & DRM system
 
 ## Available Skills
 
@@ -85,6 +86,83 @@ colors: {
 - Run tests before committing when applicable
 - Follow existing project conventions
 - Write clear commit messages
+
+---
+
+## Trial & DRM System
+
+**Full documentation:** [.claude/TRIAL_DRM_SYSTEM.md](.claude/TRIAL_DRM_SYSTEM.md)
+
+### Quick Reference
+
+| Component | Value |
+|-----------|-------|
+| Trial Duration | 10 hours of streaming |
+| Storage | `%APPDATA%/PC Nest Speaker/.usage` |
+| Encryption | AES-128-CBC |
+| Integrity | HMAC-SHA256 |
+| Key Derivation | scrypt (machine-specific) |
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Trial Data Flow                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  App Start                                                  │
+│     │                                                       │
+│     ▼                                                       │
+│  Load .usage ──► Decrypt ──► Verify HMAC ──► Check Time    │
+│     │              │             │              │           │
+│     │         [FAIL]        [FAIL]         [EXPIRED]        │
+│     │              │             │              │           │
+│     │              └─────────────┴──────────────┘           │
+│     │                            │                          │
+│     │                            ▼                          │
+│     │                    TAMPER DETECTED                    │
+│     │                    Trial Expires!                     │
+│     │                                                       │
+│     ▼                                                       │
+│  Streaming ──► Update every 10s ──► Encrypt ──► Save       │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Tamper Detection Triggers
+
+1. **File corrupted/missing** - Can't parse
+2. **Decryption fails** - Wrong machine
+3. **HMAC mismatch** - Data modified
+4. **Clock manipulation** - Future timestamp detected
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/main/usage-tracker.js` | Trial tracking & encryption |
+| `src/main/settings-manager.js` | License key storage |
+| `.usage` | Encrypted trial data |
+
+### Machine-Specific Keys
+
+Keys are derived from hardware fingerprint:
+```javascript
+const raw = `${hostname}-${username}-${cpu_model}`;
+const machineId = sha256(raw).slice(0, 32);
+const encryptionKey = scrypt(machineId, 'PCNestSpeaker2025', 16);
+const hmacKey = scrypt(machineId, 'PNS-HMAC-2025', 32);
+```
+
+**Why:** Copying `.usage` to another machine = decryption fails = tampered.
+
+### Dev Reset (Testing Only)
+
+In dev mode only, reset trial with machine-specific key:
+```javascript
+const devKey = usageTracker.getDevKey();  // Returns null in production
+usageTracker.resetUsage(devKey);
+```
 
 ---
 
