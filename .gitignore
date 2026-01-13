@@ -37,3 +37,4 @@ npm-debug.log*
 __pycache__/
 *.pyc
 .pytest_cache/
+tmpclaude-*
