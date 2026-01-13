@@ -26,6 +26,9 @@ const apoStatus = document.getElementById('apo-status');
 const apoDevicesText = document.getElementById('apo-devices-text');
 const launchApoBtn = document.getElementById('launch-apo-btn');
 
+// Audio output refresh button (may not exist in all UI versions)
+const refreshOutputsBtn = document.getElementById('refresh-outputs-btn');
+
 // Sync calibration elements
 const syncCalibrateBtn = document.getElementById('sync-calibrate-btn');
 const measureLatencyBtn = document.getElementById('measure-latency-btn');
@@ -154,11 +157,28 @@ async function loadSettings() {
 }
 
 // Splash screen handling
-function initSplashScreen() {
+async function initSplashScreen() {
   const splash = document.getElementById('splash-screen');
   const video = document.getElementById('splash-video');
 
   if (!splash || !video) return;
+
+  // Load video src dynamically (works in both dev and production)
+  try {
+    const splashPath = await window.api.getSplashPath();
+    if (!splashPath) {
+      console.log('[Splash] Video file not found - skipping splash');
+      splash.style.display = 'none';
+      return;
+    }
+    console.log('[Splash] Loading from:', splashPath);
+    video.src = splashPath;
+  } catch (e) {
+    console.log('[Splash] Failed to get splash path:', e);
+    // Hide splash if we can't load video
+    splash.style.display = 'none';
+    return;
+  }
 
   // When video ends, fade out splash screen
   video.addEventListener('ended', () => {
@@ -168,14 +188,14 @@ function initSplashScreen() {
     }, 500);
   });
 
-  // Fallback: If video fails to play, hide splash after 2 seconds
+  // Fallback: If video fails to play, hide splash after 1 second
   video.addEventListener('error', () => {
     setTimeout(() => {
       splash.classList.add('fade-out');
       setTimeout(() => {
         splash.style.display = 'none';
       }, 500);
-    }, 2000);
+    }, 1000);
   });
 
   // Start video playback (with audio)
@@ -778,11 +798,10 @@ function setupEventListeners() {
     });
   }
 
-  // Purchase button - opens license modal
+  // Purchase button - opens purchase page
   if (purchaseBtn) {
     purchaseBtn.addEventListener('click', () => {
-      log('Opening license activation...');
-      showLicenseModal();
+      openPurchaseLink();
     });
   }
 
@@ -824,6 +843,14 @@ function setupEventListeners() {
   if (changeKeyBtn) {
     changeKeyBtn.addEventListener('click', (event) => {
       event.stopPropagation();
+      showLicenseModal();
+    });
+  }
+
+  // Enter License Key button (in trial section)
+  const enterLicenseBtn = document.getElementById('enter-license-btn');
+  if (enterLicenseBtn) {
+    enterLicenseBtn.addEventListener('click', () => {
       showLicenseModal();
     });
   }
@@ -2170,11 +2197,11 @@ function hideLicenseModal() {
 }
 
 /**
- * Open purchase link (Stripe payment - will be set up later)
+ * Open purchase link (Stripe payment)
  */
 function openPurchaseLink() {
   log('Opening purchase page...');
-  window.api.openExternal('https://pcnestspeaker.app/purchase'); // TODO: Update with actual Stripe link
+  window.api.openExternal('https://www.pcnestspeaker.app/#pricing');
 }
 
 /**

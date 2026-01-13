@@ -9,11 +9,9 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <!-- Splash Screen -->
+  <!-- Splash Screen - video src set dynamically by renderer.js -->
   <div class="splash-screen" id="splash-screen">
-    <video class="splash-video" id="splash-video" autoplay muted>
-      <source src="../../assets/splash.mp4" type="video/mp4">
-    </video>
+    <video class="splash-video" id="splash-video" autoplay muted></video>
   </div>
 
   <div class="app">
@@ -250,7 +248,10 @@
             <span class="trial-label">Trial Time Remaining:</span>
             <span class="trial-time" id="trial-time">10h 0m</span>
           </div>
-          <button class="btn btn-purchase" id="purchase-btn" style="display: none;">Purchase License</button>
+          <div class="license-buttons">
+            <button class="btn btn-secondary" id="enter-license-btn">Enter License Key</button>
+            <button class="btn btn-purchase" id="purchase-btn">Purchase License</button>
+          </div>
         </div>
       </div>
 

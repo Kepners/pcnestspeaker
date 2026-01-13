@@ -58,6 +58,14 @@
       ],
       "icon": "assets/icon.ico"
     },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "include": "installer.nsh",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "license": "LICENSE.txt"
+    },
     "mac": {
       "target": [
         "dmg",
@@ -70,6 +78,22 @@
       "output": "dist"
     },
     "extraResources": [
+      {
+        "from": "assets/",
+        "to": "assets",
+        "filter": [
+          "splash.mp4",
+          "tray-icon.ico"
+        ]
+      },
+      {
+        "from": "src/main/",
+        "to": "python",
+        "filter": [
+          "cast-helper.py",
+          "cast-daemon.py"
+        ]
+      },
       {
         "from": "ffmpeg/",
         "to": "ffmpeg",

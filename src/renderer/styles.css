@@ -1212,6 +1212,16 @@ body::before {
   letter-spacing: 2px;
 }
 
+.license-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.license-buttons .btn {
+  flex: 1;
+}
+
 /* ==================== DEBUG SECTION ==================== */
 .debug-section {
   background: transparent;
