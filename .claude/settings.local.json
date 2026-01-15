@@ -180,7 +180,26 @@
       "mcp__playwright__browser_snapshot",
       "mcp__playwright__browser_click",
       "mcp__playwright__browser_evaluate",
-      "mcp__playwright__browser_close"
+      "mcp__playwright__browser_close",
+      "Bash(test:*)",
+      "Bash(test -f:*)",
+      "Bash(powershell.exe -Command \"Get-ItemProperty ''HKCU:\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\\\\Desktop\\\\NameSpace\\\\*'' | Select-Object PSChildName, ''\\(default\\)'' | Where-Object { $_''\\(default\\)'' -like ''*Dropbox*'' -or $_''\\(default\\)'' -like ''*Box*'' }\")",
+      "Bash(reg query \"HKEY_CURRENT_USER\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\\\\Desktop\\\\NameSpace\" /s)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\kepne\\\\Desktop\\\\remove-dropbox-sidebar.ps1\")",
+      "Bash(gh repo create:*)",
+      "mcp__stripe__list_customers",
+      "mcp__stripe__list_payment_intents",
+      "mcp__stripe__search_stripe_documentation",
+      "mcp__stripe__create_customer",
+      "mcp__resend__send-email",
+      "Bash(gh repo edit:*)",
+      "Bash(gh release:*)",
+      "mcp__stripe__list_products",
+      "mcp__supabase__list_tables",
+      "mcp__supabase__execute_sql",
+      "mcp__resend__list-audiences",
+      "mcp__stripe__retrieve_balance",
+      "Bash(move \"C:\\\\Users\\\\kepne\\\\.claude\\\\skills\\\\*.md\" \"C:\\\\Users\\\\kepne\\\\.claude\\\\commands\\\\cu\"\")"
     ]
   }
 }
