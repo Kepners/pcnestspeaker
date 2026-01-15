@@ -596,6 +596,28 @@ body::before {
   color: var(--pink);
 }
 
+/* Stereo resync button */
+.btn-resync {
+  background: rgba(26, 26, 26, 0.1);
+  border: 1px solid rgba(26, 26, 26, 0.2);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 4px;
+}
+
+.btn-resync:hover {
+  background: var(--pink);
+  border-color: var(--pink);
+  transform: rotate(180deg);
+}
+
+.btn-resync:active {
+  transform: rotate(360deg);
+}
+
 .option-hint {
   font-size: 0.75rem;
   color: rgba(26, 26, 26, 0.4);

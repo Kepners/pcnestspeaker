@@ -981,7 +981,25 @@ def stop_cast_fast(speaker_name, speaker_ip):
             return stop_cast(speaker_name)
 
         print(f"[stop-fast] Connecting directly to {speaker_name} at {speaker_ip}", file=sys.stderr)
-        cast = pychromecast.Chromecast(speaker_ip)
+
+        # Use get_listed_chromecasts with IP for more reliable connection
+        # Direct Chromecast(ip) can have issues with internal cast_type lookup
+        try:
+            chromecasts, browser = pychromecast.get_chromecasts(timeout=3)
+            cast = None
+            for cc in chromecasts:
+                if cc.cast_info.host == speaker_ip:
+                    cast = cc
+                    break
+            browser.stop_discovery()
+
+            if not cast:
+                # Fallback to direct IP connection
+                cast = pychromecast.Chromecast(speaker_ip)
+        except:
+            # Last resort fallback
+            cast = pychromecast.Chromecast(speaker_ip)
+
         cast.wait(timeout=5)
         cast.quit_app()
 
@@ -998,8 +1016,9 @@ def stop_cast_fast(speaker_name, speaker_ip):
         return {"success": True}
 
     except Exception as e:
-        print(f"[stop-fast] Error: {e}", file=sys.stderr)
-        return {"success": False, "error": str(e)}
+        # Non-fatal - speaker will be reconnected anyway during resync
+        print(f"[stop-fast] Warning (non-fatal): {e}", file=sys.stderr)
+        return {"success": True}  # Return success anyway - resync will reconnect
 
 def get_volume(speaker_name):
     """

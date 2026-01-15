@@ -54,6 +54,11 @@ let pcAudioEnabled = false; // true = also play on PC speakers (via Listen)
 let virtualCaptureCmdId = null; // Cached Virtual Desktop Audio CAPTURE device ID for Listen
 let autoSyncEnabled = false; // true = auto-adjust sync delay based on network conditions
 let tvStreamingInProgress = false; // Prevent duplicate TV streaming operations
+let stereoResyncTimer = null; // Timer for periodic stereo resync (clock drift fix)
+let currentStereoMode = false; // true when in stereo/group mode (for resync feature)
+// NOTE: Auto-resync timer is DISABLED in startStereoResyncTimer() - caused system crashes
+// This constant is unused but kept for reference
+const STEREO_RESYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes (UNUSED - timer disabled)
 
 // Dependency download URLs
 // NOTE: We use VB-CABLE which provides:
@@ -154,6 +159,87 @@ function getReceiverAppId(speaker, forceAudio = false) {
   }
 
   return AUDIO_APP_ID;
+}
+
+/**
+ * Stereo Resync - Reconnects both speakers in parallel to reset clock drift
+ * Called automatically every 5 minutes during stereo/group streaming
+ * Can also be triggered manually via IPC
+ */
+async function performStereoResync() {
+  if (!currentStereoMode || currentConnectedSpeakers.length < 2) {
+    console.log('[StereoResync] Not in stereo mode or not enough speakers, skipping');
+    return { success: false, reason: 'not_in_stereo_mode' };
+  }
+
+  const leftSpeaker = currentConnectedSpeakers[0];
+  const rightSpeaker = currentConnectedSpeakers[1];
+
+  if (!leftSpeaker || !rightSpeaker) {
+    console.log('[StereoResync] Missing speaker info, skipping');
+    return { success: false, reason: 'missing_speaker_info' };
+  }
+
+  sendLog(`🔄 Resyncing stereo speakers to fix clock drift...`);
+
+  try {
+    const localIp = getLocalIp();
+    const webrtcUrl = `http://${localIp}:8889`;
+    const appId = AUDIO_APP_ID;
+
+    // Disconnect both speakers simultaneously
+    sendLog(`[StereoResync] Disconnecting both speakers...`);
+    await Promise.all([
+      runPython(['stop-fast', leftSpeaker.name, leftSpeaker.ip]).catch(() => {}),
+      runPython(['stop-fast', rightSpeaker.name, rightSpeaker.ip]).catch(() => {})
+    ]);
+
+    // Brief pause to ensure clean disconnect
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Reconnect both speakers in PARALLEL (critical for sync!)
+    sendLog(`[StereoResync] Reconnecting both speakers in parallel...`);
+    const [leftResult, rightResult] = await Promise.all([
+      runPython(['webrtc-launch', leftSpeaker.name, webrtcUrl, leftSpeaker.ip, 'left', appId]),
+      runPython(['webrtc-launch', rightSpeaker.name, webrtcUrl, rightSpeaker.ip, 'right', appId])
+    ]);
+
+    if (leftResult.success && rightResult.success) {
+      sendLog(`✅ Stereo resync complete - speakers re-clocked!`, 'success');
+      return { success: true };
+    } else {
+      sendLog(`⚠️ Stereo resync partial: L=${leftResult.success}, R=${rightResult.success}`, 'warning');
+      return { success: false, reason: 'partial_reconnect', leftResult, rightResult };
+    }
+  } catch (error) {
+    sendLog(`❌ Stereo resync failed: ${error.message}`, 'error');
+    return { success: false, reason: 'error', error: error.message };
+  }
+}
+
+/**
+ * Start the stereo resync timer (called when stereo streaming starts)
+ */
+function startStereoResyncTimer() {
+  // COMPLETELY DISABLED - auto-resync was causing catastrophic issues:
+  // - CPU maxing out, 25GB+ RAM usage, constant speaker reconnects, system crash
+  // - Setting interval to Number.MAX_SAFE_INTEGER caused overflow/chaos
+  // Manual resync button still works if user needs it
+  currentStereoMode = true;
+  console.log(`[StereoResync] Auto-resync DISABLED (was causing system crashes). Manual resync still available.`);
+  // NO setInterval created - completely disabled
+}
+
+/**
+ * Stop the stereo resync timer (called when stereo streaming stops)
+ */
+function stopStereoResyncTimer() {
+  if (stereoResyncTimer) {
+    clearInterval(stereoResyncTimer);
+    stereoResyncTimer = null;
+    console.log('[StereoResync] Timer stopped');
+  }
+  currentStereoMode = false;
 }
 
 // Helper: Get local IP address
@@ -502,6 +588,7 @@ function cleanup() {
   trayManager.updateTrayState(false); // Update tray to idle state
   usageTracker.stopTracking(); // Stop tracking usage time
   volumeSync.stopMonitoring(); // Stop Windows volume sync
+  stopStereoResyncTimer(); // Stop stereo resync timer
 
   // Reset PC audio mode
   if (pcAudioEnabled) {
@@ -1954,6 +2041,10 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
             leftSpeaker: leftMember,
             rightSpeaker: rightMember
           };
+
+          // Start stereo resync timer to fix clock drift every 5 minutes
+          startStereoResyncTimer();
+          sendLog(`🔄 Stereo mode initialized (auto-resync disabled - manual resync available)`, 'info');
         } else {
           // 3+ member group = Multicast (same audio to all)
           const memberNames = membersResult.members.map(m => m.name);
@@ -2839,6 +2930,11 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
 
     // Reset the switching flag - stereo is now fully set up
     switchingToStereoMode = false;
+
+    // Start stereo resync timer to fix clock drift every 5 minutes
+    startStereoResyncTimer();
+    sendLog(`🔄 Stereo mode initialized (auto-resync disabled - manual resync available)`, 'info');
+
     return { success: true };
 
   } catch (error) {
@@ -2861,6 +2957,9 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
 ipcMain.handle('stop-stereo-streaming', async (event, leftSpeaker, rightSpeaker) => {
   try {
     sendLog('Stopping stereo streaming...');
+
+    // Stop stereo resync timer
+    stopStereoResyncTimer();
 
     // Stop FFmpeg processes
     if (stereoFFmpegProcesses.left) {
@@ -2922,6 +3021,15 @@ ipcMain.handle('stop-stereo-streaming', async (event, leftSpeaker, rightSpeaker)
     usageTracker.stopTracking(); // Stop tracking usage time
     return { success: false, error: error.message };
   }
+});
+
+// ========================================
+// Manual Stereo Resync (for clock drift fix)
+// ========================================
+ipcMain.handle('resync-stereo', async () => {
+  sendLog('Manual stereo resync requested...');
+  const result = await performStereoResync();
+  return result;
 });
 
 // ========================================

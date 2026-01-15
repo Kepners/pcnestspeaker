@@ -10,6 +10,11 @@
  * Storage: %APPDATA%/PC Nest Speaker/.usage (encrypted binary)
  */
 
+// ============== OWNER MODE ==============
+// Set to true to bypass all DRM/trial checks (for developer's personal use)
+const OWNER_MODE = false;
+// ========================================
+
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -308,6 +313,20 @@ function updateUsage() {
  * Get current usage statistics
  */
 function getUsage() {
+  // OWNER MODE: Skip all DRM checks
+  if (OWNER_MODE) {
+    return {
+      usageSeconds: 0,
+      remainingSeconds: TRIAL_SECONDS,
+      percentUsed: 0,
+      trialExpired: false,
+      hasLicense: true,  // Always licensed in owner mode
+      firstUsedAt: Date.now(),
+      lastUsedAt: Date.now(),
+      ownerMode: true
+    };
+  }
+
   const data = loadSecureData();
   const licenseKey = settingsManager.getSetting('licenseKey') || null;
 
@@ -335,6 +354,9 @@ function getUsage() {
  * Check if trial has expired (blocks streaming if true)
  */
 function isTrialExpired() {
+  // OWNER MODE: Never expired
+  if (OWNER_MODE) return false;
+
   const usage = getUsage();
   return usage.trialExpired && !usage.hasLicense;
 }

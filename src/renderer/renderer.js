@@ -380,6 +380,29 @@ async function handleFinishFirstRun() {
 }
 
 function setupEventListeners() {
+  // Stereo resync button (for fixing clock drift)
+  const resyncBtn = document.getElementById('resync-stereo-btn');
+  if (resyncBtn) {
+    resyncBtn.addEventListener('click', async () => {
+      log('Manual stereo resync triggered...', 'info');
+      resyncBtn.disabled = true;
+      resyncBtn.textContent = '⏳';
+      try {
+        const result = await window.api.resyncStereo();
+        if (result.success) {
+          log('Stereo resync complete!', 'success');
+        } else {
+          log(`Resync failed: ${result.reason || 'Unknown error'}`, 'warning');
+        }
+      } catch (error) {
+        log(`Resync error: ${error.message}`, 'error');
+      } finally {
+        resyncBtn.disabled = false;
+        resyncBtn.textContent = '🔄';
+      }
+    });
+  }
+
   // Window controls (frameless window)
   const refreshBtn = document.getElementById('refresh-btn');
   const minimizeBtn = document.getElementById('minimize-btn');
@@ -723,6 +746,10 @@ function setupEventListeners() {
       try {
         await window.api.stopStreaming();
         setStreamingState(false);
+
+        // Hide resync button when streaming stops
+        const resyncBtn = document.getElementById('resync-stereo-btn');
+        if (resyncBtn) resyncBtn.style.display = 'none';
       } catch (e) {
         log(`Stop from tray failed: ${e.message}`, 'warning');
       }
@@ -1602,6 +1629,10 @@ async function startStereoStreaming() {
       log('Stereo streaming started!', 'success');
       renderSpeakers();
 
+      // Show resync button for stereo mode (clock drift fix)
+      const resyncBtn = document.getElementById('resync-stereo-btn');
+      if (resyncBtn) resyncBtn.style.display = 'inline-block';
+
       // RESTORE PC AUDIO: If Wall of Sound was enabled, activate it now
       if (pcAudioEnabled && pcAudioToggle && pcAudioToggle.checked) {
         log('Restoring Wall of Sound from saved settings...', 'info');
@@ -1637,6 +1668,10 @@ async function stopStereoStreaming() {
       setStreamingState(false); // Update status indicator
       log('Stereo streaming stopped', 'success');
       renderSpeakers();
+
+      // Hide resync button (no longer in stereo mode)
+      const resyncBtn = document.getElementById('resync-stereo-btn');
+      if (resyncBtn) resyncBtn.style.display = 'none';
     } else {
       throw new Error(result.error || 'Unknown error');
     }
@@ -1645,6 +1680,10 @@ async function stopStereoStreaming() {
     // Mark as stopped anyway to avoid stuck state
     stereoMode.streaming = false;
     renderSpeakers();
+
+    // Hide resync button on error too
+    const resyncBtn = document.getElementById('resync-stereo-btn');
+    if (resyncBtn) resyncBtn.style.display = 'none';
   }
 }
 
@@ -1725,10 +1764,18 @@ async function startStreamingToSpeaker(index, clearStereoState = true) {
         stereoMode.leftSpeaker = null;
         stereoMode.rightSpeaker = null;
         log('Stereo streaming stopped', 'success');
+
+        // Hide resync button
+        const resyncBtn = document.getElementById('resync-stereo-btn');
+        if (resyncBtn) resyncBtn.style.display = 'none';
       } else {
         // Stop mono streaming
         await window.api.stopStreaming();
         log('Streaming stopped', 'success');
+
+        // Hide resync button (may have been in group stereo mode)
+        const resyncBtnMono = document.getElementById('resync-stereo-btn');
+        if (resyncBtnMono) resyncBtnMono.style.display = 'none';
       }
 
       // Clear selection state
@@ -1779,6 +1826,10 @@ async function startStreamingToSpeaker(index, clearStereoState = true) {
       stereoMode.rightSpeaker = null;
       setStreamingState(false);
       renderSpeakers(); // Re-render to clear L/R buttons
+
+      // Hide resync button
+      const resyncBtn = document.getElementById('resync-stereo-btn');
+      if (resyncBtn) resyncBtn.style.display = 'none';
     } catch (error) {
       log(`Stereo stop failed: ${error.message}`, 'warning');
     }
@@ -1810,6 +1861,13 @@ async function startStreamingToSpeaker(index, clearStereoState = true) {
       setStreamingState(true);
       renderSpeakers(); // Update UI to show selected state
       log(`Streaming to ${speaker.name}!`, 'success');
+
+      // Show resync button for Cast Groups in stereo mode (2-member groups)
+      if (result.stereoMode) {
+        const resyncBtn = document.getElementById('resync-stereo-btn');
+        if (resyncBtn) resyncBtn.style.display = 'inline-block';
+        log('🔄 Stereo mode active - manual resync button available if needed', 'info');
+      }
 
       // RESTORE PC AUDIO: If Wall of Sound was enabled, activate it now
       // This fixes the bug where manual streaming didn't restore PC audio mode
@@ -1981,6 +2039,10 @@ async function stopStreaming() {
     if (result.success) {
       setStreamingState(false);
       log('Stream stopped', 'success');
+
+      // Hide resync button when streaming stops
+      const resyncBtn = document.getElementById('resync-stereo-btn');
+      if (resyncBtn) resyncBtn.style.display = 'none';
     } else {
       log(`Stop failed: ${result.error}`, 'error');
       showError(result.error || 'Failed to stop streaming');

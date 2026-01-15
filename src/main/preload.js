@@ -26,6 +26,9 @@ contextBridge.exposeInMainWorld('api', {
   stopStereoStreaming: (leftSpeaker, rightSpeaker) =>
     ipcRenderer.invoke('stop-stereo-streaming', leftSpeaker, rightSpeaker),
 
+  // Stereo resync (fixes clock drift between L/R speakers)
+  resyncStereo: () => ipcRenderer.invoke('resync-stereo'),
+
   // TV streaming (HLS for NVIDIA Shield, Chromecast with screen)
   startTvStreaming: (deviceName, deviceIp = null) =>
     ipcRenderer.invoke('start-tv-streaming', deviceName, deviceIp),
