@@ -24,6 +24,9 @@ let daemonProcess = null;
 let pendingRequests = new Map(); // requestId -> { resolve, reject, timeout }
 let requestCounter = 0;
 let isReady = false;
+let isIntentionalShutdown = false; // STABILITY: Track if shutdown is intentional vs crash
+let restartAttempts = 0; // Track restart attempts to prevent infinite loops
+const MAX_RESTART_ATTEMPTS = 3;
 
 // Response line buffer
 let rl = null;
@@ -88,8 +91,8 @@ function startDaemon() {
       reject(err);
     });
 
-    daemonProcess.on('exit', (code) => {
-      console.log(`[Daemon] Process exited with code ${code}`);
+    daemonProcess.on('exit', (code, signal) => {
+      console.log(`[Daemon] Process exited with code ${code}, signal ${signal}`);
       daemonProcess = null;
       isReady = false;
 
@@ -99,12 +102,27 @@ function startDaemon() {
         reject(new Error('Daemon exited'));
       }
       pendingRequests.clear();
+
+      // STABILITY: Auto-restart on unexpected exit (not intentional shutdown)
+      if (!isIntentionalShutdown && code !== 0 && restartAttempts < MAX_RESTART_ATTEMPTS) {
+        restartAttempts++;
+        console.log(`[Daemon] Unexpected exit, auto-restarting (attempt ${restartAttempts}/${MAX_RESTART_ATTEMPTS})...`);
+        setTimeout(() => {
+          startDaemon().catch(err => {
+            console.error('[Daemon] Auto-restart failed:', err.message);
+          });
+        }, 1000 * restartAttempts); // Exponential backoff: 1s, 2s, 3s
+      } else if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
+        console.error('[Daemon] Max restart attempts reached, giving up');
+      }
     });
 
     // Wait a moment for daemon to start
     setTimeout(() => {
       if (daemonProcess) {
         isReady = true;
+        isIntentionalShutdown = false; // Reset for new daemon instance
+        restartAttempts = 0; // Reset restart counter on successful start
         console.log('[Daemon] Ready for commands');
         resolve(true);
       }
@@ -117,6 +135,8 @@ function startDaemon() {
  */
 function stopDaemon() {
   return new Promise((resolve) => {
+    isIntentionalShutdown = true; // STABILITY: Mark as intentional to prevent auto-restart
+
     if (!daemonProcess) {
       resolve(true);
       return;

@@ -56,6 +56,7 @@ let autoSyncEnabled = false; // true = auto-adjust sync delay based on network c
 let tvStreamingInProgress = false; // Prevent duplicate TV streaming operations
 let stereoResyncTimer = null; // Timer for periodic stereo resync (clock drift fix)
 let currentStereoMode = false; // true when in stereo/group mode (for resync feature)
+let cleanupInProgress = false; // STABILITY: Prevent race condition if cleanup() called multiple times
 // NOTE: Auto-resync timer is DISABLED in startStereoResyncTimer() - caused system crashes
 // This constant is unused but kept for reference
 const STEREO_RESYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes (UNUSED - timer disabled)
@@ -584,6 +585,13 @@ function createWindow() {
 }
 
 function cleanup() {
+  // STABILITY: Prevent race condition if cleanup is called multiple times
+  if (cleanupInProgress) {
+    sendLog('Cleanup already in progress, skipping duplicate call');
+    return;
+  }
+  cleanupInProgress = true;
+
   sendLog('Cleaning up all processes...');
   trayManager.updateTrayState(false); // Update tray to idle state
   usageTracker.stopTracking(); // Stop tracking usage time
@@ -595,7 +603,9 @@ function cleanup() {
     pcAudioEnabled = false;
     volumeSync.setPCSpeakerDevice(null);
     // Disable "Listen to this device" to restore normal audio routing
-    audioRouting.disablePCSpeakersMode().catch(() => {});
+    audioRouting.disablePCSpeakersMode().catch(err => {
+      console.warn('[Cleanup] Failed to disable PC speakers mode:', err.message);
+    });
   }
 
   // Restore original Windows audio output device (SYNC to ensure it completes before exit)
@@ -735,14 +745,15 @@ function cleanup() {
   // CRITICAL: Disable "Listen to this device" to prevent audio routing issues
   // This ensures PC audio returns to normal when app closes
   try {
-    audioRouting.disablePCSpeakersMode().catch(() => {
-      // Ignore errors on cleanup
+    audioRouting.disablePCSpeakersMode().catch(err => {
+      console.warn('[Cleanup] disablePCSpeakersMode final attempt failed:', err.message);
     });
   } catch (e) {
-    // Ignore errors on cleanup
+    console.warn('[Cleanup] disablePCSpeakersMode exception:', e.message);
   }
 
   currentStreamingMode = null;
+  cleanupInProgress = false; // Reset flag so cleanup can run again if needed
   sendLog('Cleanup complete');
 }
 

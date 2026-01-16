@@ -9,7 +9,7 @@ const { exec } = require('child_process');
 const path = require('path');
 
 // Configuration
-const CHECK_INTERVAL_MS = 500; // Check every 0.5 seconds
+const CHECK_INTERVAL_MS = 1000; // Check every 1 second (was 500ms - too aggressive)
 const ADJUSTMENT_THRESHOLD_MS = 10; // Only adjust if drift > 10ms (conservative - no hunting)
 const MIN_DELAY_MS = 0; // Allow zero delay (WebRTC is super fast now!)
 const MAX_DELAY_MS = 2000; // Maximum delay (2 seconds)

@@ -15,8 +15,40 @@ import subprocess
 import json
 import time
 import threading
+import functools
 import pychromecast
 from pychromecast.controllers import BaseController
+
+
+# =============================================================================
+# STABILITY: Retry decorator for flaky network operations
+# =============================================================================
+def with_retry(max_attempts=3, delay=1, exceptions=(Exception,)):
+    """Decorator that retries a function on failure.
+
+    Args:
+        max_attempts: Maximum number of retry attempts
+        delay: Seconds to wait between retries
+        exceptions: Tuple of exception types to catch and retry
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_error = None
+            for attempt in range(max_attempts):
+                try:
+                    return func(*args, **kwargs)
+                except exceptions as e:
+                    last_error = e
+                    if attempt < max_attempts - 1:
+                        print(f"[Retry] {func.__name__} failed (attempt {attempt + 1}/{max_attempts}): {e}", file=sys.stderr)
+                        time.sleep(delay)
+                    else:
+                        print(f"[Retry] {func.__name__} failed after {max_attempts} attempts: {e}", file=sys.stderr)
+            raise last_error
+        return wrapper
+    return decorator
+
 
 # Custom receivers for WebRTC low-latency streaming
 # Visual receiver: Shows ambient videos on TVs/Shields
@@ -26,6 +58,89 @@ AUDIO_APP_ID = "4B876246"
 # Default to audio receiver (most common use case)
 CUSTOM_APP_ID = AUDIO_APP_ID
 WEBRTC_NAMESPACE = "urn:x-cast:com.pcnestspeaker.webrtc"
+
+
+def wait_for_receiver_ready(cast, expected_app_id, max_wait=3.0, poll_interval=0.3):
+    """Wait for Cast receiver to be ready using polling instead of fixed sleep.
+
+    STABILITY/LATENCY: This replaces blind time.sleep(3) calls with smart polling.
+    Saves 1-2 seconds on average when receiver loads quickly.
+
+    Args:
+        cast: The pychromecast Cast object
+        expected_app_id: The app ID we launched
+        max_wait: Maximum time to wait in seconds
+        poll_interval: Time between status checks
+
+    Returns:
+        bool: True if receiver is ready, False if timed out
+    """
+    start = time.time()
+    while time.time() - start < max_wait:
+        try:
+            if cast.status and cast.status.app_id == expected_app_id:
+                elapsed = time.time() - start
+                print(f"[Cast] Receiver ready in {elapsed:.1f}s", file=sys.stderr)
+                return True
+        except:
+            pass
+        time.sleep(poll_interval)
+
+    print(f"[Cast] Receiver not confirmed ready after {max_wait}s, proceeding anyway", file=sys.stderr)
+    return False
+
+
+def get_chromecast_with_retry(speaker_name, speaker_ip=None, timeout=10, max_attempts=3):
+    """Get a Chromecast connection with automatic retry on failure.
+
+    This is a stability improvement - network discovery can be flaky.
+
+    Args:
+        speaker_name: Name of the speaker to find
+        speaker_ip: Optional IP for faster direct connection
+        timeout: Timeout per attempt
+        max_attempts: Number of retry attempts
+
+    Returns:
+        tuple: (cast, browser) or raises exception after all retries fail
+    """
+    last_error = None
+
+    for attempt in range(max_attempts):
+        try:
+            if speaker_ip:
+                print(f"[Connect] Attempt {attempt + 1}/{max_attempts}: Direct to {speaker_ip}...", file=sys.stderr)
+                chromecasts, browser = pychromecast.get_listed_chromecasts(
+                    friendly_names=[speaker_name],
+                    known_hosts=[speaker_ip],
+                    timeout=min(timeout, 5)  # Shorter timeout for direct
+                )
+            else:
+                print(f"[Connect] Attempt {attempt + 1}/{max_attempts}: Discovery...", file=sys.stderr)
+                chromecasts, browser = pychromecast.get_listed_chromecasts(
+                    friendly_names=[speaker_name],
+                    timeout=timeout
+                )
+
+            if chromecasts:
+                cast = chromecasts[0]
+                cast.wait(timeout=timeout)
+                print(f"[Connect] SUCCESS on attempt {attempt + 1}", file=sys.stderr)
+                return cast, browser
+            else:
+                if browser:
+                    browser.stop_discovery()
+                raise Exception(f"Speaker '{speaker_name}' not found")
+
+        except Exception as e:
+            last_error = e
+            if attempt < max_attempts - 1:
+                print(f"[Connect] Failed attempt {attempt + 1}: {e}", file=sys.stderr)
+                time.sleep(1)  # Brief pause before retry
+            else:
+                print(f"[Connect] All {max_attempts} attempts failed: {e}", file=sys.stderr)
+
+    raise last_error
 
 
 class WebRTCController(BaseController):
@@ -282,7 +397,7 @@ def webrtc_stream(speaker_name, webrtc_server_port=8080):
         # Launch custom receiver
         print(f"[WebRTC] Launching receiver (App ID: {CUSTOM_APP_ID})...", file=sys.stderr)
         cast.start_app(CUSTOM_APP_ID)
-        time.sleep(4)  # Wait for receiver to load
+        wait_for_receiver_ready(cast, CUSTOM_APP_ID, max_wait=4.0)  # STABILITY: Poll instead of blind sleep
         print("[WebRTC] Receiver launched!", file=sys.stderr)
 
         # Get local IP for webrtc-streamer URL
@@ -563,7 +678,7 @@ def webrtc_launch(speaker_name, https_url=None, speaker_ip=None, stream_name="pc
                 pass  # Ignore if nothing to quit
 
             cast.start_app(receiver_app_id)
-            time.sleep(3)  # Wait for receiver to load
+            wait_for_receiver_ready(cast, receiver_app_id)  # STABILITY: Poll instead of blind sleep
             print("[WebRTC] Receiver launched!", file=sys.stderr)
         except Exception as app_error:
             error_type = type(app_error).__name__
@@ -780,7 +895,7 @@ def webrtc_proxy_connect(speaker_name, mediamtx_url, speaker_ip=None, stream_nam
                 pass
 
             cast.start_app(receiver_app_id)
-            time.sleep(3)
+            wait_for_receiver_ready(cast, receiver_app_id)  # STABILITY: Poll instead of blind sleep
             print("[WebRTC-Proxy] Receiver launched!", file=sys.stderr)
         except Exception as app_error:
             error_msg = str(app_error)
@@ -1414,9 +1529,8 @@ def hls_cast_to_tv(speaker_name, hls_url, speaker_ip=None, device_model=None, ap
         else:
             print(f"[HLS-TV] Receiver {receiver_id} launched!", file=sys.stderr)
 
-        # Give receiver extra time to fully load after splash
-        print(f"[HLS-TV] Waiting 3s for receiver to be ready for audio...", file=sys.stderr)
-        time.sleep(3)
+        # Give receiver extra time to fully load after splash (poll for readiness)
+        wait_for_receiver_ready(cast, receiver_id, max_wait=3.0)  # STABILITY: Poll instead of blind sleep
 
         mc = cast.media_controller
 

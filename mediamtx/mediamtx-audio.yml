@@ -62,8 +62,8 @@ hlsAddress: :8888
 hlsEncryption: no
 hlsAllowOrigin: '*'
 hlsSegmentCount: 3
-hlsSegmentDuration: 2s
-hlsPartDuration: 200ms
+hlsSegmentDuration: 500ms
+hlsPartDuration: 100ms
 hlsSegmentMaxSize: 50M
 
 ###############################################
