@@ -3956,18 +3956,25 @@ app.whenReady().then(async () => {
   }, 1000); // Wait 1s for window to load
 
   // Auto-discover speakers and audio devices in background
-  // Chain: discover → pipeline → auto-connect (proper sequencing, no race conditions)
+  // BOOT OPTIMIZATION: Run discovery and pipeline in PARALLEL (pipeline doesn't need speakers)
   setTimeout(async () => {
     try {
-      // Step 1: Discover speakers (can take 4-8 seconds)
-      await autoDiscoverDevices();
+      // Step 1+2: Run discovery AND pipeline startup in PARALLEL
+      // Discovery timeout reduced to 5s, pipeline starts immediately
+      console.log('[Main] Starting parallel boot: discovery + pipeline...');
+      const [discoveryResult, pipelineResult] = await Promise.all([
+        autoDiscoverDevices().catch(err => {
+          console.log('[Main] Discovery failed:', err.message);
+          return null;
+        }),
+        preStartWebRTCPipeline().catch(err => {
+          console.log('[Main] Pipeline failed:', err.message);
+          return null;
+        })
+      ]);
+      console.log('[Main] Parallel boot complete');
 
-      // Step 2: Start pipeline AFTER discovery completes
-      await preStartWebRTCPipeline().catch(err => {
-        console.log('[Main] Background pipeline failed:', err.message);
-      });
-
-      // Step 3: Auto-connect AFTER pipeline is ready
+      // Step 3: Auto-connect AFTER both are ready
       const settings = settingsManager.getAllSettings();
       if (settings.autoConnect) {
         // Check if stereo mode was last used
@@ -3994,7 +4001,7 @@ app.whenReady().then(async () => {
     } catch (err) {
       console.log('[Main] Startup sequence failed:', err.message);
     }
-  }, 1500); // Wait 1.5s for window to load, then run sequence
+  }, 500); // BOOT OPTIMIZATION: Reduced from 1.5s to 500ms (parallel boot is faster)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
