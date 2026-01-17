@@ -44,18 +44,20 @@ function enableAutoStart() {
 
     let appPath;
     if (app.isPackaged) {
-      // Production: just the exe (with quotes for paths with spaces)
-      appPath = `"${process.execPath}"`;
+      // Production: the exe path (will be quoted in registry command)
+      appPath = process.execPath;
     } else {
       // Dev mode: use the batch file which properly launches electron with the project
       appPath = path.join(projectPath, 'start-app.bat');
     }
 
-    // Use PowerShell for reliable registry writes (handles paths with spaces properly)
-    const escapedPath = appPath.replace(/\\/g, '\\\\').replace(/'/g, "''");
-    const cmd = `powershell -Command "Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name '${AUTO_START_KEY_NAME}' -Value '${escapedPath}'"`;
+    // CRITICAL FIX: Use 'reg add' command which properly handles quoted paths with spaces
+    // PowerShell's Set-ItemProperty strips quotes, causing startup to fail silently
+    // The /f flag forces overwrite without prompting
+    const quotedPath = `"${appPath}"`;
+    const cmd = `reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "${AUTO_START_KEY_NAME}" /t REG_SZ /d ${quotedPath} /f`;
 
-    console.log('[AutoStart] Setting registry:', appPath);
+    console.log('[AutoStart] Setting registry:', quotedPath);
 
     exec(cmd, { windowsHide: true }, (error, stdout, stderr) => {
       if (error) {
@@ -145,14 +147,24 @@ function verifyAndFixAutoStart() {
       const normalizedCurrent = currentValue.replace(/"/g, '').toLowerCase();
       const normalizedCorrect = correctPath.replace(/"/g, '').toLowerCase();
 
-      if (normalizedCurrent === normalizedCorrect) {
+      // CRITICAL: Also check that paths with spaces have quotes
+      // Unquoted paths with spaces cause silent startup failures
+      const hasSpaces = normalizedCurrent.includes(' ');
+      const hasQuotes = currentValue.startsWith('"') && currentValue.endsWith('"');
+      const needsQuoteFix = hasSpaces && !hasQuotes;
+
+      if (normalizedCurrent === normalizedCorrect && !needsQuoteFix) {
         console.log('[AutoStart] Registry entry is correct');
         resolve(true);
         return;
       }
 
-      // Path is wrong - fix it automatically
-      console.log('[AutoStart] Registry entry outdated');
+      // Path is wrong or missing quotes - fix it automatically
+      if (needsQuoteFix) {
+        console.log('[AutoStart] Registry entry missing quotes (will fail with spaces in path)');
+      } else {
+        console.log('[AutoStart] Registry entry outdated');
+      }
       console.log('[AutoStart] Current:', currentValue);
       console.log('[AutoStart] Correct:', correctPath);
 

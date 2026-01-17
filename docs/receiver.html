@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>PC Nest Speaker - WebRTC Receiver</title>
+  <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #334E58; overflow: hidden; }
+
+    /* Ambient photo slideshow - fullscreen, behind everything */
+    .ambient-photo {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      z-index: 1;
+      opacity: 0;
+      transition: opacity 2s ease-in-out;
+    }
+    .ambient-photo.visible { opacity: 1; }
+    .ambient-photo.hidden { opacity: 0; }
+
+    /* Gradient overlay for text readability */
+    #overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: linear-gradient(
+        to bottom,
+        rgba(51, 78, 88, 0.3) 0%,
+        rgba(51, 78, 88, 0.1) 50%,
+        rgba(51, 78, 88, 0.5) 100%
+      );
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    /* Status text */
+    #status {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #FCBFB7;
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 28px;
+      font-weight: 300;
+      text-align: center;
+      z-index: 10;
+      text-shadow: 0 2px 20px rgba(0,0,0,0.5);
+      padding: 12px 30px;
+      background: rgba(51, 78, 88, 0.6);
+      border-radius: 50px;
+      backdrop-filter: blur(10px);
+    }
+
+    /* App branding - top left */
+    #branding {
+      position: fixed;
+      top: 30px;
+      left: 40px;
+      color: rgba(252, 191, 183, 0.8);
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      z-index: 10;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+
+    /* Audio visualizer dots */
+    #visualizer {
+      position: fixed;
+      bottom: 100px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+    }
+    .viz-dot {
+      width: 8px;
+      height: 8px;
+      background: #FCBFB7;
+      border-radius: 50%;
+      opacity: 0.6;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    .viz-dot:nth-child(1) { animation-delay: 0s; }
+    .viz-dot:nth-child(2) { animation-delay: 0.2s; }
+    .viz-dot:nth-child(3) { animation-delay: 0.4s; }
+    .viz-dot:nth-child(4) { animation-delay: 0.6s; }
+    .viz-dot:nth-child(5) { animation-delay: 0.8s; }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.4; }
+      50% { transform: scale(1.5); opacity: 1; }
+    }
+
+    /* Hide default cast player */
+    #player { display: none; }
+  </style>
+</head>
+<body>
+  <cast-media-player id="player"></cast-media-player>
+
+  <!-- Ambient photo slideshow - two images for crossfade effect -->
+  <img id="ambient-photo-1" class="ambient-photo" src="" alt="">
+  <img id="ambient-photo-2" class="ambient-photo" src="" alt="">
+  <div id="overlay"></div>
+
+  <!-- UI elements -->
+  <div id="branding">PC NEST SPEAKER</div>
+  <div id="visualizer">
+    <div class="viz-dot"></div>
+    <div class="viz-dot"></div>
+    <div class="viz-dot"></div>
+    <div class="viz-dot"></div>
+    <div class="viz-dot"></div>
+  </div>
+  <div id="status">Waiting for connection...</div>
+
+  <!-- WebRTC audio element (invisible) -->
+  <audio id="webrtc-audio" autoplay></audio>
+
+  <script>
+    const WEBRTC_NAMESPACE = 'urn:x-cast:com.pcnestspeaker.webrtc';
+
+    // ===================
+    // Ambient Photo Slideshow - Free photos from Unsplash (fast CDN, CORS-enabled)
+    // Using Unsplash Source for direct image URLs (1920x1080 for fast loading)
+    // ===================
+    const ambientPhotos = [
+      // Ocean & Water
+      'https://images.unsplash.com/photo-1505118380757-91f5f5632de0?w=1920&h=1080&fit=crop',  // Ocean waves
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1920&h=1080&fit=crop',  // Beach tropical
+      'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=1920&h=1080&fit=crop',  // Ocean aerial
+      'https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=1920&h=1080&fit=crop',  // Sea sunset
+
+      // Mountains & Landscapes
+      'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1920&h=1080&fit=crop',  // Mountain peaks
+      'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&h=1080&fit=crop',  // Mountains clouds
+      'https://images.unsplash.com/photo-1454496522488-7a8e488e8606?w=1920&h=1080&fit=crop',  // Snowy mountains
+      'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1920&h=1080&fit=crop',  // Mountain stars
+
+      // Forest & Nature
+      'https://images.unsplash.com/photo-1448375240586-882707db888b?w=1920&h=1080&fit=crop',  // Forest path
+      'https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?w=1920&h=1080&fit=crop',  // Forest sunlight
+      'https://images.unsplash.com/photo-1476362555312-ab9e108a0b7e?w=1920&h=1080&fit=crop',  // Autumn forest
+      'https://images.unsplash.com/photo-1425913397330-cf8af2ff40a1?w=1920&h=1080&fit=crop',  // Misty forest
+
+      // Sky & Clouds
+      'https://images.unsplash.com/photo-1517483000871-1dbf64a6e1c6?w=1920&h=1080&fit=crop',  // Sunset sky
+      'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=1920&h=1080&fit=crop',  // Pink clouds
+      'https://images.unsplash.com/photo-1501630834273-4b5604d2ee31?w=1920&h=1080&fit=crop',  // Blue sky clouds
+      'https://images.unsplash.com/photo-1499346030926-9a72daac6c63?w=1920&h=1080&fit=crop',  // Starry night
+
+      // Northern Lights & Space
+      'https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=1920&h=1080&fit=crop',  // Northern lights
+      'https://images.unsplash.com/photo-1507400492013-162706c8c05e?w=1920&h=1080&fit=crop',  // Aurora green
+      'https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=1920&h=1080&fit=crop',  // Milky way
+      'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=1920&h=1080&fit=crop',  // Galaxy
+
+      // Desert & Dunes
+      'https://images.unsplash.com/photo-1509316785289-025f5b846b35?w=1920&h=1080&fit=crop',  // Desert dunes
+      'https://images.unsplash.com/photo-1473580044384-7ba9967e16a0?w=1920&h=1080&fit=crop',  // Sahara sunset
+      'https://images.unsplash.com/photo-1547234935-80c7145ec969?w=1920&h=1080&fit=crop',  // Desert night
+
+      // Underwater & Sea Life
+      'https://images.unsplash.com/photo-1544551763-92ab472cad5d?w=1920&h=1080&fit=crop',  // Underwater coral
+      'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=1920&h=1080&fit=crop',  // Sea turtle
+      'https://images.unsplash.com/photo-1546026423-cc4642628d2b?w=1920&h=1080&fit=crop',  // Jellyfish
+
+      // Abstract & Minimal
+      'https://images.unsplash.com/photo-1557682250-33bd709cbe85?w=1920&h=1080&fit=crop',  // Gradient purple
+      'https://images.unsplash.com/photo-1558591710-4b4a1ae0f04d?w=1920&h=1080&fit=crop',  // Abstract waves
+      'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=1920&h=1080&fit=crop',  // Colorful gradient
+
+      // Flowers & Gardens
+      'https://images.unsplash.com/photo-1490750967868-88aa4486c946?w=1920&h=1080&fit=crop',  // Sunflower
+      'https://images.unsplash.com/photo-1518882605483-4a7369cc29fb?w=1920&h=1080&fit=crop',  // Lavender field
+      'https://images.unsplash.com/photo-1462275646964-a0e3571f4f81?w=1920&h=1080&fit=crop',  // Cherry blossoms
+    ];
+
+    // Slideshow state
+    let currentPhotoIndex = 0;
+    let activePhoto = 1; // Toggle between photo 1 and 2 for crossfade
+    const photo1 = document.getElementById('ambient-photo-1');
+    const photo2 = document.getElementById('ambient-photo-2');
+    let slideshowInterval = null;
+    const SLIDESHOW_DURATION = 10000; // 10 seconds per photo
+
+    function getRandomPhoto() {
+      const newIndex = Math.floor(Math.random() * ambientPhotos.length);
+      // Avoid showing same photo twice in a row
+      if (newIndex === currentPhotoIndex && ambientPhotos.length > 1) {
+        return (newIndex + 1) % ambientPhotos.length;
+      }
+      return newIndex;
+    }
+
+    function showNextPhoto() {
+      currentPhotoIndex = getRandomPhoto();
+      const nextUrl = ambientPhotos[currentPhotoIndex];
+      console.log('[Slideshow] Loading photo:', currentPhotoIndex);
+
+      if (activePhoto === 1) {
+        // Load into photo2, then crossfade
+        photo2.src = nextUrl;
+        photo2.onload = () => {
+          photo1.classList.remove('visible');
+          photo1.classList.add('hidden');
+          photo2.classList.remove('hidden');
+          photo2.classList.add('visible');
+          activePhoto = 2;
+        };
+      } else {
+        // Load into photo1, then crossfade
+        photo1.src = nextUrl;
+        photo1.onload = () => {
+          photo2.classList.remove('visible');
+          photo2.classList.add('hidden');
+          photo1.classList.remove('hidden');
+          photo1.classList.add('visible');
+          activePhoto = 1;
+        };
+      }
+    }
+
+    function startSlideshow() {
+      console.log('[Slideshow] Starting ambient photo slideshow');
+      // Load first photo immediately
+      currentPhotoIndex = getRandomPhoto();
+      photo1.src = ambientPhotos[currentPhotoIndex];
+      photo1.onload = () => {
+        photo1.classList.add('visible');
+        activePhoto = 1;
+      };
+
+      // Start interval for subsequent photos
+      if (slideshowInterval) clearInterval(slideshowInterval);
+      slideshowInterval = setInterval(showNextPhoto, SLIDESHOW_DURATION);
+    }
+
+    function stopSlideshow() {
+      if (slideshowInterval) {
+        clearInterval(slideshowInterval);
+        slideshowInterval = null;
+      }
+    }
+
+    // Legacy function name for compatibility
+    function startAmbientVideos() {
+      startSlideshow();
+    }
+
+    // ===================
+    // Cast Framework Setup
+    // ===================
+    const context = cast.framework.CastReceiverContext.getInstance();
+    const playerManager = context.getPlayerManager();
+    const playbackConfig = new cast.framework.PlaybackConfig();
+
+    // Low latency settings for HTTP fallback
+    playbackConfig.autoResumeDuration = 0;
+    playbackConfig.autoPauseDuration = 0;
+    playbackConfig.initialBandwidth = 100000000;
+    playbackConfig.disablePreload = true;
+    playbackConfig.autoResumeNumberOfSegments = 0;
+    playbackConfig.shakaConfig = {
+      streaming: {
+        bufferingGoal: 0.1,
+        rebufferingGoal: 0,
+        bufferBehind: 0,
+        lowLatencyMode: true,
+        segmentPrefetchLimit: 0,
+        retryParameters: { maxAttempts: 1, timeout: 1000 }
+      }
+    };
+
+    playerManager.setMessageInterceptor(
+      cast.framework.messages.MessageType.PRELOAD,
+      () => null
+    );
+
+    playerManager.setPlaybackConfig(playbackConfig);
+
+    // ===================
+    // WebRTC via MediaMTX WHEP
+    // ===================
+    let peerConnection = null;
+    let whepResourceUrl = null;
+    const audioElement = document.getElementById('webrtc-audio');
+
+    function log(msg) {
+      console.log('[WebRTC] ' + msg);
+      document.getElementById('status').textContent = msg;
+    }
+
+    function hideDefaultPlayer() {
+      const player = document.getElementById('player');
+      if (player) player.style.display = 'none';
+    }
+
+    // Retry configuration
+    let retryCount = 0;
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY = 2000; // 2 seconds
+
+    async function connectToMediaMTX(serverUrl, streamName = 'pcaudio', forceRelay = false) {
+      log(forceRelay ? 'Connecting (relay)...' : 'Connecting...');
+
+      // Start ambient videos when connecting (only first time)
+      if (!forceRelay) startAmbientVideos();
+
+      // ICE configuration - empty for local network (no STUN needed on same LAN)
+      // This dramatically speeds up ICE gathering
+      const iceConfig = {
+        iceServers: [],
+        iceTransportPolicy: 'all'
+      };
+
+      console.log('[WebRTC] ICE transport policy:', iceConfig.iceTransportPolicy);
+
+      peerConnection = new RTCPeerConnection(iceConfig);
+
+      peerConnection.ontrack = (event) => {
+        console.log('[WebRTC] Track received:', event.track.kind, event.track.readyState, event.track.muted);
+        log('Track received!');
+
+        if (event.track.kind === 'audio') {
+          // Set low jitter buffer target for minimal latency (50ms - balanced)
+          // See: https://developer.mozilla.org/en-US/docs/Web/API/RTCRtpReceiver/jitterBufferTarget
+          if (event.receiver && 'jitterBufferTarget' in event.receiver) {
+            event.receiver.jitterBufferTarget = 50; // 50ms target (balanced)
+            console.log('[WebRTC] Set jitterBufferTarget to 50ms');
+          }
+
+          if (event.streams && event.streams[0]) {
+            audioElement.srcObject = event.streams[0];
+
+            audioElement.muted = false;
+            audioElement.volume = 1.0;
+
+            audioElement.play().then(() => {
+              log('Streaming audio...');
+            }).catch(e => {
+              audioElement.muted = true;
+              audioElement.play().then(() => {
+                setTimeout(() => {
+                  audioElement.muted = false;
+                  log('Streaming audio...');
+                }, 100);
+              }).catch(e2 => log('Play failed'));
+            });
+          } else {
+            const stream = new MediaStream([event.track]);
+            audioElement.srcObject = stream;
+            audioElement.play().catch(e => log('Play error'));
+          }
+        }
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        const state = peerConnection.connectionState;
+        console.log('[WebRTC] Connection state:', state);
+        if (state === 'connected') {
+          log('Streaming audio...');
+        } else if (state === 'failed') {
+          log('Reconnecting...');
+          setTimeout(() => {
+            disconnect();
+            connectToMediaMTX(serverUrl, streamName);
+          }, 3000);
+        }
+      };
+
+      // Track if we've tried relay mode
+      let triedRelayMode = !forceRelay; // If already in relay mode, don't retry
+
+      // ICE state debugging
+      peerConnection.oniceconnectionstatechange = () => {
+        console.log('[WebRTC] ICE state:', peerConnection.iceConnectionState);
+        if (peerConnection.iceConnectionState === 'failed') {
+          if (!triedRelayMode) {
+            log('ICE failed - trying relay mode...');
+            console.log('[WebRTC] Retrying with TURN relay only');
+            triedRelayMode = true;
+            disconnect();
+            // Retry with forced relay
+            connectToMediaMTX(serverUrl, streamName, true);
+          } else {
+            log('ICE failed');
+          }
+        } else if (peerConnection.iceConnectionState === 'disconnected') {
+          log('ICE disconnected');
+        } else if (peerConnection.iceConnectionState === 'checking') {
+          log('ICE checking...');
+        } else if (peerConnection.iceConnectionState === 'connected') {
+          log('ICE connected!');
+        }
+      };
+
+      peerConnection.onicegatheringstatechange = () => {
+        console.log('[WebRTC] ICE gathering state:', peerConnection.iceGatheringState);
+      };
+
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log('[WebRTC] Local ICE candidate:', event.candidate.type, event.candidate.address);
+        } else {
+          console.log('[WebRTC] ICE gathering complete');
+        }
+      };
+
+      peerConnection.addTransceiver('audio', { direction: 'recvonly' });
+
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+
+      await new Promise((resolve) => {
+        if (peerConnection.iceGatheringState === 'complete') {
+          resolve();
+        } else {
+          const checkState = () => {
+            if (peerConnection.iceGatheringState === 'complete') {
+              peerConnection.removeEventListener('icegatheringstatechange', checkState);
+              resolve();
+            }
+          };
+          peerConnection.addEventListener('icegatheringstatechange', checkState);
+          setTimeout(resolve, 2000);
+        }
+      });
+
+      const whepUrl = serverUrl + '/' + streamName + '/whep';
+      console.log('[WebRTC] WHEP URL:', whepUrl);
+
+      try {
+        const response = await fetch(whepUrl, {
+          method: 'POST',
+          mode: 'cors',
+          headers: { 'Content-Type': 'application/sdp' },
+          body: peerConnection.localDescription.sdp
+        });
+
+        if (!response.ok) {
+          throw new Error('WHEP error ' + response.status);
+        }
+
+        const location = response.headers.get('Location');
+        if (location) {
+          whepResourceUrl = location.startsWith('/') ? serverUrl + location : location;
+        }
+
+        const answerSdp = await response.text();
+        console.log('[WebRTC] SDP Answer received:', answerSdp.substring(0, 500) + '...');
+
+        // Log ICE candidates from answer
+        const iceCandidates = answerSdp.match(/a=candidate:.*/g) || [];
+        console.log('[WebRTC] Remote ICE candidates:', iceCandidates.length);
+        iceCandidates.forEach(c => console.log('[WebRTC]   ', c));
+
+        await peerConnection.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+
+        // Success - reset retry count
+        retryCount = 0;
+        console.log('[WebRTC] WHEP connection successful, SDP answer processed');
+
+      } catch (e) {
+        console.error('[WebRTC] Error:', e);
+
+        // Retry logic - WHEP might fail if stream not ready yet
+        retryCount++;
+        if (retryCount <= MAX_RETRIES) {
+          log(`Retry ${retryCount}/${MAX_RETRIES}...`);
+          console.log(`[WebRTC] Retrying in ${RETRY_DELAY}ms (attempt ${retryCount}/${MAX_RETRIES})`);
+
+          // Clean up failed connection
+          if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+          }
+
+          // Wait and retry
+          setTimeout(() => {
+            connectToMediaMTX(serverUrl, streamName);
+          }, RETRY_DELAY);
+        } else {
+          log('Connection failed');
+          console.error('[WebRTC] Max retries exceeded');
+          retryCount = 0; // Reset for next connection attempt
+        }
+      }
+    }
+
+    function disconnect() {
+      if (peerConnection) {
+        if (whepResourceUrl) {
+          fetch(whepResourceUrl, { method: 'DELETE' }).catch(() => {});
+          whepResourceUrl = null;
+        }
+        peerConnection.close();
+        peerConnection = null;
+        audioElement.srcObject = null;
+        log('Disconnected');
+      }
+    }
+
+    function handleMessage(event) {
+      console.log('[Cast] Message:', event.data);
+      const data = event.data;
+
+      switch (data.type) {
+        case 'connect':
+          if (data.url) {
+            connectToMediaMTX(data.url, data.stream || 'pcaudio');
+          }
+          break;
+        case 'disconnect':
+        case 'close':
+          disconnect();
+          break;
+      }
+    }
+
+    context.addCustomMessageListener(WEBRTC_NAMESPACE, handleMessage);
+
+    playerManager.setMessageInterceptor(
+      cast.framework.messages.MessageType.LOAD,
+      (request) => {
+        console.log('[Cast] LOAD request:', JSON.stringify(request, null, 2));
+
+        if (request.media && request.media.contentId) {
+          const contentId = request.media.contentId;
+
+          // Handle webrtc:// prefix (used for Cast Groups)
+          if (contentId.startsWith('webrtc://')) {
+            const httpsUrl = contentId.replace('webrtc://', '');
+            // Get stream name from customData if available
+            const streamName = (request.media.customData && request.media.customData.stream) || 'pcaudio';
+            console.log('[Cast] GROUP mode - webrtc:// URL:', httpsUrl, 'stream:', streamName);
+            hideDefaultPlayer();
+            connectToMediaMTX(httpsUrl, streamName);
+            return null;
+          }
+        }
+
+        if (request.media && request.media.customData && request.media.customData.webrtcUrl) {
+          connectToMediaMTX(request.media.customData.webrtcUrl, request.media.customData.stream || 'pcaudio');
+          return null;
+        }
+
+        if (request.customData && request.customData.webrtcUrl) {
+          connectToMediaMTX(request.customData.webrtcUrl, request.customData.stream || 'pcaudio');
+          return null;
+        }
+
+        if (request.media) {
+          request.media.streamType = cast.framework.messages.StreamType.LIVE;
+          request.autoplay = true;
+          request.currentTime = 0;
+        }
+        return request;
+      }
+    );
+
+    context.start({
+      playbackConfig: playbackConfig,
+      skipPlayersLoad: false,
+      disableIdleTimeout: true,
+      supportedCommands: cast.framework.messages.Command.ALL_BASIC_MEDIA,
+      customNamespaces: {
+        [WEBRTC_NAMESPACE]: cast.framework.system.MessageType.JSON
+      }
+    });
+
+    log('Waiting for connection...');
+  </script>
+</body>
+</html>

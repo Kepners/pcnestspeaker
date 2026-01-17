@@ -1926,8 +1926,37 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         } else if (membersResult.count === 2) {
           // 2-member group = STEREO PAIR! Left channel → speaker 1, Right channel → speaker 2
           sendLog(`🎯 2-member group detected - using STEREO SEPARATION!`, 'success');
-          const leftMember = membersResult.members[0];
-          const rightMember = membersResult.members[1];
+
+          // SMART L/R ASSIGNMENT: Check speaker names for "left"/"right" keywords
+          // This ensures speakers named "Left" and "Right" get the correct channels
+          const member0 = membersResult.members[0];
+          const member1 = membersResult.members[1];
+          const name0Lower = member0.name.toLowerCase();
+          const name1Lower = member1.name.toLowerCase();
+
+          let leftMember, rightMember;
+          if (name0Lower.includes('left') && !name0Lower.includes('right')) {
+            // Member 0 is explicitly "left"
+            leftMember = member0;
+            rightMember = member1;
+          } else if (name1Lower.includes('left') && !name1Lower.includes('right')) {
+            // Member 1 is explicitly "left"
+            leftMember = member1;
+            rightMember = member0;
+          } else if (name0Lower.includes('right') && !name0Lower.includes('left')) {
+            // Member 0 is explicitly "right" -> swap
+            leftMember = member1;
+            rightMember = member0;
+          } else if (name1Lower.includes('right') && !name1Lower.includes('left')) {
+            // Member 1 is explicitly "right" -> keep order
+            leftMember = member0;
+            rightMember = member1;
+          } else {
+            // No clear naming, use default order
+            leftMember = member0;
+            rightMember = member1;
+          }
+
           sendLog(`  LEFT: ${leftMember.name} (${leftMember.ip})`);
           sendLog(`  RIGHT: ${rightMember.name} (${rightMember.ip})`);
 
@@ -2040,6 +2069,18 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
               AUDIO_APP_ID
             ])
           ]);
+
+          // Check for receiver app errors with helpful messaging
+          const leftReceiverFailed = leftResult.error_code === 'CUSTOM_RECEIVER_NOT_SUPPORTED';
+          const rightReceiverFailed = rightResult.error_code === 'CUSTOM_RECEIVER_NOT_SUPPORTED';
+
+          if (leftReceiverFailed || rightReceiverFailed) {
+            // Receiver app issue - provide helpful guidance
+            sendLog(`❌ Cast receiver app failed to launch (${AUDIO_APP_ID})`, 'error');
+            sendLog(`This usually means the receiver app needs re-publishing.`, 'warning');
+            sendLog(`Check: https://cast.google.com/publish/`, 'info');
+            throw new Error(`Receiver app unavailable. The developer needs to re-publish the Cast app at cast.google.com/publish`);
+          }
 
           if (!leftResult.success) {
             throw new Error(`Left speaker failed: ${leftResult.error}`);

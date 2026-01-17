@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>PC Nest Speaker - TV</title>
+  <style>
+    /* Warm Neutral Color Scheme - Matches App Theme */
+    :root {
+      --color-grey: #6B6D76;
+      --color-beige: #A69888;
+      --color-blush: #FCBFB7;
+      --color-blue: #334E58;
+      --color-coffee: #33261D;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: var(--color-coffee);
+      color: var(--color-blush);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* Ambient Video Container */
+    #ambient-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      opacity: 0;
+      transition: opacity 2s ease-in-out;
+    }
+
+    #ambient-container.visible {
+      opacity: 1;
+    }
+
+    #ambient-container video {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      min-width: 100%;
+      min-height: 100%;
+      transform: translate(-50%, -50%);
+      object-fit: cover;
+    }
+
+    /* Gradient overlay for ambient videos */
+    #ambient-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      background: linear-gradient(
+        135deg,
+        rgba(51, 38, 29, 0.6) 0%,
+        rgba(51, 78, 88, 0.4) 50%,
+        rgba(51, 38, 29, 0.6) 100%
+      );
+      pointer-events: none;
+    }
+
+    /* Status Display */
+    #status-container {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      text-align: center;
+      opacity: 1;
+      transition: opacity 0.5s ease;
+    }
+
+    #status-container.hidden {
+      opacity: 0;
+    }
+
+    .app-title {
+      font-size: 28px;
+      font-weight: 300;
+      letter-spacing: 4px;
+      color: var(--color-blush);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      text-shadow: 0 2px 20px rgba(0,0,0,0.5);
+    }
+
+    .status-text {
+      font-size: 18px;
+      color: var(--color-beige);
+      letter-spacing: 2px;
+    }
+
+    .status-text.streaming {
+      color: var(--color-blush);
+    }
+
+    /* Audio Visualizer Bars */
+    #visualizer {
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      gap: 8px;
+      height: 60px;
+      margin-top: 20px;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+
+    #visualizer.active {
+      opacity: 1;
+    }
+
+    .bar {
+      width: 6px;
+      background: linear-gradient(to top, var(--color-blush), var(--color-beige));
+      border-radius: 3px;
+      transition: height 0.1s ease;
+    }
+
+    /* Center logo when no visuals */
+    #logo-container {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 5;
+      text-align: center;
+      opacity: 0;
+      transition: opacity 1s ease;
+    }
+
+    #logo-container.visible {
+      opacity: 1;
+    }
+
+    .logo-icon {
+      font-size: 120px;
+      margin-bottom: 20px;
+      filter: drop-shadow(0 4px 30px rgba(252, 191, 183, 0.3));
+    }
+
+    .logo-text {
+      font-size: 48px;
+      font-weight: 200;
+      letter-spacing: 8px;
+      color: var(--color-blush);
+      text-transform: uppercase;
+    }
+
+    /* Hidden audio element */
+    audio {
+      display: none;
+    }
+
+    /* Debug log (hidden by default) */
+    #debug-log {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 100;
+      background: rgba(0,0,0,0.8);
+      color: #0f0;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 10px;
+      max-width: 400px;
+      max-height: 200px;
+      overflow-y: auto;
+      display: none;
+      border-radius: 4px;
+    }
+
+    #debug-log.visible {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <!-- Ambient Video Background (optional) -->
+  <div id="ambient-container">
+    <video id="ambient-video" muted loop playsinline></video>
+  </div>
+  <div id="ambient-overlay"></div>
+
+  <!-- Center Logo (shown when no ambient visuals) -->
+  <div id="logo-container">
+    <div class="logo-icon">&#127925;</div>
+    <div class="logo-text">PC Nest Speaker</div>
+  </div>
+
+  <!-- Status Display -->
+  <div id="status-container">
+    <div class="app-title">PC Nest Speaker</div>
+    <div class="status-text" id="status-text">Waiting for stream...</div>
+    <div id="visualizer">
+      <div class="bar" style="height: 10px;"></div>
+      <div class="bar" style="height: 15px;"></div>
+      <div class="bar" style="height: 20px;"></div>
+      <div class="bar" style="height: 25px;"></div>
+      <div class="bar" style="height: 30px;"></div>
+      <div class="bar" style="height: 25px;"></div>
+      <div class="bar" style="height: 20px;"></div>
+      <div class="bar" style="height: 15px;"></div>
+      <div class="bar" style="height: 10px;"></div>
+      <div class="bar" style="height: 15px;"></div>
+      <div class="bar" style="height: 20px;"></div>
+      <div class="bar" style="height: 25px;"></div>
+    </div>
+  </div>
+
+  <!-- Debug Log -->
+  <div id="debug-log"></div>
+
+  <!-- Audio Element for HLS -->
+  <audio id="audio-player" preload="none"></audio>
+
+  <!-- Cast Receiver SDK -->
+  <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+
+  <script>
+    // ==========================================
+    // PC Nest Speaker - TV Receiver
+    // HLS Audio + Optional Ambient Visuals
+    // ==========================================
+
+    const WEBRTC_NAMESPACE = 'urn:x-cast:com.pcnestspeaker.webrtc';
+
+    // Settings (can be overridden via Cast message)
+    let settings = {
+      showVisuals: true,      // Toggle ambient visuals
+      hideStatusAfter: 10000, // Hide status after 10s of playback
+      debugMode: false        // Show debug log
+    };
+
+    // Ambient video sources (royalty-free slow-mo nature)
+    const AMBIENT_VIDEOS = [
+      'https://assets.mixkit.co/videos/preview/mixkit-clouds-and-blue-sky-2408-large.mp4',
+      'https://assets.mixkit.co/videos/preview/mixkit-sun-rays-over-forest-702-large.mp4',
+      'https://assets.mixkit.co/videos/preview/mixkit-waterfall-in-forest-2213-large.mp4',
+      'https://assets.mixkit.co/videos/preview/mixkit-stars-in-space-1610-large.mp4',
+      'https://assets.mixkit.co/videos/preview/mixkit-ocean-waves-crashing-on-rocky-shore-1959-large.mp4',
+      'https://assets.mixkit.co/videos/preview/mixkit-tree-with-yellow-flowers-1173-large.mp4'
+    ];
+
+    let currentVideoIndex = 0;
+    let isStreaming = false;
+    let visualizerInterval = null;
+
+    // DOM Elements
+    const audioPlayer = document.getElementById('audio-player');
+    const ambientContainer = document.getElementById('ambient-container');
+    const ambientVideo = document.getElementById('ambient-video');
+    const ambientOverlay = document.getElementById('ambient-overlay');
+    const logoContainer = document.getElementById('logo-container');
+    const statusContainer = document.getElementById('status-container');
+    const statusText = document.getElementById('status-text');
+    const visualizer = document.getElementById('visualizer');
+    const debugLog = document.getElementById('debug-log');
+    const bars = document.querySelectorAll('.bar');
+
+    // Logging
+    function log(message) {
+      console.log('[TV Receiver]', message);
+      if (settings.debugMode) {
+        debugLog.classList.add('visible');
+        const time = new Date().toLocaleTimeString();
+        debugLog.innerHTML += `[${time}] ${message}<br>`;
+        debugLog.scrollTop = debugLog.scrollHeight;
+      }
+      statusText.textContent = message;
+    }
+
+    // Start ambient video playback
+    function startAmbientVisuals() {
+      if (!settings.showVisuals) {
+        logoContainer.classList.add('visible');
+        ambientContainer.classList.remove('visible');
+        return;
+      }
+
+      logoContainer.classList.remove('visible');
+
+      // Load random video
+      currentVideoIndex = Math.floor(Math.random() * AMBIENT_VIDEOS.length);
+      ambientVideo.src = AMBIENT_VIDEOS[currentVideoIndex];
+
+      ambientVideo.onloadeddata = () => {
+        ambientContainer.classList.add('visible');
+        ambientVideo.play().catch(e => log('Video autoplay blocked'));
+      };
+
+      // Rotate videos every 60 seconds
+      setInterval(() => {
+        if (settings.showVisuals && isStreaming) {
+          currentVideoIndex = (currentVideoIndex + 1) % AMBIENT_VIDEOS.length;
+
+          // Fade out
+          ambientContainer.classList.remove('visible');
+
+          setTimeout(() => {
+            ambientVideo.src = AMBIENT_VIDEOS[currentVideoIndex];
+            ambientVideo.onloadeddata = () => {
+              ambientContainer.classList.add('visible');
+              ambientVideo.play().catch(() => {});
+            };
+          }, 2000);
+        }
+      }, 60000);
+    }
+
+    // Start audio visualizer animation
+    function startVisualizer() {
+      visualizer.classList.add('active');
+
+      visualizerInterval = setInterval(() => {
+        bars.forEach((bar, i) => {
+          // Simulated audio levels (random but smooth)
+          const baseHeight = 10 + Math.sin(Date.now() / 200 + i) * 15;
+          const randomness = Math.random() * 20;
+          const height = Math.min(50, baseHeight + randomness);
+          bar.style.height = `${height}px`;
+        });
+      }, 100);
+    }
+
+    // Stop audio visualizer
+    function stopVisualizer() {
+      visualizer.classList.remove('active');
+      if (visualizerInterval) {
+        clearInterval(visualizerInterval);
+        visualizerInterval = null;
+      }
+    }
+
+    // Play HLS stream
+    function playHLSStream(url) {
+      log('Loading HLS stream...');
+      isStreaming = true;
+
+      // Start visuals
+      startAmbientVisuals();
+
+      // For HLS, we use the default Cast media player
+      // The URL should be passed via loadMedia, not manually here
+      // This function is for manual/debug use
+
+      audioPlayer.src = url;
+      audioPlayer.play()
+        .then(() => {
+          log('Streaming audio...');
+          statusText.classList.add('streaming');
+          startVisualizer();
+
+          // Hide status after delay
+          if (settings.hideStatusAfter > 0) {
+            setTimeout(() => {
+              statusContainer.classList.add('hidden');
+            }, settings.hideStatusAfter);
+          }
+        })
+        .catch(e => {
+          log('Playback error: ' + e.message);
+        });
+    }
+
+    // Stop playback
+    function stopPlayback() {
+      log('Stopping playback...');
+      isStreaming = false;
+      audioPlayer.pause();
+      audioPlayer.src = '';
+      stopVisualizer();
+      statusText.classList.remove('streaming');
+      statusContainer.classList.remove('hidden');
+      ambientContainer.classList.remove('visible');
+      logoContainer.classList.add('visible');
+    }
+
+    // Handle settings update
+    function updateSettings(newSettings) {
+      settings = { ...settings, ...newSettings };
+      log('Settings updated');
+
+      if (settings.debugMode) {
+        debugLog.classList.add('visible');
+      } else {
+        debugLog.classList.remove('visible');
+      }
+
+      // Toggle visuals if streaming
+      if (isStreaming) {
+        if (settings.showVisuals) {
+          logoContainer.classList.remove('visible');
+          startAmbientVisuals();
+        } else {
+          ambientContainer.classList.remove('visible');
+          logoContainer.classList.add('visible');
+        }
+      }
+    }
+
+    // ==========================================
+    // Cast Receiver Setup
+    // ==========================================
+
+    const context = cast.framework.CastReceiverContext.getInstance();
+    const playerManager = context.getPlayerManager();
+
+    // Handle media load
+    playerManager.setMessageInterceptor(
+      cast.framework.messages.MessageType.LOAD,
+      (loadRequestData) => {
+        log('Media load request received');
+
+        // Force LIVE stream type for lower buffering
+        if (loadRequestData.media) {
+          loadRequestData.media.streamType = cast.framework.messages.StreamType.LIVE;
+
+          // Start ambient visuals
+          isStreaming = true;
+          startAmbientVisuals();
+          startVisualizer();
+
+          // Hide status after delay
+          if (settings.hideStatusAfter > 0) {
+            setTimeout(() => {
+              statusContainer.classList.add('hidden');
+            }, settings.hideStatusAfter);
+          }
+        }
+
+        return loadRequestData;
+      }
+    );
+
+    // Player state changes
+    playerManager.addEventListener(
+      cast.framework.events.EventType.PLAYER_LOAD_COMPLETE,
+      () => {
+        log('Streaming audio...');
+        statusText.classList.add('streaming');
+      }
+    );
+
+    playerManager.addEventListener(
+      cast.framework.events.EventType.MEDIA_STATUS,
+      (event) => {
+        if (event.mediaStatus) {
+          const state = event.mediaStatus.playerState;
+          if (state === 'PLAYING') {
+            statusText.textContent = 'Streaming audio...';
+            statusText.classList.add('streaming');
+          } else if (state === 'PAUSED') {
+            statusText.textContent = 'Paused';
+            statusContainer.classList.remove('hidden');
+          } else if (state === 'IDLE') {
+            stopPlayback();
+          }
+        }
+      }
+    );
+
+    // Handle custom messages (settings, etc.)
+    context.addCustomMessageListener(WEBRTC_NAMESPACE, (event) => {
+      log('Custom message received');
+      const data = event.data;
+
+      if (data.type === 'settings') {
+        updateSettings(data.settings);
+      } else if (data.type === 'stop') {
+        stopPlayback();
+      }
+    });
+
+    // Start the receiver
+    context.start({
+      playbackConfig: {
+        autoResumeDuration: 0,
+        autoPauseDuration: 0,
+        initialBandwidth: 100000000
+      },
+      customNamespaces: {
+        [WEBRTC_NAMESPACE]: cast.framework.system.MessageType.JSON
+      }
+    });
+
+    // Show logo initially
+    logoContainer.classList.add('visible');
+    log('Waiting for stream...');
+  </script>
+</body>
+</html>
