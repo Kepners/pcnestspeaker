@@ -226,6 +226,9 @@ function startStereoResyncTimer() {
   currentStereoMode = true;
   console.log(`[StereoResync] Auto-resync DISABLED (was causing system crashes). Manual resync still available.`);
   // NO setInterval created - completely disabled
+
+  // NEW: Start session monitor to detect dropped connections and auto-reconnect
+  startSessionMonitor();
 }
 
 /**
@@ -238,6 +241,169 @@ function stopStereoResyncTimer() {
     console.log('[StereoResync] Timer stopped');
   }
   currentStereoMode = false;
+
+  // Stop session monitor when streaming stops
+  stopSessionMonitor();
+}
+
+// ===================
+// WebRTC Session Monitor
+// ===================
+// Polls MediaMTX API to detect dropped sessions and auto-reconnect
+let sessionMonitorInterval = null;
+let lastReconnectTime = {}; // Track reconnect timestamps to prevent storms
+const SESSION_MONITOR_INTERVAL = 30000; // 30 seconds
+const RECONNECT_COOLDOWN = 60000; // 60 seconds between reconnects for same speaker
+
+/**
+ * Start monitoring WebRTC sessions
+ * Detects when a speaker's session drops and auto-reconnects
+ */
+function startSessionMonitor() {
+  if (sessionMonitorInterval) {
+    console.log('[SessionMonitor] Already running');
+    return;
+  }
+
+  console.log('[SessionMonitor] Starting (checking every 30s)...');
+
+  sessionMonitorInterval = setInterval(async () => {
+    try {
+      await checkWebRTCSessions();
+    } catch (e) {
+      console.error('[SessionMonitor] Error:', e.message);
+    }
+  }, SESSION_MONITOR_INTERVAL);
+}
+
+/**
+ * Stop monitoring WebRTC sessions
+ */
+function stopSessionMonitor() {
+  if (sessionMonitorInterval) {
+    clearInterval(sessionMonitorInterval);
+    sessionMonitorInterval = null;
+    console.log('[SessionMonitor] Stopped');
+  }
+  lastReconnectTime = {};
+}
+
+/**
+ * Check MediaMTX API for active sessions and reconnect if needed
+ */
+async function checkWebRTCSessions() {
+  // Only check if we have connected speakers
+  if (currentConnectedSpeakers.length === 0) {
+    return;
+  }
+
+  const http = require('http');
+
+  return new Promise((resolve) => {
+    const req = http.get('http://localhost:9997/v3/webrtcsessions/list', (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', async () => {
+        if (res.statusCode !== 200) {
+          console.log('[SessionMonitor] API returned:', res.statusCode);
+          resolve();
+          return;
+        }
+
+        try {
+          const sessions = JSON.parse(data);
+          const activePaths = new Set(sessions.items.map(s => s.path));
+
+          // Determine expected paths based on mode
+          let expectedPaths = [];
+          if (currentStereoMode && currentConnectedSpeakers.length >= 2) {
+            expectedPaths = ['left', 'right'];
+          } else if (currentConnectedSpeakers.length === 1) {
+            expectedPaths = ['pcaudio'];
+          }
+
+          // Check for missing sessions
+          for (const expectedPath of expectedPaths) {
+            if (!activePaths.has(expectedPath)) {
+              console.log(`[SessionMonitor] Missing session for path: ${expectedPath}`);
+              await handleDroppedSession(expectedPath);
+            }
+          }
+
+          resolve();
+        } catch (e) {
+          console.error('[SessionMonitor] Parse error:', e.message);
+          resolve();
+        }
+      });
+    });
+
+    req.on('error', (e) => {
+      // MediaMTX might not be running - that's okay
+      resolve();
+    });
+
+    req.setTimeout(5000, () => {
+      req.destroy();
+      resolve();
+    });
+  });
+}
+
+/**
+ * Handle a dropped WebRTC session by reconnecting the speaker
+ */
+async function handleDroppedSession(path) {
+  const now = Date.now();
+
+  // Rate limit: don't reconnect same path more than once per minute
+  if (lastReconnectTime[path] && (now - lastReconnectTime[path]) < RECONNECT_COOLDOWN) {
+    const waitTime = Math.round((RECONNECT_COOLDOWN - (now - lastReconnectTime[path])) / 1000);
+    console.log(`[SessionMonitor] Reconnect cooldown for ${path}, waiting ${waitTime}s`);
+    return;
+  }
+
+  lastReconnectTime[path] = now;
+
+  // Find the speaker for this path
+  let speaker = null;
+  if (path === 'left' && currentConnectedSpeakers.length >= 1) {
+    speaker = currentConnectedSpeakers[0];
+  } else if (path === 'right' && currentConnectedSpeakers.length >= 2) {
+    speaker = currentConnectedSpeakers[1];
+  } else if (path === 'pcaudio' && currentConnectedSpeakers.length >= 1) {
+    speaker = currentConnectedSpeakers[0];
+  }
+
+  if (!speaker) {
+    console.log(`[SessionMonitor] No speaker found for path: ${path}`);
+    return;
+  }
+
+  sendLog(`🔄 [SessionMonitor] Reconnecting dropped speaker: ${speaker.name} (path: ${path})`, 'warning');
+
+  try {
+    const localIp = getLocalIp();
+    const webrtcUrl = `http://${localIp}:8889`;
+
+    // Reconnect this speaker only
+    const result = await runPython([
+      'webrtc-launch',
+      speaker.name,
+      webrtcUrl,
+      speaker.ip || '',
+      path,
+      AUDIO_APP_ID
+    ]);
+
+    if (result.success) {
+      sendLog(`✅ [SessionMonitor] Reconnected ${speaker.name}!`, 'success');
+    } else {
+      sendLog(`❌ [SessionMonitor] Failed to reconnect ${speaker.name}: ${result.error || 'unknown'}`, 'error');
+    }
+  } catch (e) {
+    sendLog(`❌ [SessionMonitor] Reconnect error: ${e.message}`, 'error');
+  }
 }
 
 // Helper: Get local IP address
@@ -651,6 +817,9 @@ function cleanup() {
       }
     }
     currentConnectedSpeakers = [];
+
+    // Stop session monitor
+    stopSessionMonitor();
   }
 
   // Stop audio streamer (HTTP mode)
@@ -1462,6 +1631,9 @@ ipcMain.handle('start-streaming', async (event, speakerName, audioDevice, stream
         // Track connected speaker for proper cleanup
         const speaker = discoveredSpeakers.find(s => s.name === speakerName);
         currentConnectedSpeakers = [{ name: speakerName, ip: speaker?.ip }];
+
+        // Start session monitor for single speaker mode
+        startSessionMonitor();
 
         // Start Windows volume sync - PC volume keys will control Nest
         if (speaker) {
@@ -2419,6 +2591,9 @@ ipcMain.handle('stop-streaming', async (event, speakerName) => {
 
     // Clear connected speakers tracking
     currentConnectedSpeakers = [];
+
+    // Stop session monitor
+    stopSessionMonitor();
 
     // Stop FFmpeg stream (audioStreamer is for WebRTC via MediaMTX)
     if (audioStreamer) {
