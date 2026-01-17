@@ -279,32 +279,40 @@ def process_command(cmd_data):
     cmd = cmd_data.get('cmd', '')
     speaker = cmd_data.get('speaker', '')
     speaker_ip = cmd_data.get('ip', None)
+    # STABILITY: Echo back requestId for response correlation (stereo mode reliability)
+    request_id = cmd_data.get('requestId', None)
 
     if cmd == 'set-volume':
         volume = cmd_data.get('volume', 0.5)
-        return set_volume(speaker, volume, speaker_ip)
+        result = set_volume(speaker, volume, speaker_ip)
 
     elif cmd == 'get-volume':
-        return get_volume(speaker, speaker_ip)
+        result = get_volume(speaker, speaker_ip)
 
     elif cmd == 'ping':
-        return ping_speaker(speaker, speaker_ip)
+        result = ping_speaker(speaker, speaker_ip)
 
     elif cmd == 'connect':
-        return connect_speaker(speaker, speaker_ip)
+        result = connect_speaker(speaker, speaker_ip)
 
     elif cmd == 'disconnect':
-        return disconnect_speaker(speaker)
+        result = disconnect_speaker(speaker)
 
     elif cmd == 'status':
-        return get_status()
+        result = get_status()
 
     elif cmd == 'quit':
         cleanup_all()
-        return {"success": True, "message": "Daemon shutting down"}
+        result = {"success": True, "message": "Daemon shutting down"}
 
     else:
-        return {"success": False, "error": f"Unknown command: {cmd}"}
+        result = {"success": False, "error": f"Unknown command: {cmd}"}
+
+    # Include requestId in response for correlation
+    if request_id is not None:
+        result['requestId'] = request_id
+
+    return result
 
 
 def main():

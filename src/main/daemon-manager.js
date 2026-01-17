@@ -63,13 +63,25 @@ function startDaemon() {
       try {
         const response = JSON.parse(line);
 
-        // Find the oldest pending request (daemon processes in order)
-        const entries = Array.from(pendingRequests.entries());
-        if (entries.length > 0) {
-          const [requestId, { resolve, timeout }] = entries[0];
+        // STABILITY: Match response to request by requestId (stereo mode reliability)
+        // If response has requestId, use it. Otherwise fall back to FIFO (legacy).
+        const responseId = response.requestId;
+
+        if (responseId && pendingRequests.has(responseId)) {
+          // Direct match by requestId - most reliable for stereo mode
+          const { resolve, timeout } = pendingRequests.get(responseId);
           clearTimeout(timeout);
-          pendingRequests.delete(requestId);
+          pendingRequests.delete(responseId);
           resolve(response);
+        } else {
+          // Fallback: FIFO order (legacy daemon without requestId support)
+          const entries = Array.from(pendingRequests.entries());
+          if (entries.length > 0) {
+            const [requestId, { resolve, timeout }] = entries[0];
+            clearTimeout(timeout);
+            pendingRequests.delete(requestId);
+            resolve(response);
+          }
         }
       } catch (e) {
         console.error('[Daemon] Invalid JSON response:', line);
@@ -180,13 +192,14 @@ function sendCommand(cmd, timeoutMs = 5000) {
 
     pendingRequests.set(requestId, { resolve, reject, timeout });
 
+    // STABILITY: Include requestId for response correlation (stereo mode reliability)
+    const cmdWithId = { ...cmd, requestId };
+
     // Send command as JSON line
-    daemonProcess.stdin.write(JSON.dumps(cmd) + '\n');
+    daemonProcess.stdin.write(JSON.stringify(cmdWithId) + '\n');
   });
 }
 
-// Fix for JSON.dumps (JavaScript uses JSON.stringify)
-JSON.dumps = JSON.stringify;
 
 /**
  * Set volume on speaker (FAST - uses cached connection)
