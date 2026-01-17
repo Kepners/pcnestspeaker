@@ -57,9 +57,6 @@ let tvStreamingInProgress = false; // Prevent duplicate TV streaming operations
 let stereoResyncTimer = null; // Timer for periodic stereo resync (clock drift fix)
 let currentStereoMode = false; // true when in stereo/group mode (for resync feature)
 let cleanupInProgress = false; // STABILITY: Prevent race condition if cleanup() called multiple times
-// NOTE: Auto-resync timer is DISABLED in startStereoResyncTimer() - caused system crashes
-// This constant is unused but kept for reference
-const STEREO_RESYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes (UNUSED - timer disabled)
 
 // Dependency download URLs
 // NOTE: We use VB-CABLE which provides:
