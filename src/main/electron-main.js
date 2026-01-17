@@ -660,15 +660,19 @@ function cleanup() {
   }
 
   // Stop Python cast process
+  // MEMORY: Remove listeners before kill to prevent accumulation
   if (pythonCastProcess) {
+    pythonCastProcess.removeAllListeners();
     pythonCastProcess.kill();
     pythonCastProcess = null;
   }
 
   // Stop FFmpeg WebRTC publishing process (mono speakers)
+  // MEMORY: Remove listeners before kill to prevent accumulation
   if (ffmpegWebrtcProcess) {
     sendLog('Stopping FFmpeg WebRTC stream...');
     try {
+      ffmpegWebrtcProcess.removeAllListeners();
       ffmpegWebrtcProcess.kill();
     } catch (e) {
       // Process may already be dead
@@ -677,9 +681,11 @@ function cleanup() {
   }
 
   // Stop FFmpeg TV/HLS process (separate from WebRTC)
+  // MEMORY: Remove listeners before kill to prevent accumulation
   if (ffmpegTvProcess) {
     sendLog('Stopping FFmpeg TV/HLS stream...');
     try {
+      ffmpegTvProcess.removeAllListeners();
       ffmpegTvProcess.kill();
     } catch (e) {
       // Process may already be dead
@@ -697,9 +703,11 @@ function cleanup() {
   }
 
   // Stop MediaMTX (WebRTC mode)
+  // MEMORY: Remove listeners before kill to prevent accumulation
   sendLog('Stopping MediaMTX...');
   if (mediamtxProcess) {
     try {
+      mediamtxProcess.removeAllListeners();
       mediamtxProcess.kill();
     } catch (e) {
       // Process may already be dead
@@ -725,9 +733,11 @@ function cleanup() {
   tvStreamingInProgress = false;
 
   // Stop localtunnel
+  // MEMORY: Remove listeners before kill to prevent accumulation
   if (localTunnelProcess) {
     sendLog('Stopping localtunnel...');
     try {
+      localTunnelProcess.removeAllListeners();
       localTunnelProcess.kill();
     } catch (e) {
       // Process may already be dead
@@ -2950,11 +2960,14 @@ ipcMain.handle('start-stereo-streaming', async (event, leftSpeaker, rightSpeaker
     // Reset the switching flag
     switchingToStereoMode = false;
     // Clean up on error
+    // MEMORY: Remove listeners before kill to prevent accumulation
     if (stereoFFmpegProcesses.left) {
+      stereoFFmpegProcesses.left.removeAllListeners();
       stereoFFmpegProcesses.left.kill();
       stereoFFmpegProcesses.left = null;
     }
     if (stereoFFmpegProcesses.right) {
+      stereoFFmpegProcesses.right.removeAllListeners();
       stereoFFmpegProcesses.right.kill();
       stereoFFmpegProcesses.right = null;
     }
@@ -2970,13 +2983,16 @@ ipcMain.handle('stop-stereo-streaming', async (event, leftSpeaker, rightSpeaker)
     stopStereoResyncTimer();
 
     // Stop FFmpeg processes
+    // MEMORY: Remove listeners before kill to prevent accumulation
     if (stereoFFmpegProcesses.left) {
+      stereoFFmpegProcesses.left.removeAllListeners();
       stereoFFmpegProcesses.left.kill();
       stereoFFmpegProcesses.left = null;
       sendLog('LEFT channel stopped');
     }
 
     if (stereoFFmpegProcesses.right) {
+      stereoFFmpegProcesses.right.removeAllListeners();
       stereoFFmpegProcesses.right.kill();
       stereoFFmpegProcesses.right = null;
       sendLog('RIGHT channel stopped');
