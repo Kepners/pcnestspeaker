@@ -222,6 +222,15 @@ function measureLatencyQuick(ip) {
       return;
     }
 
+    // SECURITY: Validate IP format to prevent command injection
+    // Only allow valid IPv4 addresses (no shell metacharacters)
+    const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+    if (!ipv4Regex.test(ip)) {
+      console.log('[AutoSync] Invalid IP format, rejecting:', ip);
+      resolve(null);
+      return;
+    }
+
     // Windows ping: -n 3 = 3 pings, -w 1000 = 1 second timeout
     const cmd = `ping -n 3 -w 1000 ${ip}`;
 

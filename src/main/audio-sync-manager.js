@@ -82,6 +82,15 @@ function setWindowsDelay(delayMs) {
  */
 function setEqualizerAPODelay(delayMs) {
   return new Promise((resolve, reject) => {
+    // SECURITY: Validate delayMs is a safe integer to prevent injection
+    const safeDelay = parseInt(delayMs, 10);
+    if (isNaN(safeDelay) || safeDelay < 0 || safeDelay > 10000) {
+      reject(new Error(`Invalid delay value: ${delayMs}`));
+      return;
+    }
+    // Use the validated value from here on
+    delayMs = safeDelay;
+
     if (!isEqualizerAPOInstalled()) {
       reject(new Error('Equalizer APO not installed'));
       return;
