@@ -47,6 +47,13 @@ let originalDefaultDevice = null;
 // Cache the command-line ID for sync restore on exit
 let originalDefaultDeviceCmdId = null;
 
+// PERFORMANCE: Cache device list to avoid repeated SVV calls (5-15s each)
+let deviceCache = {
+  devices: null,
+  timestamp: 0
+};
+const DEVICE_CACHE_TTL_MS = 30000; // 30 seconds - devices don't change often
+
 /**
  * Save the current default audio device (call BEFORE switching to VB-Cable)
  * This should be called once when app takes over audio
@@ -321,9 +328,19 @@ function parseCSVLine(line) {
 
 /**
  * Get list of audio devices using SoundVolumeView
+ * PERFORMANCE: Uses cache to avoid repeated SVV calls (5-15s each)
+ * @param {boolean} forceRefresh - Force cache refresh (default: false)
  */
-async function getDevices() {
+async function getDevices(forceRefresh = false) {
   try {
+    // PERFORMANCE: Return cached devices if still valid
+    const now = Date.now();
+    if (!forceRefresh && deviceCache.devices && (now - deviceCache.timestamp) < DEVICE_CACHE_TTL_MS) {
+      console.log(`[AudioRouting] Using cached devices (${deviceCache.devices.length} devices, age: ${Math.round((now - deviceCache.timestamp) / 1000)}s)`);
+      return deviceCache.devices;
+    }
+
+    console.log(`[AudioRouting] Refreshing device cache...`);
     const svvDevices = await getSVVDevices();
     const devices = [];
 
@@ -341,12 +358,25 @@ async function getDevices() {
       });
     }
 
-    console.log(`[AudioRouting] Parsed ${devices.length} device entries`);
+    // Update cache
+    deviceCache.devices = devices;
+    deviceCache.timestamp = now;
+
+    console.log(`[AudioRouting] Cached ${devices.length} device entries`);
     return devices;
   } catch (err) {
     console.error('[AudioRouting] Failed to get devices:', err.message);
     return [];
   }
+}
+
+/**
+ * Invalidate the device cache (call when devices might have changed)
+ */
+function invalidateDeviceCache() {
+  deviceCache.devices = null;
+  deviceCache.timestamp = 0;
+  console.log('[AudioRouting] Device cache invalidated');
 }
 
 /**
@@ -936,6 +966,7 @@ module.exports = {
   isAvailable,
   isAudioctlAvailable,
   getDevices,
+  invalidateDeviceCache,  // PERFORMANCE: Force refresh on next getDevices() call
   getRenderDevices,
   getCurrentDefaultDevice,
   setDefaultDevice,
