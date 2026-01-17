@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>PC Nest Speaker - WebRTC Receiver (v2 Compatible)</title>
+  <script src="//www.gstatic.com/cast/sdk/libs/receiver/2.0.0/cast_receiver.js"></script>
+  <style>
+    body { background: #334E58; margin: 0; padding: 0; }
+    #status { color: #FCBFB7; font-family: sans-serif; font-size: 24px; text-align: center; padding-top: 40%; }
+  </style>
+</head>
+<body>
+  <div id="status">PC Nest Speaker v2 (Legacy)</div>
+  <audio id="webrtc-audio" autoplay></audio>
+
+  <script>
+    var WEBRTC_NAMESPACE = 'urn:x-cast:com.pcnestspeaker.webrtc';
+    var peerConnection = null;
+    var whepResourceUrl = null;
+    var audioElement = document.getElementById('webrtc-audio');
+
+    function log(msg) {
+      console.log('[WebRTC] ' + msg);
+      document.getElementById('status').textContent = msg;
+    }
+
+    // Connect to MediaMTX via WHEP
+    function connectToMediaMTX(serverUrl, streamName) {
+      log('Connecting to MediaMTX...');
+
+      var iceConfig = {
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      };
+
+      peerConnection = new RTCPeerConnection(iceConfig);
+      log('PeerConnection created');
+
+      peerConnection.onaddstream = function(event) {
+        log('Stream received');
+        audioElement.srcObject = event.stream;
+        audioElement.play().catch(function(e) {
+          log('Play error: ' + e.message);
+        });
+      };
+
+      peerConnection.ontrack = function(event) {
+        log('Track received: ' + event.track.kind);
+        if (event.track.kind === 'audio') {
+          if (event.streams && event.streams[0]) {
+            audioElement.srcObject = event.streams[0];
+            audioElement.play().catch(function(e) {
+              log('Play error: ' + e.message);
+            });
+          }
+        }
+      };
+
+      peerConnection.oniceconnectionstatechange = function() {
+        log('ICE: ' + peerConnection.iceConnectionState);
+        if (peerConnection.iceConnectionState === 'connected') {
+          log('WebRTC Connected!');
+        }
+      };
+
+      // Add transceiver
+      peerConnection.addTransceiver('audio', { direction: 'recvonly' });
+
+      // Create offer
+      peerConnection.createOffer()
+        .then(function(offer) {
+          return peerConnection.setLocalDescription(offer);
+        })
+        .then(function() {
+          log('Created offer');
+          // Wait for ICE gathering
+          return new Promise(function(resolve) {
+            if (peerConnection.iceGatheringState === 'complete') {
+              resolve();
+            } else {
+              var checkState = function() {
+                if (peerConnection.iceGatheringState === 'complete') {
+                  peerConnection.removeEventListener('icegatheringstatechange', checkState);
+                  resolve();
+                }
+              };
+              peerConnection.addEventListener('icegatheringstatechange', checkState);
+              setTimeout(resolve, 2000);
+            }
+          });
+        })
+        .then(function() {
+          log('ICE gathering complete');
+          var whepUrl = serverUrl + '/' + streamName + '/whep';
+          log('WHEP URL: ' + whepUrl);
+
+          return fetch(whepUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/sdp' },
+            body: peerConnection.localDescription.sdp
+          });
+        })
+        .then(function(response) {
+          log('Response status: ' + response.status);
+          if (!response.ok) {
+            throw new Error('WHEP error ' + response.status);
+          }
+          var location = response.headers.get('Location');
+          if (location) {
+            whepResourceUrl = location.startsWith('/') ? serverUrl + location : location;
+            log('Session URL: ' + whepResourceUrl);
+          }
+          return response.text();
+        })
+        .then(function(answerSdp) {
+          log('Got SDP answer');
+          return peerConnection.setRemoteDescription({
+            type: 'answer',
+            sdp: answerSdp
+          });
+        })
+        .then(function() {
+          log('Set remote description');
+        })
+        .catch(function(e) {
+          log('Error: ' + e.message);
+          console.error('WHEP error:', e);
+        });
+    }
+
+    function disconnect() {
+      if (peerConnection) {
+        if (whepResourceUrl) {
+          fetch(whepResourceUrl, { method: 'DELETE' }).catch(function(){});
+          whepResourceUrl = null;
+        }
+        peerConnection.close();
+        peerConnection = null;
+        audioElement.srcObject = null;
+        log('Disconnected');
+      }
+    }
+
+    // Cast Receiver v2 API
+    var receiver = new cast.receiver.Receiver(
+      'FCAA4619',
+      [cast.receiver.RemoteMedia.NAMESPACE],
+      '',
+      5
+    );
+
+    var remoteMedia = new cast.receiver.RemoteMedia();
+    remoteMedia.addChannelFactory(
+      receiver.createChannelFactory(cast.receiver.RemoteMedia.NAMESPACE)
+    );
+
+    // Custom namespace for WebRTC messages
+    var messageBus = receiver.getCastMessageBus(WEBRTC_NAMESPACE);
+    messageBus.onMessage = function(event) {
+      log('Message: ' + JSON.stringify(event.data));
+      var data = JSON.parse(event.data);
+
+      if (data.type === 'connect' && data.url) {
+        connectToMediaMTX(data.url, data.stream || 'pcaudio');
+      } else if (data.type === 'disconnect' || data.type === 'close') {
+        disconnect();
+      }
+    };
+
+    receiver.start();
+    log('Ready - Waiting for URL...');
+  </script>
+</body>
+</html>

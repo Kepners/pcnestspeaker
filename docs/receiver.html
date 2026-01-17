@@ -7,8 +7,8 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #334E58; overflow: hidden; }
 
-    /* Ambient photo slideshow - fullscreen, behind everything */
-    .ambient-photo {
+    /* Ambient video background - fullscreen, behind everything */
+    #ambient-video {
       position: fixed;
       top: 0;
       left: 0;
@@ -19,8 +19,7 @@
       opacity: 0;
       transition: opacity 2s ease-in-out;
     }
-    .ambient-photo.visible { opacity: 1; }
-    .ambient-photo.hidden { opacity: 0; }
+    #ambient-video.visible { opacity: 1; }
 
     /* Gradient overlay for text readability */
     #overlay {
@@ -58,70 +57,71 @@
       backdrop-filter: blur(10px);
     }
 
-    /* App branding - top left */
+    /* App branding - next to logo */
     #branding {
       position: fixed;
-      top: 30px;
-      left: 40px;
-      color: rgba(252, 191, 183, 0.8);
+      top: 50px;
+      left: 115px;
+      color: rgba(252, 191, 183, 0.9);
       font-family: 'Segoe UI', sans-serif;
-      font-size: 18px;
+      font-size: 22px;
       font-weight: 600;
-      letter-spacing: 2px;
+      letter-spacing: 3px;
       z-index: 10;
       text-shadow: 0 2px 10px rgba(0,0,0,0.3);
     }
 
-    /* Audio visualizer dots */
-    #visualizer {
+    /* App logo in corner */
+    #logo {
       position: fixed;
-      bottom: 100px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      gap: 8px;
+      top: 30px;
+      left: 40px;
+      width: 60px;
+      height: 60px;
       z-index: 10;
-    }
-    .viz-dot {
-      width: 8px;
-      height: 8px;
-      background: #FCBFB7;
-      border-radius: 50%;
-      opacity: 0.6;
-      animation: pulse 1.5s ease-in-out infinite;
-    }
-    .viz-dot:nth-child(1) { animation-delay: 0s; }
-    .viz-dot:nth-child(2) { animation-delay: 0.2s; }
-    .viz-dot:nth-child(3) { animation-delay: 0.4s; }
-    .viz-dot:nth-child(4) { animation-delay: 0.6s; }
-    .viz-dot:nth-child(5) { animation-delay: 0.8s; }
-
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); opacity: 0.4; }
-      50% { transform: scale(1.5); opacity: 1; }
+      filter: drop-shadow(0 2px 10px rgba(0,0,0,0.3));
     }
 
-    /* Hide default cast player */
-    #player { display: none; }
+    /* Default cast player - hidden for WebRTC, shown for HLS */
+    #player {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0;
+      /* Start hidden, shown when HLS plays */
+      opacity: 0;
+    }
+    #player.hls-active {
+      opacity: 1;
+    }
   </style>
 </head>
 <body>
   <cast-media-player id="player"></cast-media-player>
 
-  <!-- Ambient photo slideshow - two images for crossfade effect -->
-  <img id="ambient-photo-1" class="ambient-photo" src="" alt="">
-  <img id="ambient-photo-2" class="ambient-photo" src="" alt="">
+  <!-- Ambient video background -->
+  <video id="ambient-video" muted autoplay playsinline crossorigin="anonymous"></video>
   <div id="overlay"></div>
 
   <!-- UI elements -->
+  <!-- Logo in corner - using inline SVG for reliability -->
+  <svg id="logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style="stop-color:#FCBFB7"/>
+        <stop offset="100%" style="stop-color:#A69888"/>
+      </linearGradient>
+    </defs>
+    <!-- Speaker icon -->
+    <rect x="15" y="30" width="25" height="40" rx="4" fill="url(#logoGrad)"/>
+    <path d="M40 30 L60 15 L60 85 L40 70 Z" fill="url(#logoGrad)"/>
+    <!-- Sound waves -->
+    <path d="M68 35 Q80 50 68 65" stroke="#FCBFB7" stroke-width="4" fill="none" opacity="0.8"/>
+    <path d="M76 25 Q95 50 76 75" stroke="#FCBFB7" stroke-width="4" fill="none" opacity="0.5"/>
+  </svg>
   <div id="branding">PC NEST SPEAKER</div>
-  <div id="visualizer">
-    <div class="viz-dot"></div>
-    <div class="viz-dot"></div>
-    <div class="viz-dot"></div>
-    <div class="viz-dot"></div>
-    <div class="viz-dot"></div>
-  </div>
   <div id="status">Waiting for connection...</div>
 
   <!-- WebRTC audio element (invisible) -->
@@ -131,131 +131,149 @@
     const WEBRTC_NAMESPACE = 'urn:x-cast:com.pcnestspeaker.webrtc';
 
     // ===================
-    // Ambient Photo Slideshow - Free photos from Unsplash (fast CDN, CORS-enabled)
-    // Using Unsplash Source for direct image URLs (1920x1080 for fast loading)
+    // Ambient Video System - Free CC0 videos from Pexels (CORS-enabled)
     // ===================
-    const ambientPhotos = [
+    const ambientVideos = [
+      // 4K UHD videos for high-quality TV display
       // Ocean & Water
-      'https://images.unsplash.com/photo-1505118380757-91f5f5632de0?w=1920&h=1080&fit=crop',  // Ocean waves
-      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1920&h=1080&fit=crop',  // Beach tropical
-      'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=1920&h=1080&fit=crop',  // Ocean aerial
-      'https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=1920&h=1080&fit=crop',  // Sea sunset
+      'https://videos.pexels.com/video-files/3571264/3571264-uhd_2560_1440_30fps.mp4',
+      'https://videos.pexels.com/video-files/1093662/1093662-uhd_2560_1440_30fps.mp4',
+      'https://videos.pexels.com/video-files/2098989/2098989-uhd_2560_1440_30fps.mp4',
+      'https://videos.pexels.com/video-files/1409899/1409899-uhd_2560_1440_25fps.mp4',
 
-      // Mountains & Landscapes
-      'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1920&h=1080&fit=crop',  // Mountain peaks
-      'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&h=1080&fit=crop',  // Mountains clouds
-      'https://images.unsplash.com/photo-1454496522488-7a8e488e8606?w=1920&h=1080&fit=crop',  // Snowy mountains
-      'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1920&h=1080&fit=crop',  // Mountain stars
+      // Clouds & Sky
+      'https://videos.pexels.com/video-files/1918465/1918465-uhd_2560_1440_24fps.mp4',
+      'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_24fps.mp4',
 
       // Forest & Nature
-      'https://images.unsplash.com/photo-1448375240586-882707db888b?w=1920&h=1080&fit=crop',  // Forest path
-      'https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?w=1920&h=1080&fit=crop',  // Forest sunlight
-      'https://images.unsplash.com/photo-1476362555312-ab9e108a0b7e?w=1920&h=1080&fit=crop',  // Autumn forest
-      'https://images.unsplash.com/photo-1425913397330-cf8af2ff40a1?w=1920&h=1080&fit=crop',  // Misty forest
+      'https://videos.pexels.com/video-files/3125908/3125908-uhd_2560_1440_30fps.mp4',
+      'https://videos.pexels.com/video-files/2871916/2871916-uhd_2560_1440_24fps.mp4',
 
-      // Sky & Clouds
-      'https://images.unsplash.com/photo-1517483000871-1dbf64a6e1c6?w=1920&h=1080&fit=crop',  // Sunset sky
-      'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=1920&h=1080&fit=crop',  // Pink clouds
-      'https://images.unsplash.com/photo-1501630834273-4b5604d2ee31?w=1920&h=1080&fit=crop',  // Blue sky clouds
-      'https://images.unsplash.com/photo-1499346030926-9a72daac6c63?w=1920&h=1080&fit=crop',  // Starry night
+      // Mountains & Space
+      'https://videos.pexels.com/video-files/1448735/1448735-uhd_2560_1440_24fps.mp4',
+      'https://videos.pexels.com/video-files/3015510/3015510-uhd_2560_1440_24fps.mp4',
+      'https://videos.pexels.com/video-files/1851190/1851190-uhd_2560_1440_30fps.mp4',
 
-      // Northern Lights & Space
-      'https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=1920&h=1080&fit=crop',  // Northern lights
-      'https://images.unsplash.com/photo-1507400492013-162706c8c05e?w=1920&h=1080&fit=crop',  // Aurora green
-      'https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=1920&h=1080&fit=crop',  // Milky way
-      'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=1920&h=1080&fit=crop',  // Galaxy
+      // Fire & Abstract
+      'https://videos.pexels.com/video-files/2795173/2795173-uhd_2560_1440_25fps.mp4',
+      'https://videos.pexels.com/video-files/3129671/3129671-uhd_2560_1440_30fps.mp4',
 
-      // Desert & Dunes
-      'https://images.unsplash.com/photo-1509316785289-025f5b846b35?w=1920&h=1080&fit=crop',  // Desert dunes
-      'https://images.unsplash.com/photo-1473580044384-7ba9967e16a0?w=1920&h=1080&fit=crop',  // Sahara sunset
-      'https://images.unsplash.com/photo-1547234935-80c7145ec969?w=1920&h=1080&fit=crop',  // Desert night
-
-      // Underwater & Sea Life
-      'https://images.unsplash.com/photo-1544551763-92ab472cad5d?w=1920&h=1080&fit=crop',  // Underwater coral
-      'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=1920&h=1080&fit=crop',  // Sea turtle
-      'https://images.unsplash.com/photo-1546026423-cc4642628d2b?w=1920&h=1080&fit=crop',  // Jellyfish
-
-      // Abstract & Minimal
-      'https://images.unsplash.com/photo-1557682250-33bd709cbe85?w=1920&h=1080&fit=crop',  // Gradient purple
-      'https://images.unsplash.com/photo-1558591710-4b4a1ae0f04d?w=1920&h=1080&fit=crop',  // Abstract waves
-      'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=1920&h=1080&fit=crop',  // Colorful gradient
-
-      // Flowers & Gardens
-      'https://images.unsplash.com/photo-1490750967868-88aa4486c946?w=1920&h=1080&fit=crop',  // Sunflower
-      'https://images.unsplash.com/photo-1518882605483-4a7369cc29fb?w=1920&h=1080&fit=crop',  // Lavender field
-      'https://images.unsplash.com/photo-1462275646964-a0e3571f4f81?w=1920&h=1080&fit=crop',  // Cherry blossoms
+      // Underwater
+      'https://videos.pexels.com/video-files/4812204/4812204-uhd_2560_1440_25fps.mp4',
+      'https://videos.pexels.com/video-files/2556126/2556126-uhd_2560_1440_30fps.mp4',
     ];
 
-    // Slideshow state
-    let currentPhotoIndex = 0;
-    let activePhoto = 1; // Toggle between photo 1 and 2 for crossfade
-    const photo1 = document.getElementById('ambient-photo-1');
-    const photo2 = document.getElementById('ambient-photo-2');
-    let slideshowInterval = null;
-    const SLIDESHOW_DURATION = 10000; // 10 seconds per photo
+    let currentVideoIndex = 0;
+    let videoLoadTimeout = null;
+    let videoErrorCount = 0;
+    const MAX_VIDEO_ERRORS = 5;
+    const VIDEO_LOAD_TIMEOUT = 30000; // 30 seconds for 4K videos
+    const ambientVideo = document.getElementById('ambient-video');
+    let videosStarted = false;
 
-    function getRandomPhoto() {
-      const newIndex = Math.floor(Math.random() * ambientPhotos.length);
-      // Avoid showing same photo twice in a row
-      if (newIndex === currentPhotoIndex && ambientPhotos.length > 1) {
-        return (newIndex + 1) % ambientPhotos.length;
+    function loadNextAmbientVideo() {
+      // Clear any existing timeout
+      if (videoLoadTimeout) {
+        clearTimeout(videoLoadTimeout);
+        videoLoadTimeout = null;
       }
-      return newIndex;
+
+      // Fade out current video
+      ambientVideo.classList.remove('visible');
+
+      setTimeout(() => {
+        // Pick next video (random)
+        currentVideoIndex = Math.floor(Math.random() * ambientVideos.length);
+        const videoUrl = ambientVideos[currentVideoIndex];
+        console.log('[Ambient] Loading video:', videoUrl);
+
+        ambientVideo.src = videoUrl;
+        ambientVideo.load();
+
+        // Set timeout for loading - try next video if this one takes too long
+        videoLoadTimeout = setTimeout(() => {
+          console.log('[Ambient] Video load timeout, trying next...');
+          videoErrorCount++;
+          if (videoErrorCount < MAX_VIDEO_ERRORS) {
+            loadNextAmbientVideo();
+          } else {
+            console.log('[Ambient] Max errors reached, stopping video attempts');
+          }
+        }, VIDEO_LOAD_TIMEOUT);
+      }, 1000); // Wait for fade out
     }
 
-    function showNextPhoto() {
-      currentPhotoIndex = getRandomPhoto();
-      const nextUrl = ambientPhotos[currentPhotoIndex];
-      console.log('[Slideshow] Loading photo:', currentPhotoIndex);
-
-      if (activePhoto === 1) {
-        // Load into photo2, then crossfade
-        photo2.src = nextUrl;
-        photo2.onload = () => {
-          photo1.classList.remove('visible');
-          photo1.classList.add('hidden');
-          photo2.classList.remove('hidden');
-          photo2.classList.add('visible');
-          activePhoto = 2;
-        };
-      } else {
-        // Load into photo1, then crossfade
-        photo1.src = nextUrl;
-        photo1.onload = () => {
-          photo2.classList.remove('visible');
-          photo2.classList.add('hidden');
-          photo1.classList.remove('hidden');
-          photo1.classList.add('visible');
-          activePhoto = 1;
-        };
+    // canplay is more reliable than loadeddata on some devices
+    ambientVideo.addEventListener('canplay', function onCanPlay() {
+      // Clear timeout since video is loading
+      if (videoLoadTimeout) {
+        clearTimeout(videoLoadTimeout);
+        videoLoadTimeout = null;
       }
-    }
 
-    function startSlideshow() {
-      console.log('[Slideshow] Starting ambient photo slideshow');
-      // Load first photo immediately
-      currentPhotoIndex = getRandomPhoto();
-      photo1.src = ambientPhotos[currentPhotoIndex];
-      photo1.onload = () => {
-        photo1.classList.add('visible');
-        activePhoto = 1;
-      };
+      console.log('[Ambient] Video can play, starting...');
+      videoErrorCount = 0; // Reset error count on success
 
-      // Start interval for subsequent photos
-      if (slideshowInterval) clearInterval(slideshowInterval);
-      slideshowInterval = setInterval(showNextPhoto, SLIDESHOW_DURATION);
-    }
+      ambientVideo.play().then(() => {
+        console.log('[Ambient] Video playing!');
+        ambientVideo.classList.add('visible');
+      }).catch(e => {
+        console.log('[Ambient] Play blocked:', e.message);
+        // Try again with user interaction simulation
+        setTimeout(() => {
+          ambientVideo.muted = true;
+          ambientVideo.play().then(() => {
+            console.log('[Ambient] Video playing (muted retry)');
+            ambientVideo.classList.add('visible');
+          }).catch(e2 => {
+            console.log('[Ambient] Retry failed:', e2.message);
+            loadNextAmbientVideo();
+          });
+        }, 500);
+      });
+    });
 
-    function stopSlideshow() {
-      if (slideshowInterval) {
-        clearInterval(slideshowInterval);
-        slideshowInterval = null;
+    ambientVideo.addEventListener('ended', () => {
+      console.log('[Ambient] Video ended, loading next...');
+      loadNextAmbientVideo();
+    });
+
+    ambientVideo.addEventListener('error', (e) => {
+      console.log('[Ambient] Video error:', e.message || 'unknown error');
+      if (videoLoadTimeout) {
+        clearTimeout(videoLoadTimeout);
+        videoLoadTimeout = null;
       }
-    }
+      videoErrorCount++;
+      if (videoErrorCount < MAX_VIDEO_ERRORS) {
+        loadNextAmbientVideo();
+      }
+    });
 
-    // Legacy function name for compatibility
+    // Also listen for stalled/waiting
+    ambientVideo.addEventListener('stalled', () => {
+      console.log('[Ambient] Video stalled');
+    });
+
+    // Start first ambient video
     function startAmbientVideos() {
-      startSlideshow();
+      if (videosStarted) return; // Only start once
+      videosStarted = true;
+
+      console.log('[Ambient] Starting ambient video playlist (' + ambientVideos.length + ' videos)');
+      currentVideoIndex = Math.floor(Math.random() * ambientVideos.length);
+      const videoUrl = ambientVideos[currentVideoIndex];
+      console.log('[Ambient] First video:', videoUrl);
+
+      ambientVideo.src = videoUrl;
+      ambientVideo.load();
+
+      // Set timeout for first video
+      videoLoadTimeout = setTimeout(() => {
+        console.log('[Ambient] First video timeout, trying next...');
+        videoErrorCount++;
+        loadNextAmbientVideo();
+      }, VIDEO_LOAD_TIMEOUT);
     }
 
     // ===================
@@ -311,6 +329,91 @@
     const MAX_RETRIES = 5;
     const RETRY_DELAY = 2000; // 2 seconds
 
+    // ===================
+    // RTT Measurement
+    // ===================
+    let rttMeasurementInterval = null;
+    let rttSamples = [];
+    const RTT_SAMPLE_COUNT = 5;
+    const RTT_POLL_INTERVAL = 2000; // 2 seconds
+    const BUFFER_OFFSET_MS = 160; // Pipeline: FFmpeg 50ms + Opus 20ms + Jitter 50ms + Decode 10ms + Speaker 30ms
+
+    async function measureRTT() {
+      if (!peerConnection || peerConnection.connectionState !== 'connected') {
+        return null;
+      }
+
+      try {
+        const stats = await peerConnection.getStats();
+        for (const report of stats.values()) {
+          // Look for the active ICE candidate pair
+          if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+            if (report.currentRoundTripTime !== undefined) {
+              return Math.round(report.currentRoundTripTime * 1000); // Convert to ms
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[RTT] getStats error:', e);
+      }
+      return null;
+    }
+
+    function startRTTMeasurement() {
+      if (rttMeasurementInterval) return; // Already measuring
+
+      rttSamples = [];
+      console.log('[RTT] Starting measurement...');
+      log('Measuring latency...');
+
+      rttMeasurementInterval = setInterval(async () => {
+        const rtt = await measureRTT();
+        if (rtt !== null) {
+          rttSamples.push(rtt);
+          console.log('[RTT] Sample:', rtt, 'ms');
+
+          if (rttSamples.length >= RTT_SAMPLE_COUNT) {
+            // Calculate average RTT
+            const avgRTT = Math.round(rttSamples.reduce((a, b) => a + b, 0) / rttSamples.length);
+            // One-way latency is RTT/2, plus buffer offset
+            const recommendedDelay = Math.round(avgRTT / 2) + BUFFER_OFFSET_MS;
+
+            console.log('[RTT] Average RTT:', avgRTT, 'ms, Recommended delay:', recommendedDelay, 'ms');
+
+            // Send result back to sender
+            sendLatencyResult({
+              rtt: avgRTT,
+              recommendedDelay: recommendedDelay,
+              samples: rttSamples.length
+            });
+
+            stopRTTMeasurement();
+            log('Streaming audio...');
+          }
+        }
+      }, RTT_POLL_INTERVAL);
+    }
+
+    function stopRTTMeasurement() {
+      if (rttMeasurementInterval) {
+        clearInterval(rttMeasurementInterval);
+        rttMeasurementInterval = null;
+      }
+    }
+
+    function sendLatencyResult(data) {
+      try {
+        // Send via Cast message to all connected senders
+        context.sendCustomMessage(WEBRTC_NAMESPACE, undefined, {
+          type: 'latency-result',
+          ...data
+        });
+        console.log('[RTT] Sent latency result:', data);
+      } catch (e) {
+        console.error('[RTT] Failed to send result:', e);
+      }
+    }
+
     async function connectToMediaMTX(serverUrl, streamName = 'pcaudio', forceRelay = false) {
       log(forceRelay ? 'Connecting (relay)...' : 'Connecting...');
 
@@ -333,13 +436,6 @@
         log('Track received!');
 
         if (event.track.kind === 'audio') {
-          // Set low jitter buffer target for minimal latency (50ms - balanced)
-          // See: https://developer.mozilla.org/en-US/docs/Web/API/RTCRtpReceiver/jitterBufferTarget
-          if (event.receiver && 'jitterBufferTarget' in event.receiver) {
-            event.receiver.jitterBufferTarget = 50; // 50ms target (balanced)
-            console.log('[WebRTC] Set jitterBufferTarget to 50ms');
-          }
-
           if (event.streams && event.streams[0]) {
             audioElement.srcObject = event.streams[0];
 
@@ -499,6 +595,7 @@
     }
 
     function disconnect() {
+      stopRTTMeasurement(); // Stop any ongoing measurement
       if (peerConnection) {
         if (whepResourceUrl) {
           fetch(whepResourceUrl, { method: 'DELETE' }).catch(() => {});
@@ -524,6 +621,10 @@
         case 'disconnect':
         case 'close':
           disconnect();
+          break;
+        case 'measure-latency':
+          // PC requested latency measurement
+          startRTTMeasurement();
           break;
       }
     }
@@ -558,6 +659,24 @@
         if (request.customData && request.customData.webrtcUrl) {
           connectToMediaMTX(request.customData.webrtcUrl, request.customData.stream || 'pcaudio');
           return null;
+        }
+
+        // HLS HANDLING: If we get here with a media URL, it's HLS for TV
+        if (request.media && request.media.contentId) {
+          const contentId = request.media.contentId;
+          const isHLS = contentId.includes('.m3u8') ||
+                        (request.media.contentType && request.media.contentType.includes('mpegURL'));
+
+          if (isHLS) {
+            console.log('[Cast] HLS mode - starting ambient videos and player');
+            // Start ambient videos for HLS too!
+            startAmbientVideos();
+            log('Streaming audio...');
+
+            // Show player for HLS
+            const player = document.getElementById('player');
+            if (player) player.classList.add('hls-active');
+          }
         }
 
         if (request.media) {
